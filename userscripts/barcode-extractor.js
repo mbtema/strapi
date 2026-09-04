@@ -3,6 +3,8 @@
 // @version      1.1
 // @description  Копирует barcode с карточки товара
 // @match        http://10.10.3.80:1337/admin/*
+// @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/barcode-extractor.js
+// @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/barcode-extractor.js
 // @grant        GM_setClipboard
 // ==/UserScript==
 
