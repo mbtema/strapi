@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ctrl-enter-publisher
-// @version      1.0
+// @version      1.1
 // @description  Ctrl+Enter публикует текущую запись
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/strapi-improve-scripts/ctrl-enter-publisher.js
@@ -14,7 +14,10 @@
     document.addEventListener('keydown', (event) => {
 
         // Ctrl + Enter
-        if (!event.ctrlKey || event.key !== 'Enter') return;
+        if (!event.ctrlKey || event.code !== 'Enter') return;
+
+        // Защита от удерживания клавиши
+        if (event.repeat) return;
 
         const publishButton = [...document.querySelectorAll('button')]
             .find(button =>
