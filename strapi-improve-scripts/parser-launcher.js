@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         parser-launcher
-// @version      1.0
+// @version      1.1
 // @description  Запускает console-парсеры из GitHub по Alt+P
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/strapi-improve-scripts/parser-launcher.js
@@ -61,6 +61,16 @@
     });
   }
 
+  function executeParser(code, file) {
+    const script = document.createElement('script');
+
+    script.textContent =
+      `${code}\n//# sourceURL=parser-launcher/${file}`;
+
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+  }
+
   async function runParser(parser, status) {
     status.textContent = `Загрузка: ${parser.file}`;
     status.style.color = '#c7c7d4';
@@ -68,16 +78,13 @@
     try {
       const code = await loadParserCode(parser.file);
 
-      status.textContent = `Запущен: ${parser.name}`;
-      status.style.color = '#5cb176';
+      executeParser(code, parser.file);
+
+      console.log(
+        `[Parser Launcher] Запущен: ${parser.name}`
+      );
 
       closeLauncher();
-
-      const result = (0, eval)(code);
-
-      if (result && typeof result.then === 'function') {
-        await result;
-      }
     } catch (error) {
       console.error('[Parser Launcher]', error);
 
