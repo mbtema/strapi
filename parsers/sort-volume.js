@@ -1,3 +1,6 @@
+// @version 1.0
+// @description выявляет товары у которого в торговых предложениях есть обьемы с неправильной сортировкой
+
 (async () => {
   const BASE_URL = 'http://10.10.3.80:1337/api/products';
   const PAGE_SIZE = 100;
