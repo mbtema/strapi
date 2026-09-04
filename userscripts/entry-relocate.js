@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         entry-relocate
-// @version      1.0
-// @description  Переносит блок entry
+// @version      1.1
+// @description  Переносит действия Entry в строку с Draft / Published
 // @match        http://10.10.3.80:1337/admin/*
 // @grant        none
 // ==/UserScript==
@@ -10,6 +10,7 @@
     'use strict';
 
     let currentAside = null;
+    let timer;
 
     function getEntry() {
         return document.querySelector(
@@ -17,10 +18,6 @@
         );
     }
 
-    // Ищем именно тот контейнер, где:
-    //
-    // [ большая форма ] [ маленький ENTRY ]
-    //
     function findLayout(aside) {
         let node = aside;
 
@@ -28,8 +25,6 @@
             const parent = node.parentElement;
             const children = [...parent.children];
 
-            // Прямой ребёнок этого контейнера,
-            // внутри которого находится ENTRY
             const entryColumn = children.find(
                 child => child.contains(aside)
             );
@@ -39,14 +34,12 @@
                 continue;
             }
 
-            const entryRect =
-                entryColumn.getBoundingClientRect();
+            const entryRect = entryColumn.getBoundingClientRect();
 
             const candidates = children
                 .filter(child => child !== entryColumn)
                 .filter(child => {
-                    const rect =
-                        child.getBoundingClientRect();
+                    const rect = child.getBoundingClientRect();
 
                     return (
                         rect.width > entryRect.width &&
@@ -63,16 +56,10 @@
                 )[0];
 
             if (mainColumn) {
-                const mainRect =
-                    mainColumn.getBoundingClientRect();
+                const mainRect = mainColumn.getBoundingClientRect();
 
-                // Они должны находиться примерно
-                // на одной горизонтальной линии
                 if (
-                    Math.abs(
-                        mainRect.top -
-                        entryRect.top
-                    ) < 100
+                    Math.abs(mainRect.top - entryRect.top) < 100
                 ) {
                     return {
                         container: parent,
@@ -86,6 +73,276 @@
         }
 
         return null;
+    }
+
+    function findTabs() {
+        const tabLists = [
+            ...document.querySelectorAll('[role="tablist"]')
+        ];
+
+        let tabList = tabLists.find(element => {
+            const text = element.textContent || '';
+
+            return (
+                /draft/i.test(text) &&
+                /published/i.test(text)
+            );
+        });
+
+        if (!tabList) {
+            const tabs = [
+                ...document.querySelectorAll('[role="tab"]')
+            ];
+
+            const draftTab = tabs.find(tab =>
+                /^draft$/i.test(tab.textContent?.trim() || '')
+            );
+
+            const publishedTab = tabs.find(tab =>
+                /^published$/i.test(tab.textContent?.trim() || '')
+            );
+
+            if (
+                draftTab &&
+                publishedTab &&
+                draftTab.parentElement === publishedTab.parentElement
+            ) {
+                tabList = draftTab.parentElement;
+            }
+        }
+
+        if (!tabList) return null;
+
+        return {
+            tabList,
+            tabRow: tabList.parentElement
+        };
+    }
+
+    function flattenButtonWrappers(aside, buttons) {
+        const wrappers = new Set();
+
+        buttons.forEach(button => {
+            let node = button.parentElement;
+
+            while (node && node !== aside) {
+                if (node.tagName === 'DIV') {
+                    wrappers.add(node);
+                }
+
+                node = node.parentElement;
+            }
+        });
+
+        wrappers.forEach(wrapper => {
+            wrapper.style.setProperty(
+                'display',
+                'contents',
+                'important'
+            );
+        });
+    }
+
+    function styleEntry(aside, entryColumn) {
+        const title = aside.querySelector('h2');
+
+        if (title) {
+            title.style.setProperty(
+                'display',
+                'none',
+                'important'
+            );
+        }
+
+        const buttons = [...aside.querySelectorAll('button')];
+
+        if (!buttons.length) return false;
+
+        flattenButtonWrappers(aside, buttons);
+
+        entryColumn.style.setProperty(
+            'width',
+            'auto',
+            'important'
+        );
+
+        entryColumn.style.setProperty(
+            'max-width',
+            'none',
+            'important'
+        );
+
+        entryColumn.style.setProperty(
+            'margin-left',
+            'auto',
+            'important'
+        );
+
+        entryColumn.style.setProperty(
+            'align-self',
+            'center',
+            'important'
+        );
+
+        entryColumn.style.setProperty(
+            'grid-area',
+            'auto',
+            'important'
+        );
+
+        aside.style.setProperty(
+            'display',
+            'flex',
+            'important'
+        );
+
+        aside.style.setProperty(
+            'flex-direction',
+            'row',
+            'important'
+        );
+
+        aside.style.setProperty(
+            'align-items',
+            'center',
+            'important'
+        );
+
+        aside.style.setProperty(
+            'gap',
+            '8px',
+            'important'
+        );
+
+        aside.style.setProperty(
+            'width',
+            'auto',
+            'important'
+        );
+
+        aside.style.setProperty(
+            'min-width',
+            '0',
+            'important'
+        );
+
+        aside.style.setProperty(
+            'padding',
+            '0',
+            'important'
+        );
+
+        aside.style.setProperty(
+            'margin',
+            '0',
+            'important'
+        );
+
+        aside.style.setProperty(
+            'border',
+            '0',
+            'important'
+        );
+
+        aside.style.setProperty(
+            'background',
+            'transparent',
+            'important'
+        );
+
+        aside.style.setProperty(
+            'box-shadow',
+            'none',
+            'important'
+        );
+
+        buttons.forEach(button => {
+            const text = (button.textContent || '')
+                .trim()
+                .toLowerCase();
+
+            const label = (
+                button.getAttribute('aria-label') || ''
+            ).toLowerCase();
+
+            const isPublish = text === 'publish';
+            const isSave = text === 'save';
+            const isMore =
+                !isPublish &&
+                !isSave &&
+                (
+                    label.includes('more') ||
+                    label.includes('action') ||
+                    text === '' ||
+                    text === '...'
+                );
+
+            button.style.setProperty(
+                'height',
+                '32px',
+                'important'
+            );
+
+            button.style.setProperty(
+                'margin',
+                '0',
+                'important'
+            );
+
+            button.style.setProperty(
+                'flex',
+                '0 0 auto',
+                'important'
+            );
+
+            if (isPublish) {
+                button.style.setProperty(
+                    'order',
+                    '1',
+                    'important'
+                );
+
+                button.style.setProperty(
+                    'width',
+                    '128px',
+                    'important'
+                );
+            } else if (isSave) {
+                button.style.setProperty(
+                    'order',
+                    '2',
+                    'important'
+                );
+
+                button.style.setProperty(
+                    'width',
+                    '128px',
+                    'important'
+                );
+            } else {
+                button.style.setProperty(
+                    'order',
+                    '3',
+                    'important'
+                );
+
+                if (isMore) {
+                    button.style.setProperty(
+                        'width',
+                        '32px',
+                        'important'
+                    );
+
+                    button.style.setProperty(
+                        'min-width',
+                        '32px',
+                        'important'
+                    );
+                }
+            }
+        });
+
+        return true;
     }
 
     function apply() {
@@ -104,10 +361,11 @@
         }
 
         const layout = findLayout(aside);
+        const tabs = findTabs();
 
-        if (!layout) {
+        if (!layout || !tabs?.tabRow) {
             console.log(
-                '[ENTRY] Не удалось найти контейнер form + ENTRY'
+                '[ENTRY] Не удалось найти layout или строку Draft / Published'
             );
             return;
         }
@@ -118,49 +376,15 @@
             mainColumn
         } = layout;
 
-        // Запоминаем исходную ширину ENTRY
-        const originalWidth =
-            entryColumn.getBoundingClientRect().width;
+        const {
+            tabList,
+            tabRow
+        } = tabs;
 
-        // -----------------------------------------------------
-        // КЛЮЧЕВОЙ МОМЕНТ
-        //
-        // Физически переставляем ENTRY перед формой
-        // -----------------------------------------------------
-
-        container.insertBefore(
-            entryColumn,
-            mainColumn
-        );
-
-        // -----------------------------------------------------
-        // Родитель теперь вертикальный:
-        //
-        // ENTRY
-        // FORM
-        // -----------------------------------------------------
-
+        // Убираем старую двухколоночную схему form + Entry.
         container.style.setProperty(
             'display',
-            'flex',
-            'important'
-        );
-
-        container.style.setProperty(
-            'flex-direction',
-            'column',
-            'important'
-        );
-
-        container.style.setProperty(
-            'align-items',
-            'stretch',
-            'important'
-        );
-
-        container.style.setProperty(
-            'gap',
-            '16px',
+            'block',
             'important'
         );
 
@@ -169,47 +393,6 @@
             '100%',
             'important'
         );
-
-        // -----------------------------------------------------
-        // ENTRY
-        //
-        // Сам aside НЕ меняем.
-        // Меняем только его внешний контейнер.
-        // -----------------------------------------------------
-
-        entryColumn.style.setProperty(
-            'align-self',
-            'flex-start',
-            'important'
-        );
-
-        entryColumn.style.setProperty(
-            'width',
-            `${originalWidth}px`,
-            'important'
-        );
-
-        entryColumn.style.setProperty(
-            'max-width',
-            `${originalWidth}px`,
-            'important'
-        );
-
-        entryColumn.style.setProperty(
-            'grid-column',
-            'auto',
-            'important'
-        );
-
-        entryColumn.style.setProperty(
-            'grid-row',
-            'auto',
-            'important'
-        );
-
-        // -----------------------------------------------------
-        // ФОРМА
-        // -----------------------------------------------------
 
         mainColumn.style.setProperty(
             'width',
@@ -224,12 +407,6 @@
         );
 
         mainColumn.style.setProperty(
-            'flex',
-            '1 1 auto',
-            'important'
-        );
-
-        mainColumn.style.setProperty(
             'grid-column',
             'auto',
             'important'
@@ -241,26 +418,50 @@
             'important'
         );
 
-        aside.dataset.tmEntryMoved = 'true';
+        // Строка теперь выглядит так:
+        // DRAFT / PUBLISHED                    Publish Save ...
+        tabRow.style.setProperty(
+            'display',
+            'flex',
+            'important'
+        );
 
+        tabRow.style.setProperty(
+            'align-items',
+            'center',
+            'important'
+        );
+
+        tabRow.style.setProperty(
+            'width',
+            '100%',
+            'important'
+        );
+
+        tabList.style.setProperty(
+            'flex',
+            '0 0 auto',
+            'important'
+        );
+
+        tabRow.appendChild(entryColumn);
+
+        if (!styleEntry(aside, entryColumn)) {
+            console.log(
+                '[ENTRY] Не удалось найти кнопки Entry'
+            );
+            return;
+        }
+
+        aside.dataset.tmEntryMoved = 'true';
         currentAside = aside;
 
         console.log(
-            '[ENTRY] Перенесён над формой',
-            {
-                entryWidth: originalWidth,
-                container,
-                mainColumn,
-                entryColumn
-            }
+            '[ENTRY] Действия перенесены в строку Draft / Published'
         );
     }
 
-    // Первый запуск
     setTimeout(apply, 300);
-
-    // Strapi может пересоздать интерфейс
-    let timer;
 
     const observer = new MutationObserver(() => {
         clearTimeout(timer);
