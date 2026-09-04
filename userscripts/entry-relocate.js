@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         entry-relocate
-// @version      1.3
+// @version      1.4
 // @description  Переносит действия Entry в строку с Draft / Published
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/entry-relocate.js
 // @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/entry-relocate.js
+// @run-at       document-start
 // @grant        none
 // ==/UserScript==
 
@@ -12,7 +13,7 @@
     'use strict';
 
     let currentAside = null;
-    let timer;
+    let frameScheduled = false;
 
     function getEntry() {
         return document.querySelector(
@@ -40,29 +41,25 @@
 
             const mainColumn = children
                 .filter(child => child !== entryColumn)
-                .filter(child => {
-                    const rect = child.getBoundingClientRect();
-
-                    return (
-                        rect.width > entryRect.width &&
-                        rect.width > 500 &&
-                        rect.height > 200
-                    );
-                })
-                .sort(
-                    (a, b) =>
-                        b.getBoundingClientRect().width -
-                        a.getBoundingClientRect().width
-                )[0];
+                .map(child => ({
+                    child,
+                    rect: child.getBoundingClientRect()
+                }))
+                .filter(({ rect }) => (
+                    rect.width > entryRect.width &&
+                    rect.width > 500 &&
+                    rect.height > 200
+                ))
+                .sort((a, b) => b.rect.width - a.rect.width)[0];
 
             if (mainColumn) {
-                const mainRect = mainColumn.getBoundingClientRect();
-
-                if (Math.abs(mainRect.top - entryRect.top) < 100) {
+                if (
+                    Math.abs(mainColumn.rect.top - entryRect.top) < 100
+                ) {
                     return {
                         container: parent,
                         entryColumn,
-                        mainColumn
+                        mainColumn: mainColumn.child
                     };
                 }
             }
@@ -78,7 +75,7 @@
             ...document.querySelectorAll('[role="tablist"]')
         ];
 
-        let tabList = tabLists.find(element => {
+        const tabList = tabLists.find(element => {
             const text = element.textContent || '';
 
             return (
@@ -130,8 +127,7 @@
         return {
             publish,
             save,
-            rest,
-            all: buttons
+            rest
         };
     }
 
@@ -189,7 +185,6 @@
             .querySelectorAll('[data-tm-entry-toolbar="true"]')
             .forEach(toolbar => {
                 if (toolbar.contains(tabList)) return;
-
                 toolbar.remove();
             });
     }
@@ -202,9 +197,14 @@
             return;
         }
 
+        const existingToolbar = document.querySelector(
+            '[data-tm-entry-toolbar="true"]'
+        );
+
         if (
             aside === currentAside &&
-            aside.dataset.tmEntryMoved === 'true'
+            aside.dataset.tmEntryMoved === 'true' &&
+            existingToolbar
         ) {
             return;
         }
@@ -212,19 +212,11 @@
         const layout = findLayout(aside);
         const tabList = findTabList();
 
-        if (!layout || !tabList) {
-            console.log(
-                '[ENTRY] Не удалось найти layout или Draft / Published'
-            );
-            return;
-        }
+        if (!layout || !tabList) return;
 
         const buttons = classifyButtons(aside);
 
-        if (!buttons.publish || !buttons.save) {
-            console.log('[ENTRY] Не удалось найти Publish / Save');
-            return;
-        }
+        if (!buttons.publish || !buttons.save) return;
 
         cleanupOldToolbars(tabList);
 
@@ -243,13 +235,12 @@
         mainColumn.style.setProperty('grid-column', 'auto', 'important');
         mainColumn.style.setProperty('grid-row', 'auto', 'important');
 
-        // Создаём собственную строку:
         // DRAFT / PUBLISHED                    Publish Save ...
         const {
             actions
         } = createToolbar(tabList);
 
-        // Переносим именно кнопки, без карточки Entry и её внутренних обёрток.
+        // Переносим только кнопки, без карточки Entry.
         actions.appendChild(buttons.publish);
         actions.appendChild(buttons.save);
 
@@ -264,23 +255,24 @@
             styleButton(button, '32px');
         });
 
-        // Исходная колонка Entry теперь не нужна.
         entryColumn.style.setProperty('display', 'none', 'important');
 
         aside.dataset.tmEntryMoved = 'true';
         currentAside = aside;
 
         console.log(
-            '[ENTRY] v1.3: Publish / Save / ... вынесены в одну строку'
+            '[ENTRY] v1.4: UI применён без искусственной задержки'
         );
     }
 
-    setTimeout(apply, 300);
+    function scheduleApply() {
+        if (frameScheduled) return;
 
-    const observer = new MutationObserver(() => {
-        clearTimeout(timer);
+        frameScheduled = true;
 
-        timer = setTimeout(() => {
+        requestAnimationFrame(() => {
+            frameScheduled = false;
+
             if (
                 currentAside &&
                 !document.contains(currentAside)
@@ -289,12 +281,25 @@
             }
 
             apply();
-        }, 100);
-    });
+        });
+    }
 
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
+    const observer = new MutationObserver(scheduleApply);
+
+    function start() {
+        if (!document.documentElement) {
+            requestAnimationFrame(start);
+            return;
+        }
+
+        observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true
+        });
+
+        scheduleApply();
+    }
+
+    start();
 
 })();
