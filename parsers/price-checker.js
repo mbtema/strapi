@@ -1,3 +1,6 @@
+// @version 1.0
+// @description проверяет цены для всех торговых предложений, выявляет те у которых цена равна не целому числу
+
 (async () => {
   const BASE_URL = 'http://10.10.3.80:1337/api/attributes';
   const PAGE_SIZE = 100;
