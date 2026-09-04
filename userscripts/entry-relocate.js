@@ -3,6 +3,8 @@
 // @version      1.1
 // @description  Переносит действия Entry в строку с Draft / Published
 // @match        http://10.10.3.80:1337/admin/*
+// @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/entry-relocate.js
+// @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/entry-relocate.js
 // @grant        none
 // ==/UserScript==
 
