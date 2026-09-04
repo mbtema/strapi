@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         toggle-sidebar
-// @version      4.0
+// @version      1.1
 // @description  Sidebar скрыт по умолчанию, Alt+S переключает его
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/strapi-improve-scripts/toggle-sidebar.js
 // @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/strapi-improve-scripts/toggle-sidebar.js
+// @run-at       document-start
 // @grant        none
 // ==/UserScript==
 
@@ -17,8 +18,8 @@
     let sidebar = null;
     let layout = null;
     let main = null;
-
     let original = null;
+    let scheduled = false;
 
 
     // =========================================================
@@ -29,7 +30,6 @@
         const candidates = [
             ...document.querySelectorAll('aside, nav, div')
         ].filter(element => {
-
             const text = element.innerText || '';
             const rect = element.getBoundingClientRect();
 
@@ -58,14 +58,8 @@
     // =========================================================
 
     function init() {
-
-        /*
-         * КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ:
-         *
-         * если sidebar уже найден, даже если он display:none,
-         * используем сохранённую ссылку и НЕ ищем его заново.
-         */
-
+        // Если sidebar уже найден, используем сохранённую ссылку,
+        // даже если он сейчас скрыт через display:none.
         if (
             sidebar &&
             document.contains(sidebar) &&
@@ -74,7 +68,6 @@
         ) {
             return true;
         }
-
 
         const foundSidebar = findSidebar();
 
@@ -93,7 +86,6 @@
             console.log('[Sidebar] Main content not found');
             return false;
         }
-
 
         // Сохраняем исходные стили Strapi
         original = {
@@ -141,7 +133,6 @@
     // =========================================================
 
     function hideSidebar() {
-
         sidebar.style.setProperty(
             'display',
             'none',
@@ -179,18 +170,12 @@
     // =========================================================
 
     function showSidebar() {
-
         // Сначала удаляем наши !important
         sidebar.style.removeProperty('display');
-
-        layout.style.removeProperty(
-            'grid-template-columns'
-        );
-
+        layout.style.removeProperty('grid-template-columns');
         main.style.removeProperty('grid-column');
         main.style.removeProperty('width');
         main.style.removeProperty('max-width');
-
 
         // Возвращаем исходные значения, если они были
         if (original.sidebarDisplay) {
@@ -240,7 +225,6 @@
     // =========================================================
 
     function applyState() {
-
         if (!init()) {
             return;
         }
@@ -258,7 +242,6 @@
     // =========================================================
 
     function toggle() {
-
         if (!init()) {
             return;
         }
@@ -284,11 +267,11 @@
     window.addEventListener(
         'keydown',
         event => {
-
+            const key = event.key?.toLowerCase() || '';
             const isS =
                 event.code === 'KeyS' ||
-                event.key.toLowerCase() === 's' ||
-                event.key.toLowerCase() === 'ы';
+                key === 's' ||
+                key === 'ы';
 
             if (
                 event.altKey &&
@@ -313,18 +296,23 @@
 
 
     // =========================================================
-    // REACT
+    // REACT / БЫСТРЫЙ СТАРТ
     // =========================================================
 
-    let scheduled = false;
+    function scheduleApply() {
+        if (scheduled) return;
+
+        scheduled = true;
+
+        requestAnimationFrame(() => {
+            scheduled = false;
+            applyState();
+        });
+    }
 
     const observer = new MutationObserver(() => {
-
-        /*
-         * Если React уничтожил sidebar при переходе
-         * между страницами — ищем новый.
-         */
-
+        // Если React уничтожил sidebar при переходе между страницами,
+        // сбрасываем ссылки и ищем новый.
         if (
             sidebar &&
             document.contains(sidebar)
@@ -337,27 +325,24 @@
         main = null;
         original = null;
 
-        if (scheduled) return;
+        scheduleApply();
+    });
 
-        scheduled = true;
+    function start() {
+        if (!document.documentElement) {
+            requestAnimationFrame(start);
+            return;
+        }
 
-        requestAnimationFrame(() => {
-            scheduled = false;
-            applyState();
+        observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true
         });
-    });
 
+        // Без искусственной задержки в 300 мс.
+        scheduleApply();
+    }
 
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
-
-
-    // Первый запуск
-    setTimeout(
-        applyState,
-        300
-    );
+    start();
 
 })();
