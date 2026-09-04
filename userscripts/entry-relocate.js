@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         entry-relocate
-// @version      1.1
+// @version      1.2
 // @description  Переносит действия Entry в строку с Draft / Published
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/entry-relocate.js
@@ -38,7 +38,7 @@
 
             const entryRect = entryColumn.getBoundingClientRect();
 
-            const candidates = children
+            const mainColumn = children
                 .filter(child => child !== entryColumn)
                 .filter(child => {
                     const rect = child.getBoundingClientRect();
@@ -48,9 +48,7 @@
                         rect.width > 500 &&
                         rect.height > 200
                     );
-                });
-
-            const mainColumn = candidates
+                })
                 .sort(
                     (a, b) =>
                         b.getBoundingClientRect().width -
@@ -60,9 +58,7 @@
             if (mainColumn) {
                 const mainRect = mainColumn.getBoundingClientRect();
 
-                if (
-                    Math.abs(mainRect.top - entryRect.top) < 100
-                ) {
+                if (Math.abs(mainRect.top - entryRect.top) < 100) {
                     return {
                         container: parent,
                         entryColumn,
@@ -77,7 +73,7 @@
         return null;
     }
 
-    function findTabs() {
+    function findTabList() {
         const tabLists = [
             ...document.querySelectorAll('[role="tablist"]')
         ];
@@ -91,34 +87,29 @@
             );
         });
 
-        if (!tabList) {
-            const tabs = [
-                ...document.querySelectorAll('[role="tab"]')
-            ];
+        if (tabList) return tabList;
 
-            const draftTab = tabs.find(tab =>
-                /^draft$/i.test(tab.textContent?.trim() || '')
-            );
+        const tabs = [
+            ...document.querySelectorAll('[role="tab"]')
+        ];
 
-            const publishedTab = tabs.find(tab =>
-                /^published$/i.test(tab.textContent?.trim() || '')
-            );
+        const draftTab = tabs.find(tab =>
+            /^draft$/i.test(tab.textContent?.trim() || '')
+        );
 
-            if (
-                draftTab &&
-                publishedTab &&
-                draftTab.parentElement === publishedTab.parentElement
-            ) {
-                tabList = draftTab.parentElement;
-            }
+        const publishedTab = tabs.find(tab =>
+            /^published$/i.test(tab.textContent?.trim() || '')
+        );
+
+        if (
+            draftTab &&
+            publishedTab &&
+            draftTab.parentElement === publishedTab.parentElement
+        ) {
+            return draftTab.parentElement;
         }
 
-        if (!tabList) return null;
-
-        return {
-            tabList,
-            tabRow: tabList.parentElement
-        };
+        return null;
     }
 
     function flattenButtonWrappers(aside, buttons) {
@@ -145,7 +136,7 @@
         });
     }
 
-    function styleEntry(aside, entryColumn) {
+    function styleActions(aside) {
         const title = aside.querySelector('h2');
 
         if (title) {
@@ -162,101 +153,17 @@
 
         flattenButtonWrappers(aside, buttons);
 
-        entryColumn.style.setProperty(
-            'width',
-            'auto',
-            'important'
-        );
-
-        entryColumn.style.setProperty(
-            'max-width',
-            'none',
-            'important'
-        );
-
-        entryColumn.style.setProperty(
-            'margin-left',
-            'auto',
-            'important'
-        );
-
-        entryColumn.style.setProperty(
-            'align-self',
-            'center',
-            'important'
-        );
-
-        entryColumn.style.setProperty(
-            'grid-area',
-            'auto',
-            'important'
-        );
-
-        aside.style.setProperty(
-            'display',
-            'flex',
-            'important'
-        );
-
-        aside.style.setProperty(
-            'flex-direction',
-            'row',
-            'important'
-        );
-
-        aside.style.setProperty(
-            'align-items',
-            'center',
-            'important'
-        );
-
-        aside.style.setProperty(
-            'gap',
-            '8px',
-            'important'
-        );
-
-        aside.style.setProperty(
-            'width',
-            'auto',
-            'important'
-        );
-
-        aside.style.setProperty(
-            'min-width',
-            '0',
-            'important'
-        );
-
-        aside.style.setProperty(
-            'padding',
-            '0',
-            'important'
-        );
-
-        aside.style.setProperty(
-            'margin',
-            '0',
-            'important'
-        );
-
-        aside.style.setProperty(
-            'border',
-            '0',
-            'important'
-        );
-
-        aside.style.setProperty(
-            'background',
-            'transparent',
-            'important'
-        );
-
-        aside.style.setProperty(
-            'box-shadow',
-            'none',
-            'important'
-        );
+        aside.style.setProperty('display', 'flex', 'important');
+        aside.style.setProperty('flex-direction', 'row', 'important');
+        aside.style.setProperty('align-items', 'center', 'important');
+        aside.style.setProperty('gap', '8px', 'important');
+        aside.style.setProperty('width', 'auto', 'important');
+        aside.style.setProperty('min-width', '0', 'important');
+        aside.style.setProperty('padding', '0', 'important');
+        aside.style.setProperty('margin', '0', 'important');
+        aside.style.setProperty('border', '0', 'important');
+        aside.style.setProperty('background', 'transparent', 'important');
+        aside.style.setProperty('box-shadow', 'none', 'important');
 
         buttons.forEach(button => {
             const text = (button.textContent || '')
@@ -279,72 +186,64 @@
                     text === '...'
                 );
 
-            button.style.setProperty(
-                'height',
-                '32px',
-                'important'
-            );
-
-            button.style.setProperty(
-                'margin',
-                '0',
-                'important'
-            );
-
-            button.style.setProperty(
-                'flex',
-                '0 0 auto',
-                'important'
-            );
+            button.style.setProperty('height', '32px', 'important');
+            button.style.setProperty('margin', '0', 'important');
+            button.style.setProperty('flex', '0 0 auto', 'important');
 
             if (isPublish) {
-                button.style.setProperty(
-                    'order',
-                    '1',
-                    'important'
-                );
-
-                button.style.setProperty(
-                    'width',
-                    '128px',
-                    'important'
-                );
+                button.style.setProperty('order', '1', 'important');
+                button.style.setProperty('width', '128px', 'important');
             } else if (isSave) {
-                button.style.setProperty(
-                    'order',
-                    '2',
-                    'important'
-                );
-
-                button.style.setProperty(
-                    'width',
-                    '128px',
-                    'important'
-                );
+                button.style.setProperty('order', '2', 'important');
+                button.style.setProperty('width', '128px', 'important');
             } else {
-                button.style.setProperty(
-                    'order',
-                    '3',
-                    'important'
-                );
+                button.style.setProperty('order', '3', 'important');
 
                 if (isMore) {
-                    button.style.setProperty(
-                        'width',
-                        '32px',
-                        'important'
-                    );
-
-                    button.style.setProperty(
-                        'min-width',
-                        '32px',
-                        'important'
-                    );
+                    button.style.setProperty('width', '32px', 'important');
+                    button.style.setProperty('min-width', '32px', 'important');
                 }
             }
         });
 
         return true;
+    }
+
+    function createToolbar(tabList) {
+        const toolbar = document.createElement('div');
+
+        toolbar.dataset.tmEntryToolbar = 'true';
+
+        toolbar.style.setProperty('display', 'flex', 'important');
+        toolbar.style.setProperty('align-items', 'center', 'important');
+        toolbar.style.setProperty('justify-content', 'space-between', 'important');
+        toolbar.style.setProperty('gap', '16px', 'important');
+        toolbar.style.setProperty('width', '100%', 'important');
+
+        const parent = tabList.parentElement;
+
+        parent.insertBefore(toolbar, tabList);
+        toolbar.appendChild(tabList);
+
+        tabList.style.setProperty('flex', '0 0 auto', 'important');
+
+        return toolbar;
+    }
+
+    function cleanupStaleToolbar(aside) {
+        document
+            .querySelectorAll('[data-tm-entry-toolbar="true"]')
+            .forEach(toolbar => {
+                if (!toolbar.contains(aside)) {
+                    const tabList = toolbar.querySelector('[role="tablist"]');
+
+                    if (tabList && toolbar.parentElement) {
+                        toolbar.parentElement.insertBefore(tabList, toolbar);
+                    }
+
+                    toolbar.remove();
+                }
+            });
     }
 
     function apply() {
@@ -362,12 +261,14 @@
             return;
         }
 
-        const layout = findLayout(aside);
-        const tabs = findTabs();
+        cleanupStaleToolbar(aside);
 
-        if (!layout || !tabs?.tabRow) {
+        const layout = findLayout(aside);
+        const tabList = findTabList();
+
+        if (!layout || !tabList) {
             console.log(
-                '[ENTRY] Не удалось найти layout или строку Draft / Published'
+                '[ENTRY] Не удалось найти layout или Draft / Published'
             );
             return;
         }
@@ -378,80 +279,27 @@
             mainColumn
         } = layout;
 
-        const {
-            tabList,
-            tabRow
-        } = tabs;
+        // Возвращаем форме обычную полноширинную схему.
+        container.style.setProperty('display', 'block', 'important');
+        container.style.setProperty('width', '100%', 'important');
 
-        // Убираем старую двухколоночную схему form + Entry.
-        container.style.setProperty(
-            'display',
-            'block',
-            'important'
-        );
+        mainColumn.style.setProperty('width', '100%', 'important');
+        mainColumn.style.setProperty('max-width', 'none', 'important');
+        mainColumn.style.setProperty('grid-column', 'auto', 'important');
+        mainColumn.style.setProperty('grid-row', 'auto', 'important');
 
-        container.style.setProperty(
-            'width',
-            '100%',
-            'important'
-        );
+        // Старую колонку Entry больше не используем.
+        entryColumn.style.setProperty('display', 'none', 'important');
 
-        mainColumn.style.setProperty(
-            'width',
-            '100%',
-            'important'
-        );
-
-        mainColumn.style.setProperty(
-            'max-width',
-            'none',
-            'important'
-        );
-
-        mainColumn.style.setProperty(
-            'grid-column',
-            'auto',
-            'important'
-        );
-
-        mainColumn.style.setProperty(
-            'grid-row',
-            'auto',
-            'important'
-        );
-
-        // Строка теперь выглядит так:
+        // Создаём отдельную строку только вокруг табов.
         // DRAFT / PUBLISHED                    Publish Save ...
-        tabRow.style.setProperty(
-            'display',
-            'flex',
-            'important'
-        );
+        const toolbar = createToolbar(tabList);
 
-        tabRow.style.setProperty(
-            'align-items',
-            'center',
-            'important'
-        );
+        // Переносим только сам aside, без внешней карточки/колонки.
+        toolbar.appendChild(aside);
 
-        tabRow.style.setProperty(
-            'width',
-            '100%',
-            'important'
-        );
-
-        tabList.style.setProperty(
-            'flex',
-            '0 0 auto',
-            'important'
-        );
-
-        tabRow.appendChild(entryColumn);
-
-        if (!styleEntry(aside, entryColumn)) {
-            console.log(
-                '[ENTRY] Не удалось найти кнопки Entry'
-            );
+        if (!styleActions(aside)) {
+            console.log('[ENTRY] Не удалось найти кнопки Entry');
             return;
         }
 
@@ -459,7 +307,7 @@
         currentAside = aside;
 
         console.log(
-            '[ENTRY] Действия перенесены в строку Draft / Published'
+            '[ENTRY] v1.2: действия выровнены с Draft / Published'
         );
     }
 
