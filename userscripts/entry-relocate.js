@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         entry-relocate
-// @version      1.2
+// @version      1.3
 // @description  Переносит действия Entry в строку с Draft / Published
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/entry-relocate.js
@@ -112,137 +112,85 @@
         return null;
     }
 
-    function flattenButtonWrappers(aside, buttons) {
-        const wrappers = new Set();
-
-        buttons.forEach(button => {
-            let node = button.parentElement;
-
-            while (node && node !== aside) {
-                if (node.tagName === 'DIV') {
-                    wrappers.add(node);
-                }
-
-                node = node.parentElement;
-            }
-        });
-
-        wrappers.forEach(wrapper => {
-            wrapper.style.setProperty(
-                'display',
-                'contents',
-                'important'
-            );
-        });
-    }
-
-    function styleActions(aside) {
-        const title = aside.querySelector('h2');
-
-        if (title) {
-            title.style.setProperty(
-                'display',
-                'none',
-                'important'
-            );
-        }
-
+    function classifyButtons(aside) {
         const buttons = [...aside.querySelectorAll('button')];
 
-        if (!buttons.length) return false;
+        const publish = buttons.find(button =>
+            /^publish$/i.test(button.textContent?.trim() || '')
+        );
 
-        flattenButtonWrappers(aside, buttons);
+        const save = buttons.find(button =>
+            /^save$/i.test(button.textContent?.trim() || '')
+        );
 
-        aside.style.setProperty('display', 'flex', 'important');
-        aside.style.setProperty('flex-direction', 'row', 'important');
-        aside.style.setProperty('align-items', 'center', 'important');
-        aside.style.setProperty('gap', '8px', 'important');
-        aside.style.setProperty('width', 'auto', 'important');
-        aside.style.setProperty('min-width', '0', 'important');
-        aside.style.setProperty('padding', '0', 'important');
-        aside.style.setProperty('margin', '0', 'important');
-        aside.style.setProperty('border', '0', 'important');
-        aside.style.setProperty('background', 'transparent', 'important');
-        aside.style.setProperty('box-shadow', 'none', 'important');
+        const rest = buttons.filter(
+            button => button !== publish && button !== save
+        );
 
-        buttons.forEach(button => {
-            const text = (button.textContent || '')
-                .trim()
-                .toLowerCase();
+        return {
+            publish,
+            save,
+            rest,
+            all: buttons
+        };
+    }
 
-            const label = (
-                button.getAttribute('aria-label') || ''
-            ).toLowerCase();
-
-            const isPublish = text === 'publish';
-            const isSave = text === 'save';
-            const isMore =
-                !isPublish &&
-                !isSave &&
-                (
-                    label.includes('more') ||
-                    label.includes('action') ||
-                    text === '' ||
-                    text === '...'
-                );
-
-            button.style.setProperty('height', '32px', 'important');
-            button.style.setProperty('margin', '0', 'important');
-            button.style.setProperty('flex', '0 0 auto', 'important');
-
-            if (isPublish) {
-                button.style.setProperty('order', '1', 'important');
-                button.style.setProperty('width', '128px', 'important');
-            } else if (isSave) {
-                button.style.setProperty('order', '2', 'important');
-                button.style.setProperty('width', '128px', 'important');
-            } else {
-                button.style.setProperty('order', '3', 'important');
-
-                if (isMore) {
-                    button.style.setProperty('width', '32px', 'important');
-                    button.style.setProperty('min-width', '32px', 'important');
-                }
-            }
-        });
-
-        return true;
+    function styleButton(button, width) {
+        button.style.setProperty('height', '32px', 'important');
+        button.style.setProperty('width', width, 'important');
+        button.style.setProperty('min-width', width, 'important');
+        button.style.setProperty('max-width', width, 'important');
+        button.style.setProperty('margin', '0', 'important');
+        button.style.setProperty('flex', '0 0 auto', 'important');
     }
 
     function createToolbar(tabList) {
         const toolbar = document.createElement('div');
+        const actions = document.createElement('div');
 
         toolbar.dataset.tmEntryToolbar = 'true';
+        actions.dataset.tmEntryActions = 'true';
 
         toolbar.style.setProperty('display', 'flex', 'important');
         toolbar.style.setProperty('align-items', 'center', 'important');
         toolbar.style.setProperty('justify-content', 'space-between', 'important');
         toolbar.style.setProperty('gap', '16px', 'important');
         toolbar.style.setProperty('width', '100%', 'important');
+        toolbar.style.setProperty('min-width', '0', 'important');
+
+        actions.style.setProperty('display', 'flex', 'important');
+        actions.style.setProperty('align-items', 'center', 'important');
+        actions.style.setProperty('justify-content', 'flex-end', 'important');
+        actions.style.setProperty('gap', '8px', 'important');
+        actions.style.setProperty('margin-left', 'auto', 'important');
+        actions.style.setProperty('flex-wrap', 'nowrap', 'important');
+        actions.style.setProperty('width', 'auto', 'important');
+        actions.style.setProperty('padding', '0', 'important');
+        actions.style.setProperty('border', '0', 'important');
+        actions.style.setProperty('background', 'transparent', 'important');
 
         const parent = tabList.parentElement;
 
         parent.insertBefore(toolbar, tabList);
         toolbar.appendChild(tabList);
+        toolbar.appendChild(actions);
 
         tabList.style.setProperty('flex', '0 0 auto', 'important');
+        tabList.style.setProperty('margin', '0', 'important');
 
-        return toolbar;
+        return {
+            toolbar,
+            actions
+        };
     }
 
-    function cleanupStaleToolbar(aside) {
+    function cleanupOldToolbars(tabList) {
         document
             .querySelectorAll('[data-tm-entry-toolbar="true"]')
             .forEach(toolbar => {
-                if (!toolbar.contains(aside)) {
-                    const tabList = toolbar.querySelector('[role="tablist"]');
+                if (toolbar.contains(tabList)) return;
 
-                    if (tabList && toolbar.parentElement) {
-                        toolbar.parentElement.insertBefore(tabList, toolbar);
-                    }
-
-                    toolbar.remove();
-                }
+                toolbar.remove();
             });
     }
 
@@ -261,8 +209,6 @@
             return;
         }
 
-        cleanupStaleToolbar(aside);
-
         const layout = findLayout(aside);
         const tabList = findTabList();
 
@@ -273,13 +219,22 @@
             return;
         }
 
+        const buttons = classifyButtons(aside);
+
+        if (!buttons.publish || !buttons.save) {
+            console.log('[ENTRY] Не удалось найти Publish / Save');
+            return;
+        }
+
+        cleanupOldToolbars(tabList);
+
         const {
             container,
             entryColumn,
             mainColumn
         } = layout;
 
-        // Возвращаем форме обычную полноширинную схему.
+        // Основная форма остаётся полноширинной.
         container.style.setProperty('display', 'block', 'important');
         container.style.setProperty('width', '100%', 'important');
 
@@ -288,26 +243,35 @@
         mainColumn.style.setProperty('grid-column', 'auto', 'important');
         mainColumn.style.setProperty('grid-row', 'auto', 'important');
 
-        // Старую колонку Entry больше не используем.
-        entryColumn.style.setProperty('display', 'none', 'important');
-
-        // Создаём отдельную строку только вокруг табов.
+        // Создаём собственную строку:
         // DRAFT / PUBLISHED                    Publish Save ...
-        const toolbar = createToolbar(tabList);
+        const {
+            actions
+        } = createToolbar(tabList);
 
-        // Переносим только сам aside, без внешней карточки/колонки.
-        toolbar.appendChild(aside);
+        // Переносим именно кнопки, без карточки Entry и её внутренних обёрток.
+        actions.appendChild(buttons.publish);
+        actions.appendChild(buttons.save);
 
-        if (!styleActions(aside)) {
-            console.log('[ENTRY] Не удалось найти кнопки Entry');
-            return;
-        }
+        buttons.rest.forEach(button => {
+            actions.appendChild(button);
+        });
+
+        styleButton(buttons.publish, '128px');
+        styleButton(buttons.save, '128px');
+
+        buttons.rest.forEach(button => {
+            styleButton(button, '32px');
+        });
+
+        // Исходная колонка Entry теперь не нужна.
+        entryColumn.style.setProperty('display', 'none', 'important');
 
         aside.dataset.tmEntryMoved = 'true';
         currentAside = aside;
 
         console.log(
-            '[ENTRY] v1.2: действия выровнены с Draft / Published'
+            '[ENTRY] v1.3: Publish / Save / ... вынесены в одну строку'
         );
     }
 
