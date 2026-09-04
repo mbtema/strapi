@@ -1,27 +1,13 @@
-// @version 1.0
-// @description выявляет товары с торговыми предложениями у которых обьемы имеют неоднородные приставки
+// ==ConsoleParser==
+// @name         volume-checker
+// @version      1.1
+// @description  Выявляет товары с неоднородными единицами измерения volume в торговых предложениях
+// @output       CSV
+// ==/ConsoleParser==
 
 (async () => {
-  const baseUrl = '/api/products';
-
-  const params = new URLSearchParams({
-    'pagination[pageSize]': '100',
-    'fields[0]': 'documentId',
-
-    'filters[active][$eq]': 'true',
-    'filters[attributes][volume][name][$notNull]': 'true',
-
-    'populate[attributes][populate][volume][fields][0]': 'name'
-  });
-
-  let page = 1;
-  let pageCount = 1;
-  let apiTotal = 0;
-
-  let totalScanned = 0;
-  let productsWithMultipleVolumes = 0;
-
-  const problematic = [];
+  const BASE_URL = '/api/products';
+  const PAGE_SIZE = 100;
 
   function getUnit(name) {
     if (!name) return '';
@@ -33,11 +19,60 @@
       .replace(/[0-9.,]+/g, '');
   }
 
-  do {
-    params.set('pagination[page]', page);
+  function downloadCSV(rows, filename) {
+    const headers = ['documentId', 'volumes', 'units'];
+
+    const escapeValue = value =>
+      `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+    const csv = [
+      headers.join(';'),
+      ...rows.map(row =>
+        headers
+          .map(header => escapeValue(row[header]))
+          .join(';')
+      )
+    ].join('\n');
+
+    const blob = new Blob(
+      ['\uFEFF' + csv],
+      { type: 'text/csv;charset=utf-8;' }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = url;
+    link.download = filename;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  const params = new URLSearchParams({
+    'pagination[pageSize]': String(PAGE_SIZE),
+    'fields[0]': 'documentId',
+    'filters[active][$eq]': 'true',
+    'filters[attributes][volume][name][$notNull]': 'true',
+    'populate[attributes][populate][volume][fields][0]': 'name'
+  });
+
+  let page = 1;
+  let pageCount = 1;
+  let apiTotal = 0;
+  let totalScanned = 0;
+  let productsWithMultipleVolumes = 0;
+
+  const problematic = new Map();
+
+  while (page <= pageCount) {
+    params.set('pagination[page]', String(page));
 
     const response = await fetch(
-      `${baseUrl}?${params.toString()}`
+      `${BASE_URL}?${params.toString()}`
     );
 
     if (!response.ok) {
@@ -54,25 +89,32 @@
     for (const product of json.data) {
       totalScanned++;
 
-      const volumeNames = (product.attributes ?? [])
-        .map(attribute => attribute?.volume?.name)
-        .filter(name =>
-          name !== null &&
-          name !== undefined &&
-          String(name).trim() !== ''
-        );
+      const volumeNames = [];
 
-      if (volumeNames.length < 2) {
-        continue;
+      for (const attribute of product.attributes ?? []) {
+        const name = attribute?.volume?.name;
+
+        if (
+          name === null ||
+          name === undefined ||
+          String(name).trim() === ''
+        ) {
+          continue;
+        }
+
+        volumeNames.push(name);
       }
+
+      if (volumeNames.length < 2) continue;
 
       productsWithMultipleVolumes++;
 
-      const units = volumeNames.map(getUnit);
-      const uniqueUnits = [...new Set(units)];
+      const uniqueUnits = [
+        ...new Set(volumeNames.map(getUnit))
+      ];
 
       if (uniqueUnits.length > 1) {
-        problematic.push({
+        problematic.set(product.documentId, {
           documentId: product.documentId,
           volumes: volumeNames.join(' | '),
           units: uniqueUnits
@@ -88,99 +130,27 @@
       page === pageCount
     ) {
       console.log(
-        `Страница ${page}/${pageCount} | Проверено: ${totalScanned}/${apiTotal}`
+        `Страница ${page}/${pageCount} | ` +
+        `Проверено: ${totalScanned}/${apiTotal}`
       );
     }
 
     page++;
-
-  } while (page <= pageCount);
-
-  const unique = [
-    ...new Map(
-      problematic.map(item => [
-        item.documentId,
-        item
-      ])
-    ).values()
-  ];
-
-  console.table(unique);
-
-  console.log('----------------------------');
-  console.log(`API total: ${apiTotal}`);
-  console.log(`Фактически проверено: ${totalScanned}`);
-  console.log(`С 2+ volume: ${productsWithMultipleVolumes}`);
-  console.log(`Проблемных товаров: ${unique.length}`);
-
-  if (totalScanned === apiTotal) {
-    console.log('✅ Проверены все товары');
-  } else {
-    console.log('❌ Проверены НЕ все товары');
   }
 
-  console.log('----------------------------');
+  const results = [...problematic.values()];
 
-  const csv = [
-    'documentId',
-    ...unique.map(item => item.documentId)
-  ].join('\n');
-
-  window.volumeCheckResults = unique;
-  window.volumeCheckCSV = csv;
-
-  const oldButton =
-    document.getElementById('volume-csv-download');
-
-  if (oldButton) oldButton.remove();
-
-  const button = document.createElement('button');
-
-  button.id = 'volume-csv-download';
-  button.textContent =
-    `Скачать CSV (${unique.length})`;
-
-  Object.assign(button.style, {
-    position: 'fixed',
-    top: '20px',
-    right: '20px',
-    zIndex: '999999',
-    padding: '14px 20px',
-    fontSize: '16px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-    borderRadius: '8px'
-  });
-
-  button.onclick = () => {
-    const blob = new Blob(
-      ['\uFEFF' + csv],
-      {
-        type: 'text/csv;charset=utf-8'
-      }
-    );
-
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-
-    a.href = url;
-    a.download =
-      'products_with_inconsistent_volume.csv';
-
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    setTimeout(
-      () => URL.revokeObjectURL(url),
-      5000
-    );
-  };
-
-  document.body.appendChild(button);
-
+  console.table(results);
   console.log(
-    '✅ Готово. Кнопка скачивания появилась справа сверху.'
+    `Готово: проверено ${totalScanned}, ` +
+    `с 2+ volume ${productsWithMultipleVolumes}, ` +
+    `проблемных ${results.length}`
+  );
+
+  window.volumeCheckResults = results;
+
+  downloadCSV(
+    results,
+    'products_inconsistent_volume_units.csv'
   );
 })();
