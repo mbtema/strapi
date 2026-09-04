@@ -1,14 +1,17 @@
-// @version 1.0
-// @description выявляет товары у которого в торговых предложениях есть обьемы с неправильной сортировкой
+// ==ConsoleParser==
+// @name         sort-volume
+// @version      1.1
+// @description  Выявляет товары с неправильной сортировкой volume в торговых предложениях
+// @output       CSV
+// ==/ConsoleParser==
 
 (async () => {
-  const BASE_URL = 'http://10.10.3.80:1337/api/products';
+  const BASE_URL = '/api/products';
   const PAGE_SIZE = 100;
 
   const badProducts = [];
   const unreadableVolumes = [];
 
-  // "100МЛ", "100 МЛ", "100", "4ГР", "2.5МЛ", "2,5 МЛ" → число
   function getNumber(value) {
     if (value == null) return null;
 
@@ -19,31 +22,28 @@
     return match ? Number(match[0]) : null;
   }
 
-  // Скачивание массива объектов как CSV
-  function downloadCSV(data, filename) {
-    if (!data.length) {
-      console.log(`Файл ${filename} не создан — данных нет`);
-      return;
-    }
+  function downloadCSV(rows, filename) {
+    const headers = [
+      'type',
+      'productDocumentId',
+      'currentOrder',
+      'expectedOrder',
+      'attributeDocumentIds',
+      'unreadableVolumes'
+    ];
 
-    const headers = Object.keys(data[0]);
-
-    const escapeValue = value => {
-      if (value == null) return '';
-
-      return `"${String(value).replace(/"/g, '""')}"`;
-    };
+    const escapeValue = value =>
+      `"${String(value ?? '').replace(/"/g, '""')}"`;
 
     const csv = [
       headers.join(';'),
-      ...data.map(row =>
+      ...rows.map(row =>
         headers
           .map(header => escapeValue(row[header]))
           .join(';')
       )
     ].join('\n');
 
-    // BOM нужен, чтобы Excel корректно открыл кириллицу
     const blob = new Blob(
       ['\uFEFF' + csv],
       { type: 'text/csv;charset=utf-8;' }
@@ -59,25 +59,29 @@
     link.click();
     link.remove();
 
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+
+  const params = new URLSearchParams({
+    'pagination[pageSize]': String(PAGE_SIZE),
+    'fields[0]': 'documentId',
+    'filters[active][$eq]': 'true',
+    'filters[attributes][volume][name][$notNull]': 'true',
+    'populate[attributes][fields][0]': 'documentId',
+    'populate[attributes][populate][volume][fields][0]': 'name'
+  });
 
   let page = 1;
   let pageCount = 1;
+  let apiTotal = 0;
   let checkedProducts = 0;
 
   while (page <= pageCount) {
-    const url =
-      `${BASE_URL}` +
-      `?pagination[page]=${page}` +
-      `&pagination[pageSize]=${PAGE_SIZE}` +
-      `&fields[0]=documentId` +
-      `&filters[active][$eq]=true` +
-      `&filters[attributes][volume][name][$notNull]=true` +
-      `&populate[attributes][fields][0]=documentId` +
-      `&populate[attributes][populate][volume][fields][0]=name`;
+    params.set('pagination[page]', String(page));
 
-    const response = await fetch(url);
+    const response = await fetch(
+      `${BASE_URL}?${params.toString()}`
+    );
 
     if (!response.ok) {
       throw new Error(
@@ -88,44 +92,49 @@
     const json = await response.json();
 
     pageCount = json.meta.pagination.pageCount;
+    apiTotal = json.meta.pagination.total;
 
     for (const product of json.data) {
       checkedProducts++;
 
-      // Берём только attributes, где реально есть volume.name
-      const volumes = (product.attributes || [])
-        .filter(attribute => attribute.volume?.name != null)
-        .map(attribute => ({
-          attributeDocumentId: attribute.documentId,
-          volume: attribute.volume.name,
-          number: getNumber(attribute.volume.name)
-        }));
+      const volumes = [];
 
-      // Если объем только один — сортировку проверять бессмысленно
+      for (const attribute of product.attributes ?? []) {
+        const volumeName = attribute.volume?.name;
+
+        if (volumeName == null) continue;
+
+        volumes.push({
+          attributeDocumentId: attribute.documentId,
+          volume: volumeName,
+          number: getNumber(volumeName)
+        });
+      }
+
       if (volumes.length < 2) continue;
 
-      // Значения, из которых не удалось достать число
-      const unreadable = volumes.filter(v => v.number === null);
+      const unreadable = volumes.filter(
+        item => item.number === null
+      );
 
       if (unreadable.length) {
         unreadableVolumes.push({
           productDocumentId: product.documentId,
           volumes: unreadable
-            .map(v => v.volume)
+            .map(item => item.volume)
             .join(' | ')
         });
-
         continue;
       }
 
-      const currentNumbers = volumes.map(v => v.number);
+      let isCorrect = true;
 
-      const expectedNumbers = [...currentNumbers]
-        .sort((a, b) => a - b);
-
-      const isCorrect = currentNumbers.every(
-        (value, index) => value === expectedNumbers[index]
-      );
+      for (let i = 1; i < volumes.length; i++) {
+        if (volumes[i].number < volumes[i - 1].number) {
+          isCorrect = false;
+          break;
+        }
+      }
 
       if (!isCorrect) {
         const expectedVolumes = [...volumes]
@@ -133,59 +142,68 @@
 
         badProducts.push({
           productDocumentId: product.documentId,
-
           currentOrder: volumes
-            .map(v => v.volume)
+            .map(item => item.volume)
             .join(' → '),
-
           expectedOrder: expectedVolumes
-            .map(v => v.volume)
+            .map(item => item.volume)
             .join(' → '),
-
           attributeDocumentIds: volumes
-            .map(v => v.attributeDocumentId)
+            .map(item => item.attributeDocumentId)
             .join(' | ')
         });
       }
     }
 
-    console.log(
-      `Страница ${page}/${pageCount} | ` +
-      `Проверено товаров: ${checkedProducts} | ` +
-      `Неверный порядок: ${badProducts.length}`
-    );
+    if (
+      page === 1 ||
+      page % 25 === 0 ||
+      page === pageCount
+    ) {
+      console.log(
+        `Страница ${page}/${pageCount} | ` +
+        `Проверено: ${checkedProducts}/${apiTotal} | ` +
+        `Неверный порядок: ${badProducts.length}`
+      );
+    }
 
     page++;
   }
 
-  console.log('Проверка завершена');
-  console.log(`Всего товаров проверено: ${checkedProducts}`);
-  console.log(`С неверным порядком: ${badProducts.length}`);
-
   console.table(badProducts);
 
   if (unreadableVolumes.length) {
-    console.warn(
-      'Есть volume, из которых не удалось получить число:'
-    );
-
+    console.warn('Volume без читаемого числового значения:');
     console.table(unreadableVolumes);
   }
 
-  // Оставляем результаты доступными в Console
+  const report = [
+    ...badProducts.map(item => ({
+      type: 'bad_order',
+      ...item,
+      unreadableVolumes: ''
+    })),
+    ...unreadableVolumes.map(item => ({
+      type: 'unreadable_volume',
+      productDocumentId: item.productDocumentId,
+      currentOrder: '',
+      expectedOrder: '',
+      attributeDocumentIds: '',
+      unreadableVolumes: item.volumes
+    }))
+  ];
+
   window.badVolumeOrder = badProducts;
   window.unreadableVolumes = unreadableVolumes;
 
-  // Автоматическое скачивание
   downloadCSV(
-    badProducts,
-    'products_bad_volume_order.csv'
+    report,
+    'products_volume_sort_check.csv'
   );
 
-  if (unreadableVolumes.length) {
-    downloadCSV(
-      unreadableVolumes,
-      'products_unreadable_volumes.csv'
-    );
-  }
+  console.log(
+    `Готово: проверено ${checkedProducts}, ` +
+    `неверный порядок ${badProducts.length}, ` +
+    `нечитаемых ${unreadableVolumes.length}`
+  );
 })();
