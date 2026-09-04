@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         barcode-extractor
-// @version      1.2
+// @version      1.3
 // @description  Копирует barcode с карточки товара
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/strapi-improve-scripts/barcode-extractor.js
@@ -121,6 +121,7 @@
 
   document.addEventListener('keydown', (event) => {
     if (!event.ctrlKey || event.code !== 'KeyB') return;
+    if (event.repeat) return;
 
     event.preventDefault();
     event.stopPropagation();
