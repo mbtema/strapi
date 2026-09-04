@@ -4,6 +4,8 @@
 // @version      1.0
 // @description  helps vimium see react elements
 // @match        http://10.10.3.80:1337/admin/*
+// @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/vimium-open-row.js
+// @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/vimium-open-row.js
 // @grant        none
 // ==/UserScript==
 
