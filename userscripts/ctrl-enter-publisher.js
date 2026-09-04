@@ -3,6 +3,8 @@
 // @version      1.0
 // @description  Ctrl+Enter публикует текущую запись
 // @match        http://10.10.3.80:1337/admin/*
+// @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/ctrl-enter-publisher.js
+// @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/userscripts/ctrl-enter-publisher.js
 // @grant        none
 // ==/UserScript==
 
