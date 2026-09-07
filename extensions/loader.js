@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.0
+// @version      1.0.1
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifest
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extensions/loader.js
@@ -74,7 +74,7 @@
       .filter(item =>
         item.id &&
         item.version &&
-        /^(functions|ui)\/[a-z0-9-]+\.js$/i.test(item.path)
+        /^(features|ui)\/[a-z0-9-]+\.js$/i.test(item.path)
       );
   }
 
