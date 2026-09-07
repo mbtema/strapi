@@ -38,9 +38,21 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 
 Коллекция намеренно не содержит готовых запросов. Новые endpoints добавляются только по мере реальной необходимости, а повторяющиеся значения хранятся в collection variables.
 
+Пути известных Strapi API endpoints также вынесены в переменные. Например:
+
+```text
+{{baseUrl}}{{products}}
+{{baseUrl}}{{attributes}}
+{{baseUrl}}{{brands}}
+{{baseUrl}}{{categories}}
+```
+
+Где `products = /api/products`, `attributes = /api/attributes` и т.д. Для endpoints с дефисами используются camelCase-переменные, например `giftCertificates = /api/gift-certificates`.
+
 Основные переменные:
 
 - URL: `baseUrl`, `contentManagerUrl`, `bffUrl`
+- API paths: `products`, `attributes`, `promotions`, `brands`, `categories` и остальные известные endpoints из рабочей коллекции
 - пагинация и сортировка: `page`, `pageSize`, `sort`
 - локали и состояние: `locale`, `altLocale`, `active`
 - идентификаторы: `documentId`, `productDocumentId`, `attributeDocumentId`, `brandDocumentId`, `categoryDocumentId`
