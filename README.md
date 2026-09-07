@@ -1,10 +1,11 @@
-Набор рабочих инструментов для админки Strapi: Tampermonkey-скрипты, console-парсеры и Postman-коллекция для быстрых API-проверок.
+Набор рабочих инструментов для админки Strapi: Tampermonkey-скрипты, UI/UX-кастомы, console-парсеры и Postman-коллекция для быстрых API-проверок.
 
 ## Навигация
 
 | Раздел | Назначение |
 |---|---|
-| [`strapi-improve-scripts/`](./strapi-improve-scripts) | Userscripts для Tampermonkey, которые упрощают ежедневную работу в админке Strapi |
+| [`strapi-improve-scripts/`](./strapi-improve-scripts) | Функциональные userscripts для Tampermonkey: горячие клавиши, launcher и вспомогательные действия |
+| [`strapi-ui-scripts/`](./strapi-ui-scripts) | UI/UX-кастомы Strapi: sidebar, расположение элементов и локальные изменения интерфейса |
 | [`console-parsers/`](./console-parsers) | Парсеры для массовых проверок данных через Strapi API |
 | [`postman-collection/`](./postman-collection) | Чистая Postman-коллекция с общими переменными для Strapi, Content Manager API и BFF |
 
@@ -12,13 +13,19 @@
 
 - `barcode-extractor.js` — копирует barcode из карточки товара по `Ctrl+B` и показывает уведомление об успехе или ошибке.
 - `ctrl-enter-publisher.js` — публикует текущую запись по `Ctrl+Enter`.
-- `entry-relocate.js` — переносит действия Entry в верхнюю строку рядом с Draft / Published и освобождает полезную ширину формы.
 - `parser-launcher.js` — открывает по `Alt+P` меню доступных console-парсеров и запускает выбранный файл напрямую из GitHub.
-- `sidebar-sorter.js` — позволяет перетаскивать коллекции в sidebar Content Manager, сохраняет пользовательский порядок в `localStorage`; `Alt+Shift+S` сбрасывает сортировку.
-- `toggle-sidebar.js` — скрывает sidebar Strapi по умолчанию и переключает его по `Alt+S`.
 - `vimium-open-row.js` — добавляет доступные для Vimium ссылки в строки таблиц Strapi.
 
+## Strapi UI scripts
+
+- `sidebar-ui-cleanup.js` — убирает верхний служебный блок `Content Manager / Search / COLLECTION TYPES / count` и оформляет активную коллекцию фиолетовой подложкой с правым индикатором.
+- `toggle-sidebar.js` — скрывает sidebar Strapi по умолчанию, переключает его по `Alt+S`, скрывает scrollbar и точки перед коллекциями.
+- `sidebar-sorter.js` — позволяет перетаскивать коллекции в sidebar, сохраняет пользовательский порядок в `localStorage`; `Alt+Shift+S` сбрасывает сортировку.
+- `entry-relocate.js` — переносит действия Entry в верхнюю строку рядом с Draft / Published и освобождает полезную ширину формы.
+
 Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, поэтому новые версии можно получать напрямую из репозитория.
+
+После переноса userscript в другую папку его нужно один раз переустановить из нового raw-пути, чтобы Tampermonkey сохранил новый `@updateURL`.
 
 ### Версионирование
 
@@ -97,10 +104,12 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 ├── strapi-improve-scripts/
 │   ├── barcode-extractor.js
 │   ├── ctrl-enter-publisher.js
-│   ├── entry-relocate.js
 │   ├── parser-launcher.js
-│   ├── sidebar-sorter.js
-│   ├── toggle-sidebar.js
 │   └── vimium-open-row.js
+├── strapi-ui-scripts/
+│   ├── entry-relocate.js
+│   ├── sidebar-sorter.js
+│   ├── sidebar-ui-cleanup.js
+│   └── toggle-sidebar.js
 └── README.md
 ```
