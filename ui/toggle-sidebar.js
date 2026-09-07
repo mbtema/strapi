@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         toggle-sidebar
-// @version      1.3.4
+// @version      1.3.5
 // @description  Sidebar скрыт по умолчанию, Alt+S переключает его; scrollbar и маркеры коллекций скрыты визуально
 // ==/StrapiExtension==
 
@@ -9,6 +9,7 @@
 
     const SIDEBAR_ATTR = 'data-tm-content-manager-sidebar';
     const STYLE_ID = 'tm-sidebar-ui-style';
+    const SIDEBAR_SELECTOR = 'nav[aria-label="Content Manager"]';
     const LINK_SELECTOR = 'a[href*="/admin/content-manager/collection-types/"]';
 
     let hidden = true;
@@ -69,10 +70,7 @@
     }
 
     function findSidebar() {
-        const direct = document.querySelector(
-            'nav[aria-label="Content Manager"]'
-        );
-
+        const direct = document.querySelector(SIDEBAR_SELECTOR);
         if (direct) return direct;
 
         const candidates = [...document.querySelectorAll('aside, nav, div')]
@@ -98,6 +96,13 @@
         return candidates[0] || null;
     }
 
+    function clearReferences() {
+        sidebar = null;
+        layout = null;
+        main = null;
+        original = null;
+    }
+
     function init() {
         ensureSidebarStyle();
 
@@ -111,6 +116,8 @@
             return true;
         }
 
+        clearReferences();
+
         const foundSidebar = findSidebar();
         if (!foundSidebar) return false;
 
@@ -121,6 +128,7 @@
 
         if (!main) {
             console.log('[Sidebar] Main content not found');
+            clearReferences();
             return false;
         }
 
@@ -240,14 +248,31 @@
         });
     }
 
-    const observer = new MutationObserver(() => {
-        if (sidebar && document.contains(sidebar)) return;
+    function nodeContainsSidebar(node) {
+        if (!(node instanceof Element)) return false;
 
-        sidebar = null;
-        layout = null;
-        main = null;
-        original = null;
-        scheduleApply();
+        return (
+            node.matches(SIDEBAR_SELECTOR) ||
+            node.matches(LINK_SELECTOR) ||
+            Boolean(node.querySelector(SIDEBAR_SELECTOR)) ||
+            Boolean(node.querySelector(LINK_SELECTOR))
+        );
+    }
+
+    const observer = new MutationObserver(mutations => {
+        if (sidebar) {
+            if (document.contains(sidebar)) return;
+
+            clearReferences();
+            scheduleApply();
+            return;
+        }
+
+        const relevantAdded = mutations.some(mutation =>
+            [...mutation.addedNodes].some(nodeContainsSidebar)
+        );
+
+        if (relevantAdded) scheduleApply();
     });
 
     function start() {
