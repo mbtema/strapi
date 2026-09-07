@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         record-list-scrollbars
-// @version      1.0.1
+// @version      1.0.2
 // @description  Скрывает scrollbar и overflow-подсветку в списке записей Content Manager, сохраняя прокрутку
 // ==/StrapiExtension==
 
@@ -9,6 +9,7 @@
 
     const STYLE_ID = 'tm-record-list-scrollbars-style';
     const HIDDEN_ATTR = 'data-tm-record-list-scrollbars-hidden';
+    const SHADOW_ATTR = 'data-tm-record-list-overflow-shadow';
     const TABLE_SELECTOR = 'table, [role="table"], [role="grid"]';
 
     let scheduled = false;
@@ -30,13 +31,15 @@
                 display: none !important;
             }
 
-            [${HIDDEN_ATTR}]::before,
-            [${HIDDEN_ATTR}]::after {
+            [${SHADOW_ATTR}]::before,
+            [${SHADOW_ATTR}]::after {
                 content: none !important;
                 display: none !important;
                 background: none !important;
+                background-image: none !important;
                 box-shadow: none !important;
                 opacity: 0 !important;
+                pointer-events: none !important;
             }
         `;
 
@@ -61,6 +64,41 @@
         return canScrollX || canScrollY;
     }
 
+    function hasOverflowPseudo(element) {
+        if (!(element instanceof HTMLElement)) return false;
+
+        return ['::before', '::after'].some(pseudo => {
+            const style = getComputedStyle(element, pseudo);
+            const backgroundImage = style.backgroundImage || '';
+            const boxShadow = style.boxShadow || 'none';
+
+            return (
+                backgroundImage.includes('gradient') ||
+                boxShadow !== 'none'
+            );
+        });
+    }
+
+    function markOverflowWrapper(scrollContainer, root) {
+        let node = scrollContainer.parentElement;
+        let depth = 0;
+
+        while (
+            node &&
+            node !== root &&
+            node !== document.body &&
+            node !== document.documentElement &&
+            depth < 4
+        ) {
+            if (hasOverflowPseudo(node)) {
+                node.setAttribute(SHADOW_ATTR, '');
+            }
+
+            node = node.parentElement;
+            depth++;
+        }
+    }
+
     function markScrollContainers(table, root) {
         let node = table.parentElement;
 
@@ -72,6 +110,7 @@
         ) {
             if (isScrollable(node)) {
                 node.setAttribute(HIDDEN_ATTR, '');
+                markOverflowWrapper(node, root);
             }
 
             node = node.parentElement;
