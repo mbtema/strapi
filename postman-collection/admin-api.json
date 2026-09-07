@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "4954d9cc-d281-48f9-bb7a-080ab17187fc",
     "name": "admin-api",
-    "description": "Чистая Postman-коллекция для Strapi и BFF MonAmie. Запросы добавляются только по мере необходимости; общие значения вынесены в collection variables.",
+    "description": "Чистая Postman-коллекция для Strapi и BFF MonAmie. Запросы добавляются только по мере необходимости; общие значения и пути API вынесены в collection variables.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "44142882"
   },
@@ -19,6 +19,150 @@
     {
       "key": "bffUrl",
       "value": "https://bff2.monamie.kz"
+    },
+    {
+      "key": "products",
+      "value": "/api/products"
+    },
+    {
+      "key": "attributes",
+      "value": "/api/attributes"
+    },
+    {
+      "key": "promotions",
+      "value": "/api/promotions"
+    },
+    {
+      "key": "brands",
+      "value": "/api/brands"
+    },
+    {
+      "key": "cities",
+      "value": "/api/cities"
+    },
+    {
+      "key": "giftCertificates",
+      "value": "/api/gift-certificates"
+    },
+    {
+      "key": "feedbackContactInfos",
+      "value": "/api/feedback-contact-infos"
+    },
+    {
+      "key": "shops",
+      "value": "/api/shops"
+    },
+    {
+      "key": "deliveryMethods",
+      "value": "/api/delivery-methods"
+    },
+    {
+      "key": "menuItems",
+      "value": "/api/menu-items"
+    },
+    {
+      "key": "categories",
+      "value": "/api/categories"
+    },
+    {
+      "key": "feedbackContactMethods",
+      "value": "/api/feedback-contact-methods"
+    },
+    {
+      "key": "articles",
+      "value": "/api/articles"
+    },
+    {
+      "key": "pages",
+      "value": "/api/pages"
+    },
+    {
+      "key": "brandCountries",
+      "value": "/api/brand-countries"
+    },
+    {
+      "key": "feedbackTopics",
+      "value": "/api/feedback-topics"
+    },
+    {
+      "key": "volumes",
+      "value": "/api/volumes"
+    },
+    {
+      "key": "shades",
+      "value": "/api/shades"
+    },
+    {
+      "key": "colorVariants",
+      "value": "/api/color-variants"
+    },
+    {
+      "key": "productAgeGroups",
+      "value": "/api/product-age-groups"
+    },
+    {
+      "key": "productUsageTimes",
+      "value": "/api/product-usage-times"
+    },
+    {
+      "key": "fragranceGroups",
+      "value": "/api/fragrance-groups"
+    },
+    {
+      "key": "shadeGroups",
+      "value": "/api/shade-groups"
+    },
+    {
+      "key": "productFeatures",
+      "value": "/api/product-features"
+    },
+    {
+      "key": "ingredients",
+      "value": "/api/ingredients"
+    },
+    {
+      "key": "fragranceConcentrations",
+      "value": "/api/fragrance-concentrations"
+    },
+    {
+      "key": "productEffects",
+      "value": "/api/product-effects"
+    },
+    {
+      "key": "productSegments",
+      "value": "/api/product-segments"
+    },
+    {
+      "key": "productCoverages",
+      "value": "/api/product-coverages"
+    },
+    {
+      "key": "hairTypes",
+      "value": "/api/hair-types"
+    },
+    {
+      "key": "skinTypes",
+      "value": "/api/skin-types"
+    },
+    {
+      "key": "productForms",
+      "value": "/api/product-forms"
+    },
+    {
+      "key": "filtries",
+      "value": "/api/filtries"
+    },
+    {
+      "key": "productFinishes",
+      "value": "/api/product-finishes"
+    },
+    {
+      "key": "productReleaseForms",
+      "value": "/api/product-release-forms"
+    },
+    {
+      "key": "homePage",
+      "value": "/api/home-page"
     },
     {
       "key": "page",
