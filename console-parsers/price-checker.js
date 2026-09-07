@@ -1,6 +1,6 @@
 // ==ConsoleParser==
 // @name         price-checker
-// @version      1.1
+// @version      1.2
 // @description  Проверяет цены торговых предложений и находит дробные значения price
 // @output       CSV
 // ==/ConsoleParser==
@@ -11,6 +11,16 @@
   const CSV_HEADERS = ['id', 'documentId', 'price'];
 
   const invalidPrices = [];
+
+  function getTimestamp() {
+    const now = new Date();
+    const pad = value => String(value).padStart(2, '0');
+
+    return [
+      `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+      `${pad(now.getHours())}${pad(now.getMinutes())}`
+    ].join('_');
+  }
 
   function downloadCSV(rows, filename) {
     const escapeValue = value =>
@@ -45,6 +55,7 @@
 
   const params = new URLSearchParams({
     'pagination[pageSize]': String(PAGE_SIZE),
+    'sort[0]': 'id:asc',
     'fields[0]': 'price'
   });
 
@@ -111,6 +122,6 @@
 
   downloadCSV(
     invalidPrices,
-    'attributes_fractional_prices.csv'
+    `attributes_fractional_prices_${getTimestamp()}.csv`
   );
 })();
