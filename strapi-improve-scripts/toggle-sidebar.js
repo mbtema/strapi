@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         toggle-sidebar
-// @version      1.3.1
+// @version      1.3.2
 // @description  Sidebar скрыт по умолчанию, Alt+S переключает его; scrollbar и маркеры коллекций скрыты визуально
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/strapi-improve-scripts/toggle-sidebar.js
@@ -63,14 +63,17 @@
                 display: none !important;
             }
 
-            /* Strapi рисует точку коллекции отдельным пустым span */
-            [${SIDEBAR_ATTR}] a[href*="/admin/content-manager/collection-types/"] > span:first-child:empty {
+            /* Точка Strapi: первый пустой span внутри ссылки коллекции */
+            [${SIDEBAR_ATTR}] a[href*="/admin/content-manager/collection-types/"] > * > span:first-child:empty,
+            [${SIDEBAR_ATTR}] a[href*="/admin/content-manager/collection-types/"] span.sc-lnlaAf.fhEUqV:empty {
                 display: none !important;
                 width: 0 !important;
                 height: 0 !important;
                 min-width: 0 !important;
+                min-height: 0 !important;
                 margin: 0 !important;
                 padding: 0 !important;
+                border: 0 !important;
             }
         `;
 
