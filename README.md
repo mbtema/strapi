@@ -6,7 +6,7 @@
 |---|---|
 | [`strapi-improve-scripts/`](./strapi-improve-scripts) | Userscripts для Tampermonkey, которые упрощают ежедневную работу в админке Strapi |
 | [`console-parsers/`](./console-parsers) | Парсеры для массовых проверок данных через Strapi API |
-| [`postman-collection/`](./postman-collection) | Основная Postman-коллекция с рабочими API-запросами и диагностическими проверками |
+| [`postman-collection/`](./postman-collection) | Чистая Postman-коллекция с общими переменными для Strapi, Content Manager API и BFF |
 
 ## Strapi improve scripts
 
@@ -36,9 +36,18 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 
 `postman-collection/admin-api.json`
 
-Коллекция используется для работы с публичным Strapi API, точечных проверок данных, фильтрации, отладки и диагностических запросов.
+Коллекция намеренно не содержит готовых запросов. Новые endpoints добавляются только по мере реальной необходимости, а повторяющиеся значения хранятся в collection variables.
 
-Секретные значения не должны храниться в репозитории. Токены и другие чувствительные переменные в коллекции оставляются пустыми и заполняются локально в Postman.
+Основные переменные:
+
+- URL: `baseUrl`, `contentManagerUrl`, `bffUrl`
+- пагинация и сортировка: `page`, `pageSize`, `sort`
+- локали и состояние: `locale`, `altLocale`, `active`
+- идентификаторы: `documentId`, `productDocumentId`, `attributeDocumentId`, `brandDocumentId`, `categoryDocumentId`
+- рабочие значения: `barcode`, `productKey`, `brandName`, `categoryCode`, `slug`
+- секреты: `jwtToken`, `bearerToken`, `categoryDebugToken`
+
+Секретные значения не хранятся в репозитории и заполняются только локально в Postman.
 
 ## Структура репозитория
 
