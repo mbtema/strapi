@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "parsers": [
+    {
+      "name": "Проверка дробных цен",
+      "file": "price-checker.js"
+    },
+    {
+      "name": "Проверка сортировки объемов",
+      "file": "sort-volume.js"
+    },
+    {
+      "name": "Проверка единиц объемов",
+      "file": "volume-checker.js"
+    }
+  ]
+}
