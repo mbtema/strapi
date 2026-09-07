@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         sidebar-ui-cleanup
-// @version      1.0.2
+// @version      1.0.3
 // @description  Убирает верхний служебный блок Content Manager и оформляет активную коллекцию в sidebar
 // ==/StrapiExtension==
 
@@ -70,18 +70,6 @@
             [${SIDEBAR_ATTR}] a[${ACTIVE_ATTR}] * {
                 color: #7b68ff !important;
                 font-weight: 600 !important;
-            }
-
-            [${SIDEBAR_ATTR}] a[${ACTIVE_ATTR}]::after {
-                content: '' !important;
-                position: absolute !important;
-                top: 6px !important;
-                right: 0 !important;
-                bottom: 6px !important;
-                width: 3px !important;
-                border-radius: 3px 0 0 3px !important;
-                background: #725cff !important;
-                pointer-events: none !important;
             }
         `;
 
