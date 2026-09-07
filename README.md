@@ -1,11 +1,11 @@
-Набор рабочих инструментов для админки Strapi: функции, UI-кастомы, парсеры и Postman.
+Набор рабочих инструментов для админки Strapi: features, UI-кастомы, парсеры и Postman.
 
 ## Структура
 
 | Папка | Назначение |
 |---|---|
 | [`extensions/`](./extensions) | Единый Tampermonkey loader и manifest всех постоянных расширений Strapi |
-| [`functions/`](./functions) | Функциональные улучшения: горячие клавиши, barcode, Parser Launcher, Vimium helper |
+| [`features/`](./features) | Функциональные возможности: горячие клавиши, barcode, Parser Launcher, Vimium helper |
 | [`ui/`](./ui) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Одноразовые массовые проверки данных с CSV-выгрузкой |
 | [`postman/`](./postman) | Postman collection с общими переменными и API paths |
@@ -20,7 +20,7 @@ Loader при открытии Strapi:
 
 1. мгновенно запускает последнюю сохранённую копию extensions из кеша;
 2. в фоне загружает `extensions/manifest.json` с GitHub;
-3. при изменении версий скачивает новые файлы и сохраняет их в кеш;
+3. при изменении версий или путей скачивает новые файлы и сохраняет их в кеш;
 4. обновлённые extensions применяются после следующей перезагрузки Strapi.
 
 Старые отдельные Tampermonkey-скрипты после установки loader нужно отключить или удалить, иначе один функционал будет запускаться дважды.
@@ -38,9 +38,9 @@ Loader при открытии Strapi:
 }
 ```
 
-При изменении файла обязательно увеличивать его `version` в manifest. Именно версия сообщает loader, что кеш нужно обновить.
+При изменении файла обязательно увеличивать его `version` в manifest. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново.
 
-## Functions
+## Features
 
 - `barcode-extractor.js` — `Ctrl+B`, копирует barcode из карточки товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Ctrl+Enter`, публикует текущую запись.
@@ -115,7 +115,7 @@ Loader при открытии Strapi:
 ├── extensions/
 │   ├── loader.js
 │   └── manifest.json
-├── functions/
+├── features/
 │   ├── barcode-extractor.js
 │   ├── ctrl-enter-publisher.js
 │   ├── parser-launcher.js
