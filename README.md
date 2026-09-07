@@ -14,6 +14,7 @@
 - `ctrl-enter-publisher.js` — публикует текущую запись по `Ctrl+Enter`.
 - `entry-relocate.js` — переносит действия Entry в верхнюю строку рядом с Draft / Published и освобождает полезную ширину формы.
 - `parser-launcher.js` — открывает по `Alt+P` меню доступных console-парсеров и запускает выбранный файл напрямую из GitHub.
+- `sidebar-sorter.js` — позволяет перетаскивать коллекции в sidebar Content Manager, сохраняет пользовательский порядок в `localStorage`; `Alt+Shift+S` сбрасывает сортировку.
 - `toggle-sidebar.js` — скрывает sidebar Strapi по умолчанию и переключает его по `Alt+S`.
 - `vimium-open-row.js` — добавляет доступные для Vimium ссылки в строки таблиц Strapi.
 
@@ -91,6 +92,7 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 │   ├── ctrl-enter-publisher.js
 │   ├── entry-relocate.js
 │   ├── parser-launcher.js
+│   ├── sidebar-sorter.js
 │   ├── toggle-sidebar.js
 │   └── vimium-open-row.js
 └── README.md
