@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         sidebar-ui-cleanup
-// @version      1.0
+// @version      1.0.1
 // @description  Убирает верхний служебный блок Content Manager и оформляет активную коллекцию в sidebar
 // ==/StrapiExtension==
 
@@ -13,8 +13,11 @@
     const HIDDEN_ATTR = 'data-tm-sidebar-header-hidden';
     const ACTIVE_ATTR = 'data-tm-sidebar-active-collection';
     const LINK_SELECTOR = 'a[href*="/admin/content-manager/collection-types/"]';
+    const SIDEBAR_SELECTOR = 'nav[aria-label="Content Manager"]';
 
     let scheduled = false;
+    let sidebar = null;
+    let lastPath = '';
 
     function ensureStyle() {
         if (document.getElementById(STYLE_ID)) return;
@@ -63,10 +66,7 @@
     }
 
     function findSidebar() {
-        const direct = document.querySelector(
-            'nav[aria-label="Content Manager"]'
-        );
-
+        const direct = document.querySelector(SIDEBAR_SELECTOR);
         if (direct) return direct;
 
         const candidates = [...document.querySelectorAll('nav, aside, div')]
@@ -92,12 +92,12 @@
         return candidates[0] || null;
     }
 
-    function findCollectionList(sidebar, links) {
+    function findCollectionList(currentSidebar, links) {
         if (!links.length) return null;
 
         let node = links[0].parentElement;
 
-        while (node && node !== sidebar) {
+        while (node && node !== currentSidebar) {
             if (links.every(link => node.contains(link))) return node;
             node = node.parentElement;
         }
@@ -105,17 +105,19 @@
         return null;
     }
 
-    function hideEverythingBeforeList(sidebar, list) {
+    function hideEverythingBeforeList(currentSidebar, list) {
         let node = list;
 
-        while (node && node !== sidebar && node.parentElement) {
+        while (node && node !== currentSidebar && node.parentElement) {
             const parent = node.parentElement;
             const children = [...parent.children];
             const index = children.indexOf(node);
 
             if (index > 0) {
                 children.slice(0, index).forEach(child => {
-                    child.setAttribute(HIDDEN_ATTR, '');
+                    if (!child.hasAttribute(HIDDEN_ATTR)) {
+                        child.setAttribute(HIDDEN_ATTR, '');
+                    }
                 });
             }
 
@@ -145,18 +147,19 @@
                 currentPath.startsWith(`${linkPath}/`)
             );
 
-            if (isActive) {
-                link.setAttribute(ACTIVE_ATTR, '');
-            } else {
-                link.removeAttribute(ACTIVE_ATTR);
-            }
+            link.toggleAttribute(ACTIVE_ATTR, isActive);
         }
+
+        lastPath = currentPath;
     }
 
     function apply() {
         ensureStyle();
 
-        const sidebar = findSidebar();
+        if (!sidebar || !document.contains(sidebar)) {
+            sidebar = findSidebar();
+        }
+
         if (!sidebar) return;
 
         const links = [...sidebar.querySelectorAll(LINK_SELECTOR)];
@@ -184,7 +187,48 @@
         });
     }
 
-    const observer = new MutationObserver(scheduleApply);
+    function nodeIsRelevant(node) {
+        if (!(node instanceof Element)) return false;
+
+        return (
+            node.matches(SIDEBAR_SELECTOR) ||
+            node.matches(LINK_SELECTOR) ||
+            Boolean(node.querySelector(SIDEBAR_SELECTOR)) ||
+            Boolean(node.querySelector(LINK_SELECTOR))
+        );
+    }
+
+    function shouldApply(mutations) {
+        const currentPath = location.pathname.replace(/\/+$/, '');
+        if (currentPath !== lastPath) return true;
+
+        if (!sidebar || !document.contains(sidebar)) {
+            return mutations.some(mutation =>
+                [...mutation.addedNodes].some(nodeIsRelevant)
+            );
+        }
+
+        return mutations.some(mutation => {
+            if (
+                mutation.target === sidebar ||
+                sidebar.contains(mutation.target)
+            ) {
+                return true;
+            }
+
+            return (
+                [...mutation.addedNodes].some(nodeIsRelevant) ||
+                [...mutation.removedNodes].some(node =>
+                    node === sidebar ||
+                    (node instanceof Element && node.contains(sidebar))
+                )
+            );
+        });
+    }
+
+    const observer = new MutationObserver(mutations => {
+        if (shouldApply(mutations)) scheduleApply();
+    });
 
     function start() {
         if (!document.documentElement) {
