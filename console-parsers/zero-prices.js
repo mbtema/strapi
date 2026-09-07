@@ -1,7 +1,7 @@
 // ==ConsoleParser==
 // @name         zero-prices
-// @version      1.0
-// @description  Ищет торговые предложения со значением price = 0
+// @version      1.1
+// @description  Ищет торговые предложения с price = 0, привязанные к активным товарам
 // @output       CSV
 // ==/ConsoleParser==
 
@@ -63,6 +63,7 @@
     'pagination[pageSize]': String(PAGE_SIZE),
     'sort[0]': 'id:asc',
     'filters[price][$eq]': '0',
+    'filters[product][active][$eq]': 'true',
     'fields[0]': 'barcode',
     'fields[1]': 'name',
     'fields[2]': 'price'
@@ -119,7 +120,7 @@
 
   console.table(zeroPrices);
   console.log(
-    `Готово: найдено торговых предложений с price = 0: ${zeroPrices.length}`
+    `Готово: найдено активных торговых предложений с price = 0: ${zeroPrices.length}`
   );
 
   window.zeroPrices = zeroPrices;
