@@ -34,7 +34,7 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 
 Основной файл:
 
-`postman-collection/monamie-strapi-postman-collection.json`
+`postman-collection/admin-api.json`
 
 Коллекция используется для работы с публичным Strapi API, точечных проверок данных, фильтрации, отладки и диагностических запросов.
 
@@ -50,7 +50,7 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 │   ├── sort-volume.js
 │   └── volume-checker.js
 ├── postman-collection/
-│   └── monamie-strapi-postman-collection.json
+│   └── admin-api.json
 ├── strapi-improve-scripts/
 │   ├── barcode-extractor.js
 │   ├── ctrl-enter-publisher.js
