@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "extensions": [
+    {
+      "id": "toggle-sidebar",
+      "path": "ui/toggle-sidebar.js",
+      "version": "1.3.4",
+      "enabled": true
+    },
+    {
+      "id": "sidebar-ui-cleanup",
+      "path": "ui/sidebar-ui-cleanup.js",
+      "version": "1.0",
+      "enabled": true
+    },
+    {
+      "id": "sidebar-sorter",
+      "path": "ui/sidebar-sorter.js",
+      "version": "1.0.2",
+      "enabled": true
+    },
+    {
+      "id": "entry-relocate",
+      "path": "ui/entry-relocate.js",
+      "version": "1.4.1",
+      "enabled": true
+    },
+    {
+      "id": "barcode-extractor",
+      "path": "functions/barcode-extractor.js",
+      "version": "1.4",
+      "enabled": true
+    },
+    {
+      "id": "ctrl-enter-publisher",
+      "path": "functions/ctrl-enter-publisher.js",
+      "version": "1.1",
+      "enabled": true
+    },
+    {
+      "id": "parser-launcher",
+      "path": "functions/parser-launcher.js",
+      "version": "1.3",
+      "enabled": true
+    },
+    {
+      "id": "vimium-open-row",
+      "path": "functions/vimium-open-row.js",
+      "version": "1.1",
+      "enabled": true
+    }
+  ]
+}
