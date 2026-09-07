@@ -12,6 +12,10 @@
     {
       "name": "Проверка единиц объемов",
       "file": "volume-checker.js"
+    },
+    {
+      "name": "Отсутствующие оттенки",
+      "file": "missing-shades.js"
     }
   ]
 }
