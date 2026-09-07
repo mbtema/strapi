@@ -10,7 +10,7 @@
     {
       "id": "sidebar-ui-cleanup",
       "path": "ui/sidebar-ui-cleanup.js",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "enabled": true
     },
     {
