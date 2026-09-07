@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         toggle-sidebar
-// @version      1.2
-// @description  Sidebar скрыт по умолчанию, Alt+S переключает его; scrollbar скрыт визуально
+// @version      1.3
+// @description  Sidebar скрыт по умолчанию, Alt+S переключает его; scrollbar и маркеры коллекций скрыты визуально
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/strapi-improve-scripts/toggle-sidebar.js
 // @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/strapi-improve-scripts/toggle-sidebar.js
@@ -13,7 +13,7 @@
     'use strict';
 
     const SIDEBAR_ATTR = 'data-tm-content-manager-sidebar';
-    const STYLE_ID = 'tm-sidebar-scrollbar-style';
+    const STYLE_ID = 'tm-sidebar-ui-style';
 
     // При загрузке sidebar скрыт
     let hidden = true;
@@ -26,10 +26,10 @@
 
 
     // =========================================================
-    // СКРЫТЬ SCROLLBAR, СОХРАНИВ ПРОКРУТКУ
+    // UI SIDEBAR
     // =========================================================
 
-    function ensureScrollbarStyle() {
+    function ensureSidebarStyle() {
         if (document.getElementById(STYLE_ID)) return;
 
         const style = document.createElement('style');
@@ -45,6 +45,20 @@
             [${SIDEBAR_ATTR}] *::-webkit-scrollbar {
                 width: 0 !important;
                 height: 0 !important;
+                display: none !important;
+            }
+
+            [${SIDEBAR_ATTR}] li {
+                list-style: none !important;
+            }
+
+            [${SIDEBAR_ATTR}] li::marker {
+                content: '' !important;
+                font-size: 0 !important;
+            }
+
+            [${SIDEBAR_ATTR}] li::before {
+                content: none !important;
                 display: none !important;
             }
         `;
@@ -89,10 +103,8 @@
     // =========================================================
 
     function init() {
-        ensureScrollbarStyle();
+        ensureSidebarStyle();
 
-        // Если sidebar уже найден, используем сохранённую ссылку,
-        // даже если он сейчас скрыт через display:none.
         if (
             sidebar &&
             document.contains(sidebar) &&
@@ -123,7 +135,6 @@
             return false;
         }
 
-        // Сохраняем исходные стили Strapi
         original = {
             sidebarDisplay:
                 sidebar.style.getPropertyValue('display'),
@@ -206,14 +217,12 @@
     // =========================================================
 
     function showSidebar() {
-        // Сначала удаляем наши !important
         sidebar.style.removeProperty('display');
         layout.style.removeProperty('grid-template-columns');
         main.style.removeProperty('grid-column');
         main.style.removeProperty('width');
         main.style.removeProperty('max-width');
 
-        // Возвращаем исходные значения, если они были
         if (original.sidebarDisplay) {
             sidebar.style.setProperty(
                 'display',
@@ -319,7 +328,6 @@
                 event.stopPropagation();
                 event.stopImmediatePropagation();
 
-                // Защита от удерживания клавиши
                 if (event.repeat) {
                     return;
                 }
@@ -347,8 +355,6 @@
     }
 
     const observer = new MutationObserver(() => {
-        // Если React уничтожил sidebar при переходе между страницами,
-        // сбрасываем ссылки и ищем новый.
         if (
             sidebar &&
             document.contains(sidebar)
@@ -370,14 +376,13 @@
             return;
         }
 
-        ensureScrollbarStyle();
+        ensureSidebarStyle();
 
         observer.observe(document.documentElement, {
             childList: true,
             subtree: true
         });
 
-        // Без искусственной задержки в 300 мс.
         scheduleApply();
     }
 
