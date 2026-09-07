@@ -1,19 +1,22 @@
 // ==StrapiExtension==
 // @name         entry-relocate
-// @version      1.4.1
+// @version      1.4.2
 // @description  Переносит действия Entry в строку с Draft / Published
 // ==/StrapiExtension==
 
 (function () {
     'use strict';
 
+    const ENTRY_SELECTOR = 'aside[aria-labelledby="additional-information"]';
+    const TABLIST_SELECTOR = '[role="tablist"]';
+    const TOOLBAR_SELECTOR = '[data-tm-entry-toolbar="true"]';
+
     let currentAside = null;
+    let currentToolbar = null;
     let frameScheduled = false;
 
     function getEntry() {
-        return document.querySelector(
-            'aside[aria-labelledby="additional-information"]'
-        );
+        return document.querySelector(ENTRY_SELECTOR);
     }
 
     function findLayout(aside) {
@@ -65,7 +68,7 @@
     }
 
     function findTabList() {
-        const tabList = [...document.querySelectorAll('[role="tablist"]')]
+        const tabList = [...document.querySelectorAll(TABLIST_SELECTOR)]
             .find(element => {
                 const text = element.textContent || '';
                 return /draft/i.test(text) && /published/i.test(text);
@@ -156,12 +159,13 @@
         tabList.style.setProperty('flex', '0 0 auto', 'important');
         tabList.style.setProperty('margin', '0', 'important');
 
+        currentToolbar = toolbar;
         return { actions };
     }
 
     function cleanupOldToolbars(tabList) {
         document
-            .querySelectorAll('[data-tm-entry-toolbar="true"]')
+            .querySelectorAll(TOOLBAR_SELECTOR)
             .forEach(toolbar => {
                 if (!toolbar.contains(tabList)) toolbar.remove();
             });
@@ -172,17 +176,15 @@
 
         if (!aside) {
             currentAside = null;
+            currentToolbar = null;
             return;
         }
-
-        const existingToolbar = document.querySelector(
-            '[data-tm-entry-toolbar="true"]'
-        );
 
         if (
             aside === currentAside &&
             aside.dataset.tmEntryMoved === 'true' &&
-            existingToolbar
+            currentToolbar &&
+            document.contains(currentToolbar)
         ) return;
 
         const layout = findLayout(aside);
@@ -227,13 +229,60 @@
 
             if (currentAside && !document.contains(currentAside)) {
                 currentAside = null;
+                currentToolbar = null;
             }
 
             apply();
         });
     }
 
-    const observer = new MutationObserver(scheduleApply);
+    function nodeContainsRelevantElement(node) {
+        if (!(node instanceof Element)) return false;
+
+        return (
+            node.matches(ENTRY_SELECTOR) ||
+            node.matches(TABLIST_SELECTOR) ||
+            Boolean(node.querySelector(ENTRY_SELECTOR)) ||
+            Boolean(node.querySelector(TABLIST_SELECTOR))
+        );
+    }
+
+    function isRelevantMutation(mutation) {
+        if (!currentAside || !document.contains(currentAside)) {
+            return [...mutation.addedNodes].some(nodeContainsRelevantElement);
+        }
+
+        if (
+            mutation.target === currentAside ||
+            currentAside.contains(mutation.target) ||
+            (
+                currentToolbar &&
+                (
+                    mutation.target === currentToolbar ||
+                    currentToolbar.contains(mutation.target)
+                )
+            )
+        ) {
+            return true;
+        }
+
+        return [...mutation.removedNodes].some(node => {
+            if (!(node instanceof Element)) return false;
+
+            return (
+                node === currentAside ||
+                node.contains(currentAside) ||
+                (
+                    currentToolbar &&
+                    (node === currentToolbar || node.contains(currentToolbar))
+                )
+            );
+        });
+    }
+
+    const observer = new MutationObserver(mutations => {
+        if (mutations.some(isRelevantMutation)) scheduleApply();
+    });
 
     function start() {
         if (!document.documentElement) {
