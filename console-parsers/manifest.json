@@ -16,6 +16,10 @@
     {
       "name": "Отсутствующие оттенки",
       "file": "missing-shades.js"
+    },
+    {
+      "name": "Нулевая цена",
+      "file": "zero-prices.js"
     }
   ]
 }
