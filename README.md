@@ -52,6 +52,7 @@ Loader при открытии Strapi:
 - `sidebar-ui-cleanup.js` — убирает верхний блок Content Manager / Search / COLLECTION TYPES / count и оформляет активную коллекцию фиолетовой подложкой.
 - `toggle-sidebar.js` — скрывает sidebar по умолчанию, `Alt+S` переключает его; scrollbar и точки коллекций скрыты.
 - `sidebar-sorter.js` — drag-and-drop сортировка коллекций; временно отключён в `extensions/manifest.json`.
+- `record-list-scrollbars.js` — визуально скрывает scrollbar в списке записей Content Manager, сохраняя прокрутку.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
 
 ## Версионирование
@@ -122,6 +123,7 @@ Loader при открытии Strapi:
 │   └── vimium-open-row.js
 ├── ui/
 │   ├── entry-relocate.js
+│   ├── record-list-scrollbars.js
 │   ├── sidebar-sorter.js
 │   ├── sidebar-ui-cleanup.js
 │   └── toggle-sidebar.js
