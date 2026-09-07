@@ -1,6 +1,6 @@
 // ==ConsoleParser==
 // @name         sort-volume
-// @version      1.1
+// @version      1.2
 // @description  Выявляет товары с неправильной сортировкой volume в торговых предложениях
 // @output       CSV
 // ==/ConsoleParser==
@@ -20,6 +20,16 @@
       .match(/\d+(?:\.\d+)?/);
 
     return match ? Number(match[0]) : null;
+  }
+
+  function getTimestamp() {
+    const now = new Date();
+    const pad = value => String(value).padStart(2, '0');
+
+    return [
+      `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+      `${pad(now.getHours())}${pad(now.getMinutes())}`
+    ].join('_');
   }
 
   function downloadCSV(rows, filename) {
@@ -64,6 +74,7 @@
 
   const params = new URLSearchParams({
     'pagination[pageSize]': String(PAGE_SIZE),
+    'sort[0]': 'id:asc',
     'fields[0]': 'documentId',
     'filters[active][$eq]': 'true',
     'filters[attributes][volume][name][$notNull]': 'true',
@@ -198,7 +209,7 @@
 
   downloadCSV(
     report,
-    'products_volume_sort_check.csv'
+    `products_volume_sort_check_${getTimestamp()}.csv`
   );
 
   console.log(
