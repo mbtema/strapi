@@ -1,60 +1,89 @@
 // ==StrapiExtension==
 // @name         vimium-open-row
-// @version      1.1
+// @version      1.1.1
 // @description  Делает строки таблиц доступными для Vimium
 // ==/StrapiExtension==
 
 (function () {
     'use strict';
 
+    const ROW_SELECTOR = 'tbody tr';
+    const ADDED_ATTR = 'data-vimium-link-added';
+
     let scheduled = false;
+    const pendingRoots = new Set();
 
-    function addLinks() {
-        document
-            .querySelectorAll('tbody tr:not([data-vimium-link-added])')
-            .forEach(row => {
-                const cells = row.querySelectorAll('td');
-                if (!cells.length) return;
+    function addLink(row) {
+        if (!(row instanceof Element)) return;
+        if (!row.matches(ROW_SELECTOR)) return;
+        if (row.hasAttribute(ADDED_ATTR)) return;
 
-                row.dataset.vimiumLinkAdded = 'true';
+        const cells = row.querySelectorAll('td');
+        if (!cells.length) return;
 
-                const link = document.createElement('a');
-                link.href = '#';
-                link.textContent = '↗';
+        row.setAttribute(ADDED_ATTR, 'true');
 
-                link.style.cssText = `
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    width: 22px;
-                    height: 22px;
-                    margin-right: 6px;
-                    text-decoration: none;
-                    opacity: 0.15;
-                    cursor: pointer;
-                `;
+        const link = document.createElement('a');
+        link.href = '#';
+        link.textContent = '↗';
 
-                link.addEventListener('click', event => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    row.click();
-                });
+        link.style.cssText = `
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            margin-right: 6px;
+            text-decoration: none;
+            opacity: 0.15;
+            cursor: pointer;
+        `;
 
-                cells[0].prepend(link);
-            });
+        link.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            row.click();
+        });
+
+        cells[0].prepend(link);
     }
 
-    function scheduleAddLinks() {
+    function processRoot(root) {
+        if (!(root instanceof Element)) return;
+
+        addLink(root);
+
+        root
+            .querySelectorAll(`${ROW_SELECTOR}:not([${ADDED_ATTR}])`)
+            .forEach(addLink);
+    }
+
+    function flush() {
+        scheduled = false;
+
+        const roots = [...pendingRoots];
+        pendingRoots.clear();
+
+        roots.forEach(processRoot);
+    }
+
+    function scheduleRoot(root) {
+        if (!(root instanceof Element)) return;
+
+        pendingRoots.add(root);
+
         if (scheduled) return;
         scheduled = true;
-
-        requestAnimationFrame(() => {
-            scheduled = false;
-            addLinks();
-        });
+        requestAnimationFrame(flush);
     }
 
-    const observer = new MutationObserver(scheduleAddLinks);
+    const observer = new MutationObserver(mutations => {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                scheduleRoot(node);
+            }
+        }
+    });
 
     function start() {
         if (!document.documentElement) {
@@ -67,7 +96,9 @@
             subtree: true
         });
 
-        scheduleAddLinks();
+        document
+            .querySelectorAll(`${ROW_SELECTOR}:not([${ADDED_ATTR}])`)
+            .forEach(addLink);
     }
 
     start();
