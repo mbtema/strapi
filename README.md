@@ -27,7 +27,12 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 - `sort-volume.js` — ищет товары с неправильным порядком volume и отдельно отмечает нечитаемые значения.
 - `volume-checker.js` — ищет товары, у которых связанные volume используют разные единицы измерения.
 - `missing-shades.js` — ищет активные торговые предложения, у которых заполнен `color_variant1C`, но отсутствует `shade`.
-- `zero-prices.js` — ищет торговые предложения со значением `price = 0`.
+- `zero-prices.js` — ищет торговые предложения со значением `price = 0`, привязанные к активным товарам.
+- `orphan-attributes.js` — ищет торговые предложения без связанного `product`.
+- `products-without-attributes.js` — ищет активные товары без торговых предложений.
+- `missing-brand.js` — ищет активные товары без `brand`.
+- `missing-categories.js` — ищет активные товары без relations в `categories`.
+- `products-without-price.js` — ищет активные товары, у которых есть торговые предложения, но ни у одного нет цены `> 0`.
 - `manifest.json` — список парсеров, отображаемых в Parser Launcher.
 
 Для добавления нового парсера достаточно положить `.js` в `console-parsers/` и добавить его в `manifest.json`.
@@ -69,8 +74,13 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 .
 ├── console-parsers/
 │   ├── manifest.json
+│   ├── missing-brand.js
+│   ├── missing-categories.js
 │   ├── missing-shades.js
+│   ├── orphan-attributes.js
 │   ├── price-checker.js
+│   ├── products-without-attributes.js
+│   ├── products-without-price.js
 │   ├── sort-volume.js
 │   ├── volume-checker.js
 │   └── zero-prices.js
