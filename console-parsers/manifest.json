@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "parsers": [
     {
-      "name": "Проверка дробных цен",
+      "name": "Предложения с дробными ценами",
       "file": "price-checker.js"
     },
     {
@@ -18,7 +18,7 @@
       "file": "missing-shades.js"
     },
     {
-      "name": "Нулевая цена",
+      "name": "Предложения с нулевой ценой",
       "file": "zero-prices.js"
     },
     {
