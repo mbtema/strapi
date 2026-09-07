@@ -2,476 +2,67 @@
   "info": {
     "_postman_id": "4954d9cc-d281-48f9-bb7a-080ab17187fc",
     "name": "admin-api",
-    "description": "Рабочая коллекция запросов к Strapi API и BFF MonAmie. Базовые endpoints хранятся отдельно от диагностических checks.",
+    "description": "Чистая Postman-коллекция для Strapi и BFF MonAmie. Запросы добавляются только по мере необходимости; общие значения вынесены в collection variables.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "44142882"
   },
-  "item": [
-    {
-      "name": "products",
-      "description": "Базовые запросы к товарам и торговым предложениям.",
-      "item": [
-        {
-          "name": "products",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/products?pagination[page]=1&pagination[pageSize]=100"
-          },
-          "response": []
-        },
-        {
-          "name": "attributes",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/attributes?pagination[page]=1&pagination[pageSize]=100"
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "collections",
-      "description": "Основные коллекции Strapi.",
-      "item": [
-        {
-          "name": "promotions",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/promotions"
-          },
-          "response": []
-        },
-        {
-          "name": "brands",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/brands?pagination[pageSize]=100"
-          },
-          "response": []
-        },
-        {
-          "name": "cities",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/cities"
-          },
-          "response": []
-        },
-        {
-          "name": "gift-certificates",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/gift-certificates"
-          },
-          "response": []
-        },
-        {
-          "name": "feedback-contact-info",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/feedback-contact-infos"
-          },
-          "response": []
-        },
-        {
-          "name": "shops",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/shops"
-          },
-          "response": []
-        },
-        {
-          "name": "delivery-methods",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/delivery-methods?populate=*"
-          },
-          "response": []
-        },
-        {
-          "name": "menu-items",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/menu-items"
-          },
-          "response": []
-        },
-        {
-          "name": "categories",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/categories?pagination[pageSize]=100"
-          },
-          "response": []
-        },
-        {
-          "name": "feedback-contact-methods",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/feedback-contact-methods"
-          },
-          "response": []
-        },
-        {
-          "name": "articles",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/articles?pagination[pageSize]=100"
-          },
-          "response": []
-        },
-        {
-          "name": "pages",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/pages"
-          },
-          "response": []
-        },
-        {
-          "name": "brand-countries",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/brand-countries",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{bearerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "feedback-topics",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/feedback-topics"
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "values",
-      "description": "Справочные значения.",
-      "item": [
-        {
-          "name": "volumes",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/volumes"
-          },
-          "response": []
-        },
-        {
-          "name": "shades",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/shades"
-          },
-          "response": []
-        },
-        {
-          "name": "color-variants",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/color-variants"
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "filters",
-      "description": "Коллекции, используемые в товарных фильтрах.",
-      "auth": {
-        "type": "bearer",
-        "bearer": [
-          {
-            "key": "token",
-            "value": "{{bearerToken}}",
-            "type": "string"
-          }
-        ]
-      },
-      "item": [
-        {
-          "name": "product-age-groups",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/product-age-groups"
-          },
-          "response": []
-        },
-        {
-          "name": "product-usage-times",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/product-usage-times"
-          },
-          "response": []
-        },
-        {
-          "name": "fragrance-groups",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/fragrance-groups"
-          },
-          "response": []
-        },
-        {
-          "name": "shade-groups",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/shade-groups"
-          },
-          "response": []
-        },
-        {
-          "name": "product-features",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/product-features"
-          },
-          "response": []
-        },
-        {
-          "name": "ingredients",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/ingredients"
-          },
-          "response": []
-        },
-        {
-          "name": "fragrance-concentrations",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/fragrance-concentrations"
-          },
-          "response": []
-        },
-        {
-          "name": "product-effects",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/product-effects"
-          },
-          "response": []
-        },
-        {
-          "name": "product-segments",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/product-segments"
-          },
-          "response": []
-        },
-        {
-          "name": "product-coverages",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/product-coverages"
-          },
-          "response": []
-        },
-        {
-          "name": "hair-types",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/hair-types"
-          },
-          "response": []
-        },
-        {
-          "name": "skin-types",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/skin-types"
-          },
-          "response": []
-        },
-        {
-          "name": "product-forms",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/product-forms"
-          },
-          "response": []
-        },
-        {
-          "name": "filtries",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/filtries",
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "product-finishes",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/product-finishes"
-          },
-          "response": []
-        },
-        {
-          "name": "product-release-forms",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/product-release-forms"
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "debug",
-      "description": "BFF-диагностика.",
-      "item": [
-        {
-          "name": "category-debugger",
-          "request": {
-            "method": "GET",
-            "url": "{{bffUrl}}/api/category/4524a2e4f59874b4/debug",
-            "header": [
-              {
-                "key": "x-category-debug-token",
-                "value": "{{categoryDebugToken}}",
-                "type": "text"
-              }
-            ]
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "checks",
-      "description": "Готовые точечные проверки данных.",
-      "item": [
-        {
-          "name": "brands-short-descriptions",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const response = pm.response.json();",
-                  "",
-                  "if (Array.isArray(response?.data)) {",
-                  "    const shortDescItems = response.data.filter(item => {",
-                  "        const desc = item.description ?? item.attributes?.description ?? '';",
-                  "        return String(desc).length < 100;",
-                  "    });",
-                  "",
-                  "    console.clear();",
-                  "    console.log(`Найдено брендов с описанием < 100 символов: ${shortDescItems.length}`);",
-                  "    console.log(shortDescItems);",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/brands?pagination[pageSize]=100&fields[0]=name&fields[1]=description&filters[active][$eq]=true"
-          },
-          "response": []
-        },
-        {
-          "name": "product-categories-by-key",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/products?pagination[pageSize]=1&fields[0]=name&filters[key][$eq]={{productKey}}&populate[categories][fields][0]=name&populate[category][fields][0]=name"
-          },
-          "response": []
-        },
-        {
-          "name": "missing-product-categories",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/products?pagination[page]=1&pagination[pageSize]=100&fields[0]=name&filters[active][$eq]=true&filters[categories][$null]=true"
-          },
-          "response": []
-        },
-        {
-          "name": "product-key-by-barcode",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/attributes?pagination[pageSize]=1&populate[product][fields]=key&fields=name&filters[barcode][$eq]={{barcode}}"
-          },
-          "response": []
-        },
-        {
-          "name": "new-labels",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/attributes?pagination[page]=1&pagination[pageSize]=100&fields[0]=label_new&filters[label_new][$eq]=true"
-          },
-          "response": []
-        },
-        {
-          "name": "home-page-product-slider",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/home-page?populate[sections][on][home.product-slider][populate][products][fields][0]=documentId"
-          },
-          "response": []
-        },
-        {
-          "name": "attribute-by-document-id",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/attributes?filters[documentId][$eq]={{attributeDocumentId}}&populate=*"
-          },
-          "response": []
-        },
-        {
-          "name": "products-with-volume",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/products?pagination[page]=1&pagination[pageSize]=100&fields[0]=documentId&filters[active][$eq]=true&filters[attributes][volume][name][$notNull]=true&populate[attributes][populate][volume][fields][0]=name"
-          },
-          "response": []
-        },
-        {
-          "name": "products-by-brand",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/products?pagination[page]=1&pagination[pageSize]=100&filters[brand][name][$eq]={{brandName}}&filters[active][$eq]=true&fields[0]=documentId"
-          },
-          "response": []
-        },
-        {
-          "name": "brands-with-discount-card",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/brands?pagination[page]=1&pagination[pageSize]=100&filters[showDiscountOnProductCard][$eq]=true"
-          },
-          "response": []
-        }
-      ]
-    }
-  ],
+  "item": [],
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://10.10.3.80:1337"
     },
     {
+      "key": "contentManagerUrl",
+      "value": "http://10.10.3.80:1337/content-manager"
+    },
+    {
       "key": "bffUrl",
       "value": "https://bff2.monamie.kz"
+    },
+    {
+      "key": "page",
+      "value": "1"
+    },
+    {
+      "key": "pageSize",
+      "value": "100"
+    },
+    {
+      "key": "sort",
+      "value": "id:asc"
+    },
+    {
+      "key": "locale",
+      "value": "ru"
+    },
+    {
+      "key": "altLocale",
+      "value": "kk"
+    },
+    {
+      "key": "active",
+      "value": "true"
+    },
+    {
+      "key": "documentId",
+      "value": ""
+    },
+    {
+      "key": "productDocumentId",
+      "value": ""
+    },
+    {
+      "key": "attributeDocumentId",
+      "value": ""
+    },
+    {
+      "key": "brandDocumentId",
+      "value": ""
+    },
+    {
+      "key": "categoryDocumentId",
+      "value": ""
     },
     {
       "key": "barcode",
@@ -482,27 +73,31 @@
       "value": ""
     },
     {
-      "key": "attributeDocumentId",
-      "value": ""
-    },
-    {
       "key": "brandName",
       "value": ""
     },
     {
-      "key": "jwtToken",
-      "secret": true,
+      "key": "categoryCode",
       "value": ""
+    },
+    {
+      "key": "slug",
+      "value": ""
+    },
+    {
+      "key": "jwtToken",
+      "value": "",
+      "secret": true
     },
     {
       "key": "bearerToken",
-      "secret": true,
-      "value": ""
+      "value": "",
+      "secret": true
     },
     {
       "key": "categoryDebugToken",
-      "secret": true,
-      "value": ""
+      "value": "",
+      "secret": true
     }
   ]
 }
