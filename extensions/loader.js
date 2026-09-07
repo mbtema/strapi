@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.0.1
+// @version      1.0.2
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifest
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extensions/loader.js
@@ -19,6 +19,7 @@
   const MANIFEST_URL = `${RAW_ROOT}extensions/manifest.json`;
   const CACHE_KEY = 'tm-strapi-extensions-cache-v1';
   const LOADER_ATTR = 'data-tm-strapi-extensions-loader';
+  const executedIds = new Set();
 
   if (document.documentElement?.hasAttribute(LOADER_ATTR)) return;
   document.documentElement?.setAttribute(LOADER_ATTR, '');
@@ -34,6 +35,7 @@
             resolve(response.responseText);
             return;
           }
+
           reject(new Error(`HTTP ${response.status}: ${url}`));
         },
         onerror() {
@@ -60,7 +62,11 @@
   }
 
   function normalizeManifest(manifest) {
-    if (!manifest || manifest.schemaVersion !== 1 || !Array.isArray(manifest.extensions)) {
+    if (
+      !manifest ||
+      manifest.schemaVersion !== 1 ||
+      !Array.isArray(manifest.extensions)
+    ) {
       throw new Error('Invalid extensions manifest');
     }
 
@@ -79,12 +85,57 @@
   }
 
   function getSignature(items) {
-    return JSON.stringify(items.map(({ id, path, version }) => ({ id, path, version })));
+    return JSON.stringify(
+      items.map(({ id, path, version }) => ({ id, path, version }))
+    );
+  }
+
+  function isRunnableItem(item) {
+    return Boolean(
+      item?.id &&
+      item?.path &&
+      item?.version &&
+      typeof item.code === 'string' &&
+      item.code.trim()
+    );
+  }
+
+  function matchesManifestItem(cached, expected) {
+    return Boolean(
+      isRunnableItem(cached) &&
+      cached.id === expected.id &&
+      cached.path === expected.path &&
+      cached.version === expected.version
+    );
+  }
+
+  function isCacheCurrent(cache, manifest, signature) {
+    if (
+      !cache ||
+      cache.schemaVersion !== 1 ||
+      cache.signature !== signature ||
+      !Array.isArray(cache.extensions) ||
+      cache.extensions.length !== manifest.length
+    ) {
+      return false;
+    }
+
+    const byId = new Map(
+      cache.extensions.map(item => [item?.id, item])
+    );
+
+    return manifest.every(item =>
+      matchesManifestItem(byId.get(item.id), item)
+    );
   }
 
   function injectExtension(item) {
     const run = () => {
-      const target = document.documentElement || document.head || document.body;
+      const target =
+        document.documentElement ||
+        document.head ||
+        document.body;
+
       if (!target) {
         requestAnimationFrame(run);
         return;
@@ -92,7 +143,9 @@
 
       const script = document.createElement('script');
       script.dataset.tmStrapiExtension = item.id;
-      script.textContent = `${item.code}\n//# sourceURL=strapi-extension/${item.path}`;
+      script.textContent =
+        `${item.code}\n//# sourceURL=strapi-extension/${item.path}`;
+
       target.appendChild(script);
       script.remove();
     };
@@ -102,11 +155,15 @@
 
   function runExtensions(items) {
     for (const item of items || []) {
-      if (!item?.id || !item?.path || typeof item.code !== 'string') continue;
+      if (!isRunnableItem(item)) continue;
+      if (executedIds.has(item.id)) continue;
+
+      executedIds.add(item.id);
 
       try {
         injectExtension(item);
       } catch (error) {
+        executedIds.delete(item.id);
         console.error(`[Extensions] Failed to run ${item.id}`, error);
       }
     }
@@ -117,15 +174,29 @@
     const manifest = normalizeManifest(JSON.parse(manifestText));
     const signature = getSignature(manifest);
 
-    if (currentCache?.signature === signature && Array.isArray(currentCache.extensions)) {
+    if (isCacheCurrent(currentCache, manifest, signature)) {
       return;
     }
 
+    const cachedById = new Map(
+      (currentCache?.extensions || [])
+        .filter(isRunnableItem)
+        .map(item => [item.id, item])
+    );
+
     const extensions = await Promise.all(
-      manifest.map(async item => ({
-        ...item,
-        code: await requestText(`${RAW_ROOT}${item.path}`)
-      }))
+      manifest.map(async item => {
+        const cached = cachedById.get(item.id);
+
+        if (matchesManifestItem(cached, item)) {
+          return cached;
+        }
+
+        return {
+          ...item,
+          code: await requestText(`${RAW_ROOT}${item.path}`)
+        };
+      })
     );
 
     const nextCache = {
@@ -137,12 +208,17 @@
 
     writeCache(nextCache);
 
-    if (!currentCache?.extensions?.length) {
+    const hadRunnableCache = Boolean(
+      currentCache?.extensions?.some(isRunnableItem)
+    );
+
+    if (!hadRunnableCache) {
       runExtensions(extensions);
       console.log(`[Extensions] Loaded ${extensions.length} extensions`);
-    } else {
-      console.log('[Extensions] Update cached. Reload Strapi to apply it.');
+      return;
     }
+
+    console.log('[Extensions] Update cached. Reload Strapi to apply it.');
   }
 
   const cache = readCache();
@@ -152,7 +228,7 @@
   }
 
   refreshCache(cache).catch(error => {
-    if (cache?.extensions?.length) {
+    if (cache?.extensions?.some(isRunnableItem)) {
       console.warn('[Extensions] GitHub unavailable, using cache', error);
       return;
     }
