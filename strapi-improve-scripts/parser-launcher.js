@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         parser-launcher
-// @version      1.1
+// @version      1.2
 // @description  Запускает console-парсеры из GitHub по Alt+P
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/strapi-improve-scripts/parser-launcher.js
@@ -15,28 +15,14 @@
   const RAW_BASE =
     'https://raw.githubusercontent.com/mbtema/strapi/main/console-parsers/';
 
-  const PARSERS = [
-    {
-      name: 'Проверка дробных цен',
-      file: 'price-checker.js'
-    },
-    {
-      name: 'Проверка сортировки объемов',
-      file: 'sort-volume.js'
-    },
-    {
-      name: 'Проверка единиц объемов',
-      file: 'volume-checker.js'
-    }
-  ];
-
+  const MANIFEST_FILE = 'manifest.json';
   const OVERLAY_ID = 'tm-parser-launcher-overlay';
 
-  function loadParserCode(file) {
+  function loadText(file) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: 'GET',
-        url: RAW_BASE + file,
+        url: `${RAW_BASE}${file}?t=${Date.now()}`,
         timeout: 15000,
 
         onload(response) {
@@ -61,6 +47,21 @@
     });
   }
 
+  async function loadManifest() {
+    const text = await loadText(MANIFEST_FILE);
+    const manifest = JSON.parse(text);
+
+    if (!Array.isArray(manifest.parsers)) {
+      throw new Error('Некорректный manifest.json');
+    }
+
+    return manifest.parsers.filter(parser =>
+      parser &&
+      typeof parser.name === 'string' &&
+      typeof parser.file === 'string'
+    );
+  }
+
   function executeParser(code, file) {
     const script = document.createElement('script');
 
@@ -76,7 +77,7 @@
     status.style.color = '#c7c7d4';
 
     try {
-      const code = await loadParserCode(parser.file);
+      const code = await loadText(parser.file);
 
       executeParser(code, parser.file);
 
@@ -97,7 +98,32 @@
     document.getElementById(OVERLAY_ID)?.remove();
   }
 
-  function openLauncher() {
+  function createButton(parser, status) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = parser.name;
+
+    Object.assign(button.style, {
+      width: '100%',
+      padding: '12px 14px',
+      border: '1px solid #49495f',
+      borderRadius: '4px',
+      background: '#212134',
+      color: '#ffffff',
+      fontFamily: 'inherit',
+      fontSize: '14px',
+      textAlign: 'left',
+      cursor: 'pointer'
+    });
+
+    button.addEventListener('click', () => {
+      runParser(parser, status);
+    });
+
+    return button;
+  }
+
+  async function openLauncher() {
     if (document.getElementById(OVERLAY_ID)) {
       closeLauncher();
       return;
@@ -175,7 +201,7 @@
     });
 
     const status = document.createElement('div');
-    status.textContent = 'Alt+P — открыть / закрыть';
+    status.textContent = 'Загрузка списка парсеров...';
 
     Object.assign(status.style, {
       minHeight: '18px',
@@ -183,31 +209,6 @@
       color: '#a5a5ba',
       fontSize: '12px'
     });
-
-    for (const parser of PARSERS) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = parser.name;
-
-      Object.assign(button.style, {
-        width: '100%',
-        padding: '12px 14px',
-        border: '1px solid #49495f',
-        borderRadius: '4px',
-        background: '#212134',
-        color: '#ffffff',
-        fontFamily: 'inherit',
-        fontSize: '14px',
-        textAlign: 'left',
-        cursor: 'pointer'
-      });
-
-      button.addEventListener('click', () => {
-        runParser(parser, status);
-      });
-
-      list.appendChild(button);
-    }
 
     panel.append(header, list, status);
     overlay.appendChild(panel);
@@ -218,6 +219,27 @@
         closeLauncher();
       }
     });
+
+    try {
+      const parsers = await loadManifest();
+
+      if (!document.body.contains(overlay)) return;
+
+      if (!parsers.length) {
+        throw new Error('В manifest.json нет парсеров');
+      }
+
+      for (const parser of parsers) {
+        list.appendChild(createButton(parser, status));
+      }
+
+      status.textContent = 'Alt+P — открыть / закрыть';
+    } catch (error) {
+      console.error('[Parser Launcher]', error);
+
+      status.textContent = `Ошибка: ${error.message}`;
+      status.style.color = '#d02b20';
+    }
   }
 
   document.addEventListener(
