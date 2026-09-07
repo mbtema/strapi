@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         toggle-sidebar
-// @version      1.1
-// @description  Sidebar скрыт по умолчанию, Alt+S переключает его
+// @version      1.2
+// @description  Sidebar скрыт по умолчанию, Alt+S переключает его; scrollbar скрыт визуально
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/strapi-improve-scripts/toggle-sidebar.js
 // @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/strapi-improve-scripts/toggle-sidebar.js
@@ -12,6 +12,9 @@
 (function () {
     'use strict';
 
+    const SIDEBAR_ATTR = 'data-tm-content-manager-sidebar';
+    const STYLE_ID = 'tm-sidebar-scrollbar-style';
+
     // При загрузке sidebar скрыт
     let hidden = true;
 
@@ -20,6 +23,34 @@
     let main = null;
     let original = null;
     let scheduled = false;
+
+
+    // =========================================================
+    // СКРЫТЬ SCROLLBAR, СОХРАНИВ ПРОКРУТКУ
+    // =========================================================
+
+    function ensureScrollbarStyle() {
+        if (document.getElementById(STYLE_ID)) return;
+
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
+        style.textContent = `
+            [${SIDEBAR_ATTR}],
+            [${SIDEBAR_ATTR}] * {
+                scrollbar-width: none !important;
+                -ms-overflow-style: none !important;
+            }
+
+            [${SIDEBAR_ATTR}]::-webkit-scrollbar,
+            [${SIDEBAR_ATTR}] *::-webkit-scrollbar {
+                width: 0 !important;
+                height: 0 !important;
+                display: none !important;
+            }
+        `;
+
+        (document.head || document.documentElement).appendChild(style);
+    }
 
 
     // =========================================================
@@ -58,6 +89,8 @@
     // =========================================================
 
     function init() {
+        ensureScrollbarStyle();
+
         // Если sidebar уже найден, используем сохранённую ссылку,
         // даже если он сейчас скрыт через display:none.
         if (
@@ -66,6 +99,7 @@
             layout &&
             main
         ) {
+            sidebar.setAttribute(SIDEBAR_ATTR, '');
             return true;
         }
 
@@ -76,6 +110,8 @@
         }
 
         sidebar = foundSidebar;
+        sidebar.setAttribute(SIDEBAR_ATTR, '');
+
         layout = sidebar.parentElement;
 
         main = [...layout.children].find(
@@ -333,6 +369,8 @@
             requestAnimationFrame(start);
             return;
         }
+
+        ensureScrollbarStyle();
 
         observer.observe(document.documentElement, {
             childList: true,
