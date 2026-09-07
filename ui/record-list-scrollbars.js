@@ -1,0 +1,129 @@
+// ==StrapiExtension==
+// @name         record-list-scrollbars
+// @version      1.0
+// @description  Скрывает scrollbar в списке записей Content Manager, сохраняя прокрутку
+// ==/StrapiExtension==
+
+(function () {
+    'use strict';
+
+    const STYLE_ID = 'tm-record-list-scrollbars-style';
+    const HIDDEN_ATTR = 'data-tm-record-list-scrollbars-hidden';
+    const TABLE_SELECTOR = 'table, [role="table"], [role="grid"]';
+
+    let scheduled = false;
+
+    function ensureStyle() {
+        if (document.getElementById(STYLE_ID)) return;
+
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
+        style.textContent = `
+            [${HIDDEN_ATTR}] {
+                scrollbar-width: none !important;
+                -ms-overflow-style: none !important;
+            }
+
+            [${HIDDEN_ATTR}]::-webkit-scrollbar {
+                width: 0 !important;
+                height: 0 !important;
+                display: none !important;
+            }
+        `;
+
+        (document.head || document.documentElement).appendChild(style);
+    }
+
+    function isScrollable(element) {
+        if (!(element instanceof HTMLElement)) return false;
+
+        const style = getComputedStyle(element);
+        const overflowX = style.overflowX;
+        const overflowY = style.overflowY;
+
+        const canScrollX =
+            /^(auto|scroll|overlay)$/.test(overflowX) &&
+            element.scrollWidth > element.clientWidth + 2;
+
+        const canScrollY =
+            /^(auto|scroll|overlay)$/.test(overflowY) &&
+            element.scrollHeight > element.clientHeight + 2;
+
+        return canScrollX || canScrollY;
+    }
+
+    function markScrollContainers(table, root) {
+        let node = table.parentElement;
+
+        while (
+            node &&
+            node !== root &&
+            node !== document.body &&
+            node !== document.documentElement
+        ) {
+            if (isScrollable(node)) {
+                node.setAttribute(HIDDEN_ATTR, '');
+            }
+
+            node = node.parentElement;
+        }
+    }
+
+    function apply() {
+        ensureStyle();
+
+        const root = document.querySelector('main') || document.body;
+        if (!root) return;
+
+        root.querySelectorAll(TABLE_SELECTOR).forEach(table => {
+            markScrollContainers(table, root);
+        });
+    }
+
+    function scheduleApply() {
+        if (scheduled) return;
+        scheduled = true;
+
+        requestAnimationFrame(() => {
+            scheduled = false;
+            apply();
+        });
+    }
+
+    function nodeIsRelevant(node) {
+        if (!(node instanceof Element)) return false;
+
+        return Boolean(
+            node.matches(TABLE_SELECTOR) ||
+            node.closest(TABLE_SELECTOR) ||
+            node.querySelector(TABLE_SELECTOR)
+        );
+    }
+
+    const observer = new MutationObserver(mutations => {
+        const relevant = mutations.some(mutation =>
+            [...mutation.addedNodes].some(nodeIsRelevant)
+        );
+
+        if (relevant) scheduleApply();
+    });
+
+    function start() {
+        if (!document.documentElement) {
+            requestAnimationFrame(start);
+            return;
+        }
+
+        ensureStyle();
+
+        observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true
+        });
+
+        window.addEventListener('popstate', scheduleApply);
+        scheduleApply();
+    }
+
+    start();
+})();
