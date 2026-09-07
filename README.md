@@ -26,6 +26,7 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 - `price-checker.js` — ищет торговые предложения с дробным значением `price`.
 - `sort-volume.js` — ищет товары с неправильным порядком volume и отдельно отмечает нечитаемые значения.
 - `volume-checker.js` — ищет товары, у которых связанные volume используют разные единицы измерения.
+- `missing-shades.js` — ищет активные торговые предложения, у которых заполнен `color_variant1C`, но отсутствует `shade`.
 - `manifest.json` — список парсеров, отображаемых в Parser Launcher.
 
 Для добавления нового парсера достаточно положить `.js` в `console-parsers/` и добавить его в `manifest.json`.
@@ -67,6 +68,7 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 .
 ├── console-parsers/
 │   ├── manifest.json
+│   ├── missing-shades.js
 │   ├── price-checker.js
 │   ├── sort-volume.js
 │   └── volume-checker.js
