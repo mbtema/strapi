@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         barcode-extractor
-// @version      1.4
+// @version      1.4.1
 // @description  Копирует barcode с карточки товара по Ctrl+B
 // ==/StrapiExtension==
 
@@ -112,8 +112,15 @@
   function fallbackCopy(value) {
     const textarea = document.createElement('textarea');
     textarea.value = value;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
+    textarea.setAttribute('readonly', '');
+
+    Object.assign(textarea.style, {
+      position: 'fixed',
+      left: '-9999px',
+      top: '0',
+      opacity: '0'
+    });
+
     document.body.appendChild(textarea);
     textarea.select();
 
@@ -125,8 +132,12 @@
 
   async function copyText(value) {
     if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return;
+      try {
+        await navigator.clipboard.writeText(value);
+        return;
+      } catch (error) {
+        console.warn('[Barcode] Clipboard API failed, using fallback', error);
+      }
     }
 
     fallbackCopy(value);
