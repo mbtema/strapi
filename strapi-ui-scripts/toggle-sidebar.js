@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         toggle-sidebar
-// @version      1.3.3
+// @version      1.3.4
 // @description  Sidebar скрыт по умолчанию, Alt+S переключает его; scrollbar и маркеры коллекций скрыты визуально
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/strapi-ui-scripts/toggle-sidebar.js
@@ -14,6 +14,7 @@
 
     const SIDEBAR_ATTR = 'data-tm-content-manager-sidebar';
     const STYLE_ID = 'tm-sidebar-ui-style';
+    const LINK_SELECTOR = 'a[href*="/admin/content-manager/collection-types/"]';
 
     let hidden = true;
 
@@ -74,15 +75,20 @@
     }
 
     function findSidebar() {
+        const direct = document.querySelector(
+            'nav[aria-label="Content Manager"]'
+        );
+
+        if (direct) return direct;
+
         const candidates = [
             ...document.querySelectorAll('aside, nav, div')
         ].filter(element => {
-            const text = element.innerText || '';
             const rect = element.getBoundingClientRect();
+            const links = element.querySelectorAll(LINK_SELECTOR);
 
             return (
-                text.includes('Content Manager') &&
-                text.includes('COLLECTION TYPES') &&
+                links.length >= 2 &&
                 rect.width >= 150 &&
                 rect.width <= 350 &&
                 rect.left < 300 &&
@@ -92,8 +98,8 @@
 
         candidates.sort(
             (a, b) =>
-                a.offsetWidth * a.offsetHeight -
-                b.offsetWidth * b.offsetHeight
+                a.querySelectorAll('*').length -
+                b.querySelectorAll('*').length
         );
 
         return candidates[0] || null;
