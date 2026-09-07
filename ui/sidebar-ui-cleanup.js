@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         sidebar-ui-cleanup
-// @version      1.0.1
+// @version      1.0.2
 // @description  Убирает верхний служебный блок Content Manager и оформляет активную коллекцию в sidebar
 // ==/StrapiExtension==
 
@@ -34,14 +34,37 @@
                 padding-top: 0 !important;
             }
 
-            [${SIDEBAR_ATTR}] a[${ACTIVE_ATTR}] {
-                position: relative !important;
-                width: 100% !important;
+            [${SIDEBAR_ATTR}] ${LINK_SELECTOR} {
+                width: calc(100% - 16px) !important;
+                margin: 2px 8px !important;
                 box-sizing: border-box !important;
                 border-radius: 6px !important;
+            }
+
+            [${SIDEBAR_ATTR}] ${LINK_SELECTOR} > div {
+                min-width: 0 !important;
+                height: auto !important;
+                min-height: 40px !important;
+                box-sizing: border-box !important;
+            }
+
+            [${SIDEBAR_ATTR}] ${LINK_SELECTOR} > div > span:last-child {
+                min-width: 0 !important;
+                max-width: none !important;
+                overflow: visible !important;
+                white-space: normal !important;
+                text-overflow: clip !important;
+                line-height: 1.35 !important;
+                overflow-wrap: anywhere !important;
+                word-break: normal !important;
+            }
+
+            [${SIDEBAR_ATTR}] a[${ACTIVE_ATTR}] {
+                position: relative !important;
                 background: #1d1d32 !important;
                 color: #7b68ff !important;
                 font-weight: 600 !important;
+                overflow: hidden !important;
             }
 
             [${SIDEBAR_ATTR}] a[${ACTIVE_ATTR}] * {
@@ -52,11 +75,11 @@
             [${SIDEBAR_ATTR}] a[${ACTIVE_ATTR}]::after {
                 content: '' !important;
                 position: absolute !important;
-                top: 0 !important;
+                top: 6px !important;
                 right: 0 !important;
+                bottom: 6px !important;
                 width: 3px !important;
-                height: 100% !important;
-                border-radius: 2px 0 0 2px !important;
+                border-radius: 3px 0 0 3px !important;
                 background: #725cff !important;
                 pointer-events: none !important;
             }
