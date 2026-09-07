@@ -1,66 +1,93 @@
-Набор рабочих инструментов для админки Strapi: Tampermonkey-скрипты, UI/UX-кастомы, console-парсеры и Postman-коллекция для быстрых API-проверок.
+Набор рабочих инструментов для админки Strapi: функции, UI-кастомы, парсеры и Postman.
 
-## Навигация
+## Структура
 
-| Раздел | Назначение |
+| Папка | Назначение |
 |---|---|
-| [`strapi-improve-scripts/`](./strapi-improve-scripts) | Функциональные userscripts для Tampermonkey: горячие клавиши, launcher и вспомогательные действия |
-| [`strapi-ui-scripts/`](./strapi-ui-scripts) | UI/UX-кастомы Strapi: sidebar, расположение элементов и локальные изменения интерфейса |
-| [`console-parsers/`](./console-parsers) | Парсеры для массовых проверок данных через Strapi API |
-| [`postman-collection/`](./postman-collection) | Чистая Postman-коллекция с общими переменными для Strapi, Content Manager API и BFF |
+| [`extensions/`](./extensions) | Единый Tampermonkey loader и manifest всех постоянных расширений Strapi |
+| [`functions/`](./functions) | Функциональные улучшения: горячие клавиши, barcode, Parser Launcher, Vimium helper |
+| [`ui/`](./ui) | UI/UX-кастомы Strapi |
+| [`parsers/`](./parsers) | Одноразовые массовые проверки данных с CSV-выгрузкой |
+| [`postman/`](./postman) | Postman collection с общими переменными и API paths |
 
-## Strapi improve scripts
+## Extensions
 
-- `barcode-extractor.js` — копирует barcode из карточки товара по `Ctrl+B` и показывает уведомление об успехе или ошибке.
-- `ctrl-enter-publisher.js` — публикует текущую запись по `Ctrl+Enter`.
-- `parser-launcher.js` — открывает по `Alt+P` меню доступных console-парсеров и запускает выбранный файл напрямую из GitHub.
-- `vimium-open-row.js` — добавляет доступные для Vimium ссылки в строки таблиц Strapi.
+В Tampermonkey устанавливается только:
 
-## Strapi UI scripts
+`extensions/loader.js`
 
-- `sidebar-ui-cleanup.js` — убирает верхний служебный блок `Content Manager / Search / COLLECTION TYPES / count` и оформляет активную коллекцию фиолетовой подложкой с правым индикатором.
-- `toggle-sidebar.js` — скрывает sidebar Strapi по умолчанию, переключает его по `Alt+S`, скрывает scrollbar и точки перед коллекциями.
-- `sidebar-sorter.js` — позволяет перетаскивать коллекции в sidebar, сохраняет пользовательский порядок в `localStorage`; `Alt+Shift+S` сбрасывает сортировку.
-- `entry-relocate.js` — переносит действия Entry в верхнюю строку рядом с Draft / Published и освобождает полезную ширину формы.
+Loader при открытии Strapi:
 
-Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, поэтому новые версии можно получать напрямую из репозитория.
+1. мгновенно запускает последнюю сохранённую копию extensions из кеша;
+2. в фоне загружает `extensions/manifest.json` с GitHub;
+3. при изменении версий скачивает новые файлы и сохраняет их в кеш;
+4. обновлённые extensions применяются после следующей перезагрузки Strapi.
 
-После переноса userscript в другую папку его нужно один раз переустановить из нового raw-пути, чтобы Tampermonkey сохранил новый `@updateURL`.
+Старые отдельные Tampermonkey-скрипты после установки loader нужно отключить или удалить, иначе один функционал будет запускаться дважды.
 
-### Версионирование
+### Manifest
 
-- `1.3` → новое заметное изменение или новый функционал.
-- `1.3.1` → небольшой фикс, доработка или оптимизация уже существующего функционала.
-- `1.4` → следующее заметное нововведение.
-- `2.0` → крупная новая версия.
+`extensions/manifest.json` определяет, какие extensions включены:
 
-## Console parsers
+```json
+{
+  "id": "toggle-sidebar",
+  "path": "ui/toggle-sidebar.js",
+  "version": "1.3.4",
+  "enabled": true
+}
+```
 
-Парсеры запускаются через `parser-launcher.js`, проходят данные постранично, выводят прогресс в Console и автоматически скачивают CSV-результат.
+При изменении файла обязательно увеличивать его `version` в manifest. Именно версия сообщает loader, что кеш нужно обновить.
 
-- `price-checker.js` — ищет торговые предложения с дробным значением `price`.
-- `sort-volume.js` — ищет товары с неправильным порядком volume и отдельно отмечает нечитаемые значения.
-- `volume-checker.js` — ищет товары, у которых связанные volume используют разные единицы измерения.
-- `missing-shades.js` — ищет активные торговые предложения, у которых заполнен `color_variant1C`, но отсутствует `shade`.
-- `zero-prices.js` — ищет торговые предложения со значением `price = 0`, привязанные к активным товарам.
-- `orphan-attributes.js` — ищет торговые предложения без связанного `product`.
-- `products-without-attributes.js` — ищет активные товары без торговых предложений.
-- `missing-brand.js` — ищет активные товары без `brand`.
-- `missing-categories.js` — ищет активные товары без relations в `categories`.
-- `products-without-price.js` — ищет активные товары, у которых есть торговые предложения, но ни у одного нет цены `> 0`.
-- `manifest.json` — список парсеров, отображаемых в Parser Launcher.
+## Functions
 
-Для добавления нового парсера достаточно положить `.js` в `console-parsers/` и добавить его в `manifest.json`.
+- `barcode-extractor.js` — `Ctrl+B`, копирует barcode из карточки товара и показывает toast.
+- `ctrl-enter-publisher.js` — `Ctrl+Enter`, публикует текущую запись.
+- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`.
+- `vimium-open-row.js` — добавляет строки таблиц, доступные для Vimium.
 
-## Postman collection
+## UI
+
+- `sidebar-ui-cleanup.js` — убирает верхний блок Content Manager / Search / COLLECTION TYPES / count и оформляет активную коллекцию фиолетовой подложкой.
+- `toggle-sidebar.js` — скрывает sidebar по умолчанию, `Alt+S` переключает его; scrollbar и точки коллекций скрыты.
+- `sidebar-sorter.js` — drag-and-drop сортировка коллекций; порядок хранится в `localStorage`, `Alt+Shift+S` сбрасывает его.
+- `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
+
+## Версионирование
+
+- `1.3` — новое заметное изменение / функционал.
+- `1.3.1` — небольшой фикс, доработка или оптимизация существующего функционала.
+- `1.4` — следующее заметное нововведение.
+- `2.0` — крупная новая версия.
+
+## Parsers
+
+Парсеры запускаются через `Alt+P`, проходят API постранично, выводят прогресс в Console и автоматически скачивают CSV.
+
+- `price-checker.js` — дробные значения `price`.
+- `sort-volume.js` — неправильный порядок volume.
+- `volume-checker.js` — разные единицы измерения volume.
+- `missing-shades.js` — активные предложения с `color_variant1C`, но без `shade`.
+- `zero-prices.js` — предложения с `price = 0`, связанные с активными товарами.
+- `orphan-attributes.js` — предложения без `product`.
+- `products-without-attributes.js` — активные товары без предложений.
+- `missing-brand.js` — активные товары без `brand`.
+- `missing-categories.js` — активные товары без `categories`.
+- `products-without-price.js` — активные товары с предложениями, но без цены `> 0`.
+- `manifest.json` — список парсеров для Parser Launcher.
+
+Для нового парсера достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`.
+
+## Postman
 
 Основной файл:
 
-`postman-collection/admin-api.json`
+`postman/admin-api.json`
 
-Коллекция намеренно не содержит готовых запросов. Новые endpoints добавляются только по мере реальной необходимости, а повторяющиеся значения хранятся в collection variables.
+Коллекция намеренно не содержит готовых запросов. Повторяющиеся значения вынесены в collection variables.
 
-Пути известных Strapi API endpoints также вынесены в переменные. Например:
+Пример:
 
 ```text
 {{baseUrl}}{{products}}
@@ -69,25 +96,36 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 {{baseUrl}}{{categories}}
 ```
 
-Где `products = /api/products`, `attributes = /api/attributes` и т.д. Для endpoints с дефисами используются camelCase-переменные, например `giftCertificates = /api/gift-certificates`.
-
 Основные переменные:
 
 - URL: `baseUrl`, `contentManagerUrl`, `bffUrl`
-- API paths: `products`, `attributes`, `promotions`, `brands`, `categories` и остальные известные endpoints из рабочей коллекции
-- пагинация и сортировка: `page`, `pageSize`, `sort`
-- локали и состояние: `locale`, `altLocale`, `active`
+- API paths: `products`, `attributes`, `promotions`, `brands`, `categories` и другие endpoints
+- пагинация: `page`, `pageSize`, `sort`
+- локали: `locale`, `altLocale`
 - идентификаторы: `documentId`, `productDocumentId`, `attributeDocumentId`, `brandDocumentId`, `categoryDocumentId`
 - рабочие значения: `barcode`, `productKey`, `brandName`, `categoryCode`, `slug`
 - секреты: `jwtToken`, `bearerToken`, `categoryDebugToken`
 
-Секретные значения не хранятся в репозитории и заполняются только локально в Postman.
+Секреты в GitHub не хранятся и заполняются только локально в Postman.
 
-## Структура репозитория
+## Дерево
 
 ```text
 .
-├── console-parsers/
+├── extensions/
+│   ├── loader.js
+│   └── manifest.json
+├── functions/
+│   ├── barcode-extractor.js
+│   ├── ctrl-enter-publisher.js
+│   ├── parser-launcher.js
+│   └── vimium-open-row.js
+├── ui/
+│   ├── entry-relocate.js
+│   ├── sidebar-sorter.js
+│   ├── sidebar-ui-cleanup.js
+│   └── toggle-sidebar.js
+├── parsers/
 │   ├── manifest.json
 │   ├── missing-brand.js
 │   ├── missing-categories.js
@@ -99,17 +137,7 @@ Tampermonkey-скрипты используют `@updateURL` / `@downloadURL`, 
 │   ├── sort-volume.js
 │   ├── volume-checker.js
 │   └── zero-prices.js
-├── postman-collection/
+├── postman/
 │   └── admin-api.json
-├── strapi-improve-scripts/
-│   ├── barcode-extractor.js
-│   ├── ctrl-enter-publisher.js
-│   ├── parser-launcher.js
-│   └── vimium-open-row.js
-├── strapi-ui-scripts/
-│   ├── entry-relocate.js
-│   ├── sidebar-sorter.js
-│   ├── sidebar-ui-cleanup.js
-│   └── toggle-sidebar.js
 └── README.md
 ```
