@@ -20,6 +20,12 @@
       "enabled": false
     },
     {
+      "id": "record-list-scrollbars",
+      "path": "ui/record-list-scrollbars.js",
+      "version": "1.0",
+      "enabled": true
+    },
+    {
       "id": "entry-relocate",
       "path": "ui/entry-relocate.js",
       "version": "1.4.2",
