@@ -70,6 +70,7 @@ Loader при открытии Strapi:
 - `sort-volume.js` — неправильный порядок volume.
 - `volume-checker.js` — разные единицы измерения volume.
 - `missing-shades.js` — активные предложения с `color_variant1C`, но без `shade`.
+- `shade-and-volume.js` — все предложения, у которых одновременно заполнены `shade` и `volume`.
 - `zero-prices.js` — предложения с `price = 0`, связанные с активными товарами.
 - `orphan-attributes.js` — предложения без `product`.
 - `products-without-attributes.js` — активные товары без предложений.
@@ -143,6 +144,7 @@ GitHub-версии файлов в `promts/` считаются централ�
 │   ├── missing-brand.js
 │   ├── missing-categories.js
 │   ├── missing-shades.js
+│   ├── shade-and-volume.js
 │   ├── orphan-attributes.js
 │   ├── price-checker.js
 │   ├── products-without-attributes.js
