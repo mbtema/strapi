@@ -18,6 +18,10 @@
       "file": "missing-shades.js"
     },
     {
+      "name": "Предложения с оттенком и объемом",
+      "file": "shade-and-volume.js"
+    },
+    {
       "name": "Предложения с нулевой ценой",
       "file": "zero-prices.js"
     },
