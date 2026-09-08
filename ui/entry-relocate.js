@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         entry-relocate
-// @version      1.4.2
+// @version      1.4.3
 // @description  Переносит действия Entry в строку с Draft / Published
 // ==/StrapiExtension==
 
@@ -236,53 +236,7 @@
         });
     }
 
-    function nodeContainsRelevantElement(node) {
-        if (!(node instanceof Element)) return false;
-
-        return (
-            node.matches(ENTRY_SELECTOR) ||
-            node.matches(TABLIST_SELECTOR) ||
-            Boolean(node.querySelector(ENTRY_SELECTOR)) ||
-            Boolean(node.querySelector(TABLIST_SELECTOR))
-        );
-    }
-
-    function isRelevantMutation(mutation) {
-        if (!currentAside || !document.contains(currentAside)) {
-            return [...mutation.addedNodes].some(nodeContainsRelevantElement);
-        }
-
-        if (
-            mutation.target === currentAside ||
-            currentAside.contains(mutation.target) ||
-            (
-                currentToolbar &&
-                (
-                    mutation.target === currentToolbar ||
-                    currentToolbar.contains(mutation.target)
-                )
-            )
-        ) {
-            return true;
-        }
-
-        return [...mutation.removedNodes].some(node => {
-            if (!(node instanceof Element)) return false;
-
-            return (
-                node === currentAside ||
-                node.contains(currentAside) ||
-                (
-                    currentToolbar &&
-                    (node === currentToolbar || node.contains(currentToolbar))
-                )
-            );
-        });
-    }
-
-    const observer = new MutationObserver(mutations => {
-        if (mutations.some(isRelevantMutation)) scheduleApply();
-    });
+    const observer = new MutationObserver(scheduleApply);
 
     function start() {
         if (!document.documentElement) {
