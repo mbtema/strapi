@@ -40,6 +40,10 @@
     {
       "name": "Товары без цены",
       "file": "products-without-price.js"
+    },
+    {
+      "name": "Копировать DOM страницы",
+      "file": "dom-stealer.js"
     }
   ]
 }
