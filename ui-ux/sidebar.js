@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         sidebar
-// @version      2.1.0
+// @version      2.1.1
 // @description  Единый UI/UX sidebar: глобальная навигация, Alt+S, поиск, быстрый доступ, группы и future-safe fallback
 // ==/StrapiExtension==
 
@@ -20,7 +20,6 @@
     const LIST_ATTR = 'data-tm-sidebar-main-list';
     const HIDDEN_ATTR = 'data-tm-sidebar-hidden';
     const SINGLE_SOURCE_ATTR = 'data-tm-sidebar-single-source-hidden';
-    const SINGLE_WRAPPER_ATTR = 'data-tm-sidebar-single-wrapper-hidden';
     const ACTIVE_ATTR = 'data-tm-sidebar-active-collection';
     const TOOLBAR_ATTR = 'data-tm-sidebar-toolbar';
     const GROUP_HEADER_ATTR = 'data-tm-sidebar-group-header';
@@ -70,6 +69,9 @@
             id: 'other',
             title: 'Прочее',
             collapsed: false,
+            uids: [
+                'api::notification-template.notification-template'
+            ],
             singleTypes: true
         }
     ];
@@ -84,6 +86,10 @@
         ['web-home-page', 1],
         ['блок рекомендаций', 2]
     ]);
+
+    const EXPLICIT_COLLECTION_UIDS = new Set(
+        GROUPS.flatMap(group => group.uids || [])
+    );
 
     const collapsedGroups = new Map(
         GROUPS.map(group => [group.id, group.collapsed])
@@ -115,8 +121,7 @@
             [${GLOBAL_TOP_SEPARATOR_ATTR}],
             [${GLOBAL_PROFILE_SEPARATOR_ATTR}],
             [${HIDDEN_ATTR}],
-            [${SINGLE_SOURCE_ATTR}],
-            [${SINGLE_WRAPPER_ATTR}] {
+            [${SINGLE_SOURCE_ATTR}] {
                 display: none !important;
             }
 
@@ -178,7 +183,7 @@
                 display: flex;
                 flex-direction: column;
                 gap: 8px;
-                padding: 12px 16px 12px;
+                padding: 12px 16px;
                 background: #181826;
                 border: 0 !important;
                 box-shadow: none !important;
@@ -319,6 +324,8 @@
             [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} > div {
                 display: flex !important;
                 align-items: center !important;
+                justify-content: flex-start !important;
+                gap: 0 !important;
                 width: 100% !important;
                 min-width: 0 !important;
                 min-height: 40px !important;
@@ -327,8 +334,8 @@
                 padding: 8px 12px !important;
             }
 
-            [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:first-child:empty,
-            [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} > div > span:first-child:empty {
+            [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:first-child:not(:last-child),
+            [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} > div > span:first-child:not(:last-child) {
                 display: none !important;
                 width: 0 !important;
                 height: 0 !important;
@@ -343,6 +350,7 @@
             [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} > div > span:last-child {
                 min-width: 0 !important;
                 max-width: none !important;
+                margin-left: 0 !important;
                 overflow: visible !important;
                 white-space: normal !important;
                 text-overflow: clip !important;
@@ -382,6 +390,17 @@
         }
 
         return current?.parentElement === parent ? current : null;
+    }
+
+    function normalizeText(value) {
+        return String(value || '')
+            .trim()
+            .replace(/\s+/g, ' ')
+            .toLocaleLowerCase();
+    }
+
+    function getLinkLabel(link) {
+        return (link?.textContent || '').trim().replace(/\s+/g, ' ');
     }
 
     function applyGlobalNav() {
@@ -442,17 +461,6 @@
                 .split('?')[0]
                 .replace(/\/+$/, '');
         }
-    }
-
-    function normalizeText(value) {
-        return String(value || '')
-            .trim()
-            .replace(/\s+/g, ' ')
-            .toLocaleLowerCase();
-    }
-
-    function getLinkLabel(link) {
-        return (link?.textContent || '').trim().replace(/\s+/g, ' ');
     }
 
     function clearSidebarReferences() {
@@ -538,29 +546,36 @@
 
         for (const child of [...parent.children]) {
             if (child === collectionList || child.hasAttribute(TOOLBAR_ATTR)) continue;
+            if (singleSourceList && (child === singleSourceList || child.contains(singleSourceList))) continue;
             child.setAttribute(HIDDEN_ATTR, '');
         }
     }
 
-    function hideSingleSource() {
-        if (!singleSourceList || singleSourceList === collectionList) return;
-
-        singleSourceList.setAttribute(SINGLE_SOURCE_ATTR, '');
-
-        let node = singleSourceList;
-        while (
-            node.parentElement &&
-            node.parentElement !== sidebar &&
-            !node.parentElement.contains(collectionList)
-        ) {
-            node = node.parentElement;
+    function hideNativeSingleChrome() {
+        if (singleSourceList && singleSourceList !== collectionList) {
+            singleSourceList.setAttribute(SINGLE_SOURCE_ATTR, '');
         }
 
-        if (
-            node.parentElement === sidebar &&
-            !node.contains(collectionList)
-        ) {
-            node.setAttribute(SINGLE_WRAPPER_ATTR, '');
+        const candidates = [...sidebar.querySelectorAll('span, p, h1, h2, h3, h4, div')]
+            .filter(node =>
+                normalizeText(node.textContent) === 'single types' &&
+                !node.closest(`[${GROUP_HEADER_ATTR}]`)
+            );
+
+        for (const label of candidates) {
+            let row = label.closest('button') || label.parentElement || label;
+
+            if (
+                row.parentElement &&
+                normalizeText(row.parentElement.textContent).startsWith('single types') &&
+                !row.parentElement.contains(collectionList)
+            ) {
+                row = row.parentElement;
+            }
+
+            if (!row.contains(collectionList)) {
+                row.setAttribute(HIDDEN_ATTR, '');
+            }
         }
     }
 
@@ -694,26 +709,26 @@
             if (uid) byUid.set(uid, item);
         }
 
-        const used = new Set();
         const desired = [];
         const validGroupIds = new Set();
 
         for (const group of GROUPS) {
-            let items = [];
+            const items = [];
 
             if (group.uids) {
-                items = group.uids.map(uid => byUid.get(uid)).filter(Boolean);
-                for (const item of items) {
+                items.push(...group.uids.map(uid => byUid.get(uid)).filter(Boolean));
+            }
+
+            if (group.fallbackCollections) {
+                items.push(...collectionItems.filter(item => {
                     const link = item.querySelector(COLLECTION_LINK_SELECTOR);
-                    used.add(getUid(link, 'collection'));
-                }
-            } else if (group.fallbackCollections) {
-                items = collectionItems.filter(item => {
-                    const link = item.querySelector(COLLECTION_LINK_SELECTOR);
-                    return !used.has(getUid(link, 'collection'));
-                });
-            } else if (group.singleTypes) {
-                items = sortSingleTypes(singleItems);
+                    const uid = getUid(link, 'collection');
+                    return uid && !EXPLICIT_COLLECTION_UIDS.has(uid);
+                }));
+            }
+
+            if (group.singleTypes) {
+                items.push(...sortSingleTypes(singleItems));
             }
 
             if (!items.length) continue;
@@ -741,7 +756,7 @@
             }
         });
 
-        hideSingleSource();
+        hideNativeSingleChrome();
     }
 
     function applyActiveState() {
@@ -870,6 +885,7 @@
             ensureToolbar();
             hideNativeCollectionHeader();
             organizeItems();
+            hideNativeSingleChrome();
             applyActiveState();
             applyVisibility();
         }
