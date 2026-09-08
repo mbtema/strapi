@@ -1,14 +1,22 @@
 // ==StrapiExtension==
-// @name         sidebar-ui-cleanup
-// @version      1.1.1
-// @description  Перестраивает Content Manager sidebar: поиск, закрепленные коллекции, группы Collection Types и Single Types, активное состояние
+// @name         sidebar
+// @version      2.0.0
+// @description  Единый UI/UX sidebar: глобальная навигация, Alt+S, поиск, быстрый доступ, группы и активное состояние
 // ==/StrapiExtension==
 
 (function () {
     'use strict';
 
-    const STYLE_ID = 'tm-sidebar-cleanup-style';
-    const SIDEBAR_ATTR = 'data-tm-sidebar-cleanup';
+    const STYLE_ID = 'tm-sidebar-style';
+
+    const GLOBAL_NAV_ATTR = 'data-tm-global-nav';
+    const GLOBAL_LOGO_ATTR = 'data-tm-global-logo-hidden';
+    const GLOBAL_TOP_SEPARATOR_ATTR = 'data-tm-global-top-separator-hidden';
+    const GLOBAL_PROFILE_ATTR = 'data-tm-global-profile';
+    const GLOBAL_PROFILE_SEPARATOR_ATTR = 'data-tm-global-profile-separator-hidden';
+
+    const SIDEBAR_ATTR = 'data-tm-content-manager-sidebar';
+    const CLEANUP_ATTR = 'data-tm-sidebar-cleanup';
     const LIST_ATTR = 'data-tm-sidebar-collection-list';
     const SINGLE_LIST_ATTR = 'data-tm-sidebar-single-list';
     const HIDDEN_ATTR = 'data-tm-sidebar-header-hidden';
@@ -105,10 +113,14 @@
         [SINGLE_GROUP.id, SINGLE_GROUP.collapsed]
     ]);
 
+    let hidden = true;
     let sidebar = null;
     let collectionList = null;
     let singleList = null;
     let toolbar = null;
+    let layout = null;
+    let main = null;
+    let originalLayout = null;
     let scheduled = false;
     let lastPath = '';
     let searchQuery = '';
@@ -119,18 +131,73 @@
         const style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent = `
+            nav li:has(> span > a[aria-label="Settings"][href^="/admin/settings"]) {
+                display: none !important;
+            }
+
+            [${GLOBAL_LOGO_ATTR}],
+            [${GLOBAL_TOP_SEPARATOR_ATTR}],
+            [${GLOBAL_PROFILE_SEPARATOR_ATTR}] {
+                display: none !important;
+            }
+
+            [${GLOBAL_NAV_ATTR}] > ul {
+                margin-top: 0 !important;
+                padding-top: 0 !important;
+            }
+
+            [${GLOBAL_PROFILE_ATTR}] {
+                border-top: 0 !important;
+                border-block-start: 0 !important;
+                box-shadow: none !important;
+            }
+
+            [${GLOBAL_PROFILE_ATTR}]::before,
+            [${GLOBAL_PROFILE_ATTR}]::after {
+                content: none !important;
+                display: none !important;
+            }
+
             [${HIDDEN_ATTR}] {
                 display: none !important;
             }
 
-            [${SIDEBAR_ATTR}] {
+            [${SIDEBAR_ATTR}],
+            [${SIDEBAR_ATTR}] * {
+                scrollbar-width: none !important;
+                -ms-overflow-style: none !important;
+            }
+
+            [${SIDEBAR_ATTR}]::-webkit-scrollbar,
+            [${SIDEBAR_ATTR}] *::-webkit-scrollbar {
+                width: 0 !important;
+                height: 0 !important;
+                display: none !important;
+            }
+
+            [${SIDEBAR_ATTR}] li {
+                list-style: none !important;
+            }
+
+            [${SIDEBAR_ATTR}] li::marker {
+                content: '' !important;
+                color: transparent !important;
+                font-size: 0 !important;
+            }
+
+            [${SIDEBAR_ATTR}] li::before {
+                content: none !important;
+                display: none !important;
+            }
+
+            [${CLEANUP_ATTR}] {
                 width: 320px !important;
                 min-width: 320px !important;
                 max-width: 320px !important;
             }
 
-            [${SIDEBAR_ATTR}] [${LIST_ATTR}],
-            [${SIDEBAR_ATTR}] [${SINGLE_LIST_ATTR}] {
+            [${CLEANUP_ATTR}] [${LIST_ATTR}],
+            [${CLEANUP_ATTR}] [${SINGLE_LIST_ATTR}] {
                 margin: 0 !important;
                 padding: 0 10px 10px !important;
             }
@@ -200,12 +267,12 @@
                 color: #ffffff;
             }
 
-            [${SIDEBAR_ATTR}] [${GROUP_HEADER_ATTR}] {
+            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] {
                 margin: 10px 0 4px !important;
                 padding: 0 !important;
             }
 
-            [${SIDEBAR_ATTR}] [${GROUP_HEADER_ATTR}] > button {
+            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] > button {
                 display: flex;
                 align-items: center;
                 width: 100%;
@@ -225,24 +292,24 @@
                 cursor: pointer;
             }
 
-            [${SIDEBAR_ATTR}] [${GROUP_HEADER_ATTR}] > button:hover {
+            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] > button:hover {
                 background: #212134;
                 color: #c0c0cf;
             }
 
-            [${SIDEBAR_ATTR}] .tm-sidebar-group-title {
+            [${CLEANUP_ATTR}] .tm-sidebar-group-title {
                 min-width: 0;
                 flex: 1;
             }
 
-            [${SIDEBAR_ATTR}] .tm-sidebar-group-count {
+            [${CLEANUP_ATTR}] .tm-sidebar-group-count {
                 margin-left: 8px;
                 color: #666687;
                 font-size: 10px;
                 font-weight: 500;
             }
 
-            [${SIDEBAR_ATTR}] .tm-sidebar-group-chevron {
+            [${CLEANUP_ATTR}] .tm-sidebar-group-chevron {
                 width: 12px;
                 margin-right: 5px;
                 color: #666687;
@@ -251,23 +318,23 @@
                 transition: transform 120ms ease;
             }
 
-            [${SIDEBAR_ATTR}] [${GROUP_HEADER_ATTR}][data-tm-collapsed="false"] .tm-sidebar-group-chevron {
+            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}][data-tm-collapsed="false"] .tm-sidebar-group-chevron {
                 transform: rotate(90deg);
             }
 
-            [${SIDEBAR_ATTR}] [${GROUP_ITEM_ATTR}] {
+            [${CLEANUP_ATTR}] [${GROUP_ITEM_ATTR}] {
                 margin: 1px 0 !important;
                 padding: 0 !important;
                 list-style: none !important;
             }
 
-            [${SIDEBAR_ATTR}] [${GROUP_ITEM_ATTR}]::marker {
+            [${CLEANUP_ATTR}] [${GROUP_ITEM_ATTR}]::marker {
                 content: '' !important;
                 font-size: 0 !important;
             }
 
-            [${SIDEBAR_ATTR}] ${COLLECTION_LINK_SELECTOR},
-            [${SIDEBAR_ATTR}] ${SINGLE_LINK_SELECTOR} {
+            [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR},
+            [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} {
                 width: 100% !important;
                 min-height: 38px !important;
                 margin: 0 !important;
@@ -275,8 +342,8 @@
                 border-radius: 6px !important;
             }
 
-            [${SIDEBAR_ATTR}] ${COLLECTION_LINK_SELECTOR} > div,
-            [${SIDEBAR_ATTR}] ${SINGLE_LINK_SELECTOR} > div {
+            [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div,
+            [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} > div {
                 min-width: 0 !important;
                 height: auto !important;
                 min-height: 38px !important;
@@ -285,8 +352,8 @@
                 padding-bottom: 7px !important;
             }
 
-            [${SIDEBAR_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:first-child:empty,
-            [${SIDEBAR_ATTR}] ${SINGLE_LINK_SELECTOR} > div > span:first-child:empty {
+            [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:first-child:empty,
+            [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} > div > span:first-child:empty {
                 display: none !important;
                 width: 0 !important;
                 height: 0 !important;
@@ -297,8 +364,8 @@
                 border: 0 !important;
             }
 
-            [${SIDEBAR_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:last-child,
-            [${SIDEBAR_ATTR}] ${SINGLE_LINK_SELECTOR} > div > span:last-child {
+            [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:last-child,
+            [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} > div > span:last-child {
                 min-width: 0 !important;
                 max-width: none !important;
                 overflow: visible !important;
@@ -310,7 +377,7 @@
                 font-size: 13px !important;
             }
 
-            [${SIDEBAR_ATTR}] a[${ACTIVE_ATTR}] {
+            [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] {
                 position: relative !important;
                 background: #302c6f !important;
                 color: #ffffff !important;
@@ -320,13 +387,59 @@
                 border-inline-end: 0 !important;
             }
 
-            [${SIDEBAR_ATTR}] a[${ACTIVE_ATTR}] * {
+            [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] * {
                 color: #ffffff !important;
                 font-weight: 600 !important;
             }
         `;
 
         (document.head || document.documentElement).appendChild(style);
+    }
+
+    function directChildContaining(parent, node) {
+        if (!parent || !node) return null;
+        let current = node;
+        while (current?.parentElement && current.parentElement !== parent) {
+            current = current.parentElement;
+        }
+        return current?.parentElement === parent ? current : null;
+    }
+
+    function applyGlobalNav() {
+        const homeLink = document.querySelector('nav a[aria-label="Home"][href="/admin"]');
+        const nav = homeLink?.closest('nav');
+        if (!nav) return;
+
+        nav.setAttribute(GLOBAL_NAV_ATTR, '');
+
+        const logo = nav.querySelector('img[alt="Application logo"]');
+        const logoRoot = directChildContaining(nav, logo);
+        if (logoRoot) {
+            logoRoot.setAttribute(GLOBAL_LOGO_ATTR, '');
+            const next = logoRoot.nextElementSibling;
+            if (next?.getAttribute('role') === 'separator') {
+                next.setAttribute(GLOBAL_TOP_SEPARATOR_ATTR, '');
+            }
+        }
+
+        const menu = homeLink.closest('ul');
+        const profileButton = [...nav.querySelectorAll('button[aria-haspopup="menu"]')]
+            .find(button => directChildContaining(nav, button));
+        const profileRoot = directChildContaining(nav, profileButton);
+
+        if (profileRoot) {
+            profileRoot.setAttribute(GLOBAL_PROFILE_ATTR, '');
+        }
+
+        if (menu && profileRoot) {
+            let node = menu.nextElementSibling;
+            while (node && node !== profileRoot) {
+                if (node.getAttribute('role') === 'separator') {
+                    node.setAttribute(GLOBAL_PROFILE_SEPARATOR_ATTR, '');
+                }
+                node = node.nextElementSibling;
+            }
+        }
     }
 
     function getUid(link, type) {
@@ -353,31 +466,51 @@
         }
     }
 
+    function clearSidebarReferences() {
+        sidebar = null;
+        collectionList = null;
+        singleList = null;
+        toolbar = null;
+        layout = null;
+        main = null;
+        originalLayout = null;
+    }
+
     function findSidebar() {
-        const direct = document.querySelector(SIDEBAR_SELECTOR);
-        if (direct) return direct;
+        return document.querySelector(SIDEBAR_SELECTOR);
+    }
 
-        const candidates = [...document.querySelectorAll('nav, aside, div')]
-            .filter(element => {
-                const links = element.querySelectorAll(COLLECTION_LINK_SELECTOR);
-                const rect = element.getBoundingClientRect();
+    function captureLayout(currentSidebar) {
+        const nextLayout = currentSidebar.parentElement;
+        const nextMain = nextLayout
+            ? [...nextLayout.children].find(child => child !== currentSidebar)
+            : null;
 
-                return (
-                    links.length >= 2 &&
-                    rect.left < 360 &&
-                    rect.width >= 150 &&
-                    rect.width <= 380 &&
-                    rect.height > 300
-                );
-            });
+        if (!nextLayout || !nextMain) {
+            console.warn('[sidebar] Main content not found');
+            return false;
+        }
 
-        candidates.sort(
-            (a, b) =>
-                a.querySelectorAll('*').length -
-                b.querySelectorAll('*').length
-        );
+        if (layout === nextLayout && main === nextMain && originalLayout) {
+            return true;
+        }
 
-        return candidates[0] || null;
+        layout = nextLayout;
+        main = nextMain;
+        originalLayout = {
+            sidebarDisplay: currentSidebar.style.getPropertyValue('display'),
+            sidebarDisplayPriority: currentSidebar.style.getPropertyPriority('display'),
+            gridTemplateColumns: layout.style.getPropertyValue('grid-template-columns'),
+            gridTemplatePriority: layout.style.getPropertyPriority('grid-template-columns'),
+            mainGridColumn: main.style.getPropertyValue('grid-column'),
+            mainGridColumnPriority: main.style.getPropertyPriority('grid-column'),
+            mainWidth: main.style.getPropertyValue('width'),
+            mainWidthPriority: main.style.getPropertyPriority('width'),
+            mainMaxWidth: main.style.getPropertyValue('max-width'),
+            mainMaxWidthPriority: main.style.getPropertyPriority('max-width')
+        };
+
+        return true;
     }
 
     function findLists(currentSidebar) {
@@ -450,7 +583,7 @@
             button.addEventListener('click', () => {
                 const link = findCollectionLink(item.uid);
                 if (link) link.click();
-                else console.warn(`[sidebar-ui-cleanup] Quick link not found: ${item.uid}`);
+                else console.warn(`[sidebar] Quick link not found: ${item.uid}`);
             });
             quickRow.appendChild(button);
         }
@@ -539,8 +672,7 @@
 
             if (!groupItems.length) continue;
 
-            const header = ensureGroupHeader(collectionList, group, groupItems.length);
-            desired.push(header);
+            desired.push(ensureGroupHeader(collectionList, group, groupItems.length));
 
             for (const item of groupItems) {
                 item.setAttribute(GROUP_ITEM_ATTR, group.id);
@@ -559,8 +691,7 @@
         if (leftovers.length) {
             const other = { id: 'other', title: 'ДРУГОЕ', collapsed: false };
             if (!collapsedGroups.has(other.id)) collapsedGroups.set(other.id, false);
-            const header = ensureGroupHeader(collectionList, other, leftovers.length);
-            desired.push(header);
+            desired.push(ensureGroupHeader(collectionList, other, leftovers.length));
 
             for (const item of leftovers) {
                 item.setAttribute(GROUP_ITEM_ATTR, other.id);
@@ -583,10 +714,7 @@
 
         desired.forEach((node, index) => {
             if (collectionList.children[index] !== node) {
-                collectionList.insertBefore(
-                    node,
-                    collectionList.children[index] || null
-                );
+                collectionList.insertBefore(node, collectionList.children[index] || null);
             }
         });
     }
@@ -618,10 +746,7 @@
 
         desired.forEach((node, index) => {
             if (singleList.children[index] !== node) {
-                singleList.insertBefore(
-                    node,
-                    singleList.children[index] || null
-                );
+                singleList.insertBefore(node, singleList.children[index] || null);
             }
         });
     }
@@ -669,9 +794,7 @@
         if (!sidebar) return;
 
         const query = searchQuery;
-        const groupHeaders = [
-            ...sidebar.querySelectorAll(`[${GROUP_HEADER_ATTR}]`)
-        ];
+        const groupHeaders = [...sidebar.querySelectorAll(`[${GROUP_HEADER_ATTR}]`)];
 
         for (const header of groupHeaders) {
             const groupId = header.getAttribute(GROUP_HEADER_ATTR);
@@ -679,9 +802,7 @@
             if (!list) continue;
 
             const items = [
-                ...list.querySelectorAll(
-                    `:scope > [${GROUP_ITEM_ATTR}="${groupId}"]`
-                )
+                ...list.querySelectorAll(`:scope > [${GROUP_ITEM_ATTR}="${groupId}"]`)
             ];
 
             const collapsed = collapsedGroups.get(groupId) || false;
@@ -702,31 +823,78 @@
         }
     }
 
+    function hideSidebar() {
+        if (!sidebar || !layout || !main) return;
+
+        sidebar.style.setProperty('display', 'none', 'important');
+        layout.style.setProperty('grid-template-columns', 'minmax(0, 1fr)', 'important');
+        main.style.setProperty('grid-column', '1 / -1', 'important');
+        main.style.setProperty('width', '100%', 'important');
+        main.style.setProperty('max-width', 'none', 'important');
+    }
+
+    function restoreStyle(element, property, value, priority) {
+        if (!element) return;
+        if (value) element.style.setProperty(property, value, priority || '');
+        else element.style.removeProperty(property);
+    }
+
+    function showSidebar() {
+        if (!sidebar || !layout || !main || !originalLayout) return;
+
+        restoreStyle(sidebar, 'display', originalLayout.sidebarDisplay, originalLayout.sidebarDisplayPriority);
+        restoreStyle(layout, 'grid-template-columns', originalLayout.gridTemplateColumns, originalLayout.gridTemplatePriority);
+        restoreStyle(main, 'grid-column', originalLayout.mainGridColumn, originalLayout.mainGridColumnPriority);
+        restoreStyle(main, 'width', originalLayout.mainWidth, originalLayout.mainWidthPriority);
+        restoreStyle(main, 'max-width', originalLayout.mainMaxWidth, originalLayout.mainMaxWidthPriority);
+    }
+
+    function applySidebarState() {
+        if (!sidebar || !captureLayout(sidebar)) return;
+        hidden ? hideSidebar() : showSidebar();
+    }
+
     function apply() {
         ensureStyle();
+        applyGlobalNav();
 
         if (!sidebar || !document.contains(sidebar)) {
+            clearSidebarReferences();
             sidebar = findSidebar();
-            collectionList = null;
-            singleList = null;
-            toolbar = null;
         }
 
         if (!sidebar) return;
+
         sidebar.setAttribute(SIDEBAR_ATTR, '');
+        sidebar.setAttribute(CLEANUP_ATTR, '');
 
         findLists(sidebar);
-        if (!collectionList) return;
+        captureLayout(sidebar);
 
-        hideNativeSidebarHeader(sidebar);
-        hideNativeSectionHeader(collectionList);
-        if (singleList) hideNativeSectionHeader(singleList);
+        if (collectionList) {
+            hideNativeSidebarHeader(sidebar);
+            hideNativeSectionHeader(collectionList);
+            if (singleList) hideNativeSectionHeader(singleList);
 
-        ensureToolbar();
-        organizeCollections();
-        organizeSingleTypes();
-        applyActiveState();
-        applyVisibility();
+            ensureToolbar();
+            organizeCollections();
+            organizeSingleTypes();
+            applyActiveState();
+            applyVisibility();
+        }
+
+        applySidebarState();
+    }
+
+    function toggleSidebar() {
+        if (!sidebar || !document.contains(sidebar)) {
+            apply();
+        }
+        if (!sidebar) return;
+
+        hidden = !hidden;
+        applySidebarState();
+        console.log(`[sidebar] ${hidden ? 'Hidden' : 'Visible'}`);
     }
 
     function scheduleApply() {
@@ -746,9 +914,11 @@
             node.matches(SIDEBAR_SELECTOR) ||
             node.matches(COLLECTION_LINK_SELECTOR) ||
             node.matches(SINGLE_LINK_SELECTOR) ||
+            node.matches('nav') ||
             Boolean(node.querySelector(SIDEBAR_SELECTOR)) ||
             Boolean(node.querySelector(COLLECTION_LINK_SELECTOR)) ||
-            Boolean(node.querySelector(SINGLE_LINK_SELECTOR))
+            Boolean(node.querySelector(SINGLE_LINK_SELECTOR)) ||
+            Boolean(node.querySelector('a[aria-label="Home"][href="/admin"]'))
         );
     }
 
@@ -763,19 +933,27 @@
         }
 
         return mutations.some(mutation => {
-            if (mutation.target === sidebar || sidebar.contains(mutation.target)) {
-                return true;
-            }
-
-            return (
-                [...mutation.addedNodes].some(nodeIsRelevant) ||
-                [...mutation.removedNodes].some(node =>
-                    node === sidebar ||
-                    (node instanceof Element && node.contains(sidebar))
-                )
-            );
+            if (mutation.target === sidebar || sidebar.contains(mutation.target)) return true;
+            return [...mutation.addedNodes].some(nodeIsRelevant);
         });
     }
+
+    window.addEventListener('keydown', event => {
+        const key = event.key?.toLowerCase() || '';
+        const isS = event.code === 'KeyS' || key === 's' || key === 'ы';
+
+        if (
+            event.altKey &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            isS
+        ) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            if (!event.repeat) toggleSidebar();
+        }
+    }, true);
 
     const observer = new MutationObserver(mutations => {
         if (shouldApply(mutations)) scheduleApply();
@@ -788,7 +966,6 @@
         }
 
         ensureStyle();
-
         observer.observe(document.documentElement, {
             childList: true,
             subtree: true

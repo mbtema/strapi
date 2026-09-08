@@ -1,25 +1,25 @@
-Набор рабочих инструментов для админки Strapi: features, UI-кастомы, парсеры и Postman.
+Набор рабочих инструментов для админки Strapi: features, UI/UX-кастомы, парсеры и Postman.
 
 ## Структура
 
 | Папка | Назначение |
 |---|---|
-| [`extensions/`](./extensions) | Единый Tampermonkey loader и manifest всех постоянных расширений Strapi |
+| [`extension/`](./extension) | Единый Tampermonkey loader и manifest всех постоянных расширений Strapi |
 | [`features/`](./features) | Функциональные возможности: горячие клавиши, barcode, Parser Launcher, Vimium helper |
-| [`ui/`](./ui) | UI/UX-кастомы Strapi |
+| [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Одноразовые массовые проверки данных с CSV-выгрузкой |
 | [`postman/`](./postman) | Postman collection с общими переменными и API paths |
 
-## Extensions
+## Extension loader
 
 В Tampermonkey устанавливается только:
 
-`extensions/loader.js`
+`extension/loader.js`
 
 Loader при открытии Strapi:
 
 1. мгновенно запускает последнюю сохранённую копию extensions из кеша;
-2. в фоне загружает `extensions/manifest.json` с GitHub;
+2. в фоне загружает `extension/manifest.json` с GitHub;
 3. при изменении версий или путей скачивает только изменившиеся файлы и сохраняет новый кеш;
 4. обновлённые extensions применяются после следующей перезагрузки Strapi.
 
@@ -27,13 +27,13 @@ Loader при открытии Strapi:
 
 ### Manifest
 
-`extensions/manifest.json` определяет, какие extensions включены:
+`extension/manifest.json` определяет, какие extensions включены:
 
 ```json
 {
-  "id": "toggle-sidebar",
-  "path": "ui/toggle-sidebar.js",
-  "version": "1.3.5",
+  "id": "sidebar",
+  "path": "ui-ux/sidebar.js",
+  "version": "2.0.0",
   "enabled": true
 }
 ```
@@ -47,11 +47,9 @@ Loader при открытии Strapi:
 - `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`.
 - `vimium-open-row.js` — добавляет строки таблиц, доступные для Vimium.
 
-## UI
+## UI/UX
 
-- `sidebar-ui-cleanup.js` — убирает верхний блок Content Manager / Search / COLLECTION TYPES / count и оформляет активную коллекцию фиолетовой подложкой.
-- `toggle-sidebar.js` — скрывает sidebar по умолчанию, `Alt+S` переключает его; scrollbar и точки коллекций скрыты.
-- `sidebar-sorter.js` — drag-and-drop сортировка коллекций; временно отключён в `extensions/manifest.json`.
+- `sidebar.js` — единый sidebar-модуль: скрытие/показ по `Alt+S`, поиск, быстрый доступ, группировка Collection Types и Single Types, active state и очистка глобальной левой навигации.
 - `record-list-scrollbars.js` — визуально скрывает scrollbar в списке записей Content Manager, сохраняя прокрутку.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
 
@@ -113,7 +111,7 @@ Loader при открытии Strapi:
 
 ```text
 .
-├── extensions/
+├── extension/
 │   ├── loader.js
 │   └── manifest.json
 ├── features/
@@ -121,12 +119,10 @@ Loader при открытии Strapi:
 │   ├── ctrl-enter-publisher.js
 │   ├── parser-launcher.js
 │   └── vimium-open-row.js
-├── ui/
+├── ui-ux/
+│   ├── sidebar.js
 │   ├── entry-relocate.js
-│   ├── record-list-scrollbars.js
-│   ├── sidebar-sorter.js
-│   ├── sidebar-ui-cleanup.js
-│   └── toggle-sidebar.js
+│   └── record-list-scrollbars.js
 ├── parsers/
 │   ├── manifest.json
 │   ├── missing-brand.js

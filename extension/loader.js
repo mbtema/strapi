@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         strapi-extensions
-// @version      1.0.2
+// @name         strapi-extension-loader
+// @version      1.1.0
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifest
 // @match        http://10.10.3.80:1337/admin/*
-// @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extensions/loader.js
-// @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/extensions/loader.js
+// @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extension/loader.js
+// @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/extension/loader.js
 // @run-at       document-start
 // @connect      raw.githubusercontent.com
 // @grant        GM_xmlhttpRequest
@@ -16,7 +16,7 @@
   'use strict';
 
   const RAW_ROOT = 'https://raw.githubusercontent.com/mbtema/strapi/main/';
-  const MANIFEST_URL = `${RAW_ROOT}extensions/manifest.json`;
+  const MANIFEST_URL = `${RAW_ROOT}extension/manifest.json`;
   const CACHE_KEY = 'tm-strapi-extensions-cache-v1';
   const LOADER_ATTR = 'data-tm-strapi-extensions-loader';
   const executedIds = new Set();
@@ -35,7 +35,6 @@
             resolve(response.responseText);
             return;
           }
-
           reject(new Error(`HTTP ${response.status}: ${url}`));
         },
         onerror() {
@@ -80,7 +79,7 @@
       .filter(item =>
         item.id &&
         item.version &&
-        /^(features|ui)\/[a-z0-9-]+\.js$/i.test(item.path)
+        /^(features|ui-ux)\/[a-z0-9-]+\.js$/i.test(item.path)
       );
   }
 
@@ -120,21 +119,13 @@
       return false;
     }
 
-    const byId = new Map(
-      cache.extensions.map(item => [item?.id, item])
-    );
-
-    return manifest.every(item =>
-      matchesManifestItem(byId.get(item.id), item)
-    );
+    const byId = new Map(cache.extensions.map(item => [item?.id, item]));
+    return manifest.every(item => matchesManifestItem(byId.get(item.id), item));
   }
 
   function injectExtension(item) {
     const run = () => {
-      const target =
-        document.documentElement ||
-        document.head ||
-        document.body;
+      const target = document.documentElement || document.head || document.body;
 
       if (!target) {
         requestAnimationFrame(run);
@@ -143,9 +134,7 @@
 
       const script = document.createElement('script');
       script.dataset.tmStrapiExtension = item.id;
-      script.textContent =
-        `${item.code}\n//# sourceURL=strapi-extension/${item.path}`;
-
+      script.textContent = `${item.code}\n//# sourceURL=strapi-extension/${item.path}`;
       target.appendChild(script);
       script.remove();
     };
@@ -155,9 +144,7 @@
 
   function runExtensions(items) {
     for (const item of items || []) {
-      if (!isRunnableItem(item)) continue;
-      if (executedIds.has(item.id)) continue;
-
+      if (!isRunnableItem(item) || executedIds.has(item.id)) continue;
       executedIds.add(item.id);
 
       try {
@@ -174,9 +161,7 @@
     const manifest = normalizeManifest(JSON.parse(manifestText));
     const signature = getSignature(manifest);
 
-    if (isCacheCurrent(currentCache, manifest, signature)) {
-      return;
-    }
+    if (isCacheCurrent(currentCache, manifest, signature)) return;
 
     const cachedById = new Map(
       (currentCache?.extensions || [])
@@ -187,10 +172,7 @@
     const extensions = await Promise.all(
       manifest.map(async item => {
         const cached = cachedById.get(item.id);
-
-        if (matchesManifestItem(cached, item)) {
-          return cached;
-        }
+        if (matchesManifestItem(cached, item)) return cached;
 
         return {
           ...item,

@@ -51,11 +51,12 @@
 
 ## 7. GitHub, loader и парсеры
 - Основной репозиторий: `mbtema/strapi`. Конкретные файлы/версии брать из актуального репозитория и `project-context.md`, не из памяти.
-- Постоянные кастомы: `extensions/loader.js` + `extensions/manifest.json`; в Tampermonkey должен оставаться один loader.
+- Постоянные кастомы: `extension/loader.js` + `extension/manifest.json`; в Tampermonkey должен оставаться один loader.
 - Loader без необходимости не менять. Версия extension независима от loader; изменение extension требует повышения `version` в manifest.
 - Версионирование: фикс/оптимизация → patch; новое заметное поведение → minor; крупная переработка → major.
 - Loader запускает кеш и обновляет его по manifest; новая версия при старом кеше обычно применяется после следующего reload Strapi.
-- Структура: `ui/` — UI/UX, `features/` — функции, `parsers/` — массовые проверки, `postman/` — API.
+- Структура: `ui-ux/` — UI/UX, `features/` — функции, `parsers/` — массовые проверки, `postman/` — API.
+- Sidebar UI/UX хранить централизованно в `ui-ux/sidebar.js`; не плодить отдельные sidebar-скрипты без необходимости.
 - Стандарт парсера: meta header (имя/версия/назначение) → все страницы API → проверка → прогресс/счётчики → автоматический CSV с понятным именем. Если парсер общий — учитывать `parsers/manifest.json`/Parser Launcher.
 
 ## 8. Мобильное приложение / CMS / UI

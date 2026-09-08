@@ -2,32 +2,20 @@
   "schemaVersion": 1,
   "extensions": [
     {
-      "id": "toggle-sidebar",
-      "path": "ui/toggle-sidebar.js",
-      "version": "1.3.6",
+      "id": "sidebar",
+      "path": "ui-ux/sidebar.js",
+      "version": "2.0.0",
       "enabled": true
-    },
-    {
-      "id": "sidebar-ui-cleanup",
-      "path": "ui/sidebar-ui-cleanup.js",
-      "version": "1.1.1",
-      "enabled": true
-    },
-    {
-      "id": "sidebar-sorter",
-      "path": "ui/sidebar-sorter.js",
-      "version": "1.0.2",
-      "enabled": false
     },
     {
       "id": "record-list-scrollbars",
-      "path": "ui/record-list-scrollbars.js",
+      "path": "ui-ux/record-list-scrollbars.js",
       "version": "1.0.2",
       "enabled": true
     },
     {
       "id": "entry-relocate",
-      "path": "ui/entry-relocate.js",
+      "path": "ui-ux/entry-relocate.js",
       "version": "1.4.4",
       "enabled": true
     },
