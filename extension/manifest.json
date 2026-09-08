@@ -28,7 +28,7 @@
     {
       "id": "ctrl-enter-publisher",
       "path": "features/ctrl-enter-publisher.js",
-      "version": "1.1",
+      "version": "1.1.1",
       "enabled": true
     },
     {
