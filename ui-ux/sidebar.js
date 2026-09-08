@@ -1,7 +1,7 @@
 // ==StrapiExtension==
 // @name         sidebar
-// @version      2.1.1
-// @description  Единый UI/UX sidebar: глобальная навигация, Alt+S, поиск, быстрый доступ, группы и future-safe fallback
+// @version      2.2.0
+// @description  Единый UI/UX sidebar: навигация, Alt+S, поиск, группы, иконки и future-safe fallback
 // ==/StrapiExtension==
 
 (function () {
@@ -25,6 +25,7 @@
     const GROUP_HEADER_ATTR = 'data-tm-sidebar-group-header';
     const GROUP_ITEM_ATTR = 'data-tm-sidebar-group-item';
     const QUICK_ATTR = 'data-tm-sidebar-quick';
+    const ICON_ATTR = 'data-tm-sidebar-icon';
 
     const SIDEBAR_SELECTOR = 'nav[aria-label="Content Manager"]';
     const COLLECTION_LINK_SELECTOR = 'a[href*="/admin/content-manager/collection-types/"]';
@@ -90,6 +91,89 @@
     const EXPLICIT_COLLECTION_UIDS = new Set(
         GROUPS.flatMap(group => group.uids || [])
     );
+
+    const COLLECTION_ICONS = {
+        'api::product.product': 'package',
+        'api::attribute.attribute': 'layers',
+        'api::category.category': 'folder',
+        'api::brand.brand': 'tag',
+        'api::promotion.promotion': 'percent',
+        'api::page.page': 'file-text',
+
+        'api::city.city': 'map-pin',
+        'api::shop.shop': 'store',
+        'api::delivery-method.delivery-method': 'truck',
+        'api::menu-item.menu-item': 'list',
+        'api::gift-certificate.gift-certificate': 'ticket',
+        'api::feedback-contact-info.feedback-contact-info': 'headset',
+        'api::feedback-contact-method.feedback-contact-method': 'messages',
+        'api::feedback-topic.feedback-topic': 'message',
+
+        'api::notification-template.notification-template': 'bell',
+        'api::product-age-group.product-age-group': 'users',
+        'api::product-usage-time.product-usage-time': 'clock',
+        'api::fragrance-group.fragrance-group': 'flower',
+        'api::shade-group.shade-group': 'palette',
+        'api::shade.shade': 'palette',
+        'api::color-variant.color-variant': 'palette',
+        'api::product-feature.product-feature': 'sparkles',
+        'api::ingredient.ingredient': 'leaf',
+        'api::fragrance-concentration.fragrance-concentration': 'droplet',
+        'api::product-effect.product-effect': 'wand',
+        'api::product-segment.product-segment': 'grid',
+        'api::product-coverage.product-coverage': 'circle',
+        'api::brand-country.brand-country': 'flag',
+        'api::hair-type.hair-type': 'waves',
+        'api::skin-type.skin-type': 'user-circle',
+        'api::product-form.product-form': 'shapes',
+        'api::product-finish.product-finish': 'sparkles',
+        'api::product-release-form.product-release-form': 'box',
+        'api::volume.volume': 'beaker',
+        'api::filtry.filtry': 'sliders'
+    };
+
+    const SINGLE_ICONS = {
+        'home page': 'home',
+        'web-home-page': 'globe',
+        'блок рекомендаций': 'sparkles'
+    };
+
+    const ICONS = {
+        package: '<path d="M21 8l-9-5-9 5 9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/><path d="M3 8v8l9 5 9-5V8"/>',
+        layers: '<path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
+        folder: '<path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"/>',
+        tag: '<path d="M20 12 12 20 4 12V4h8l8 8Z"/><circle cx="8.5" cy="8.5" r="1"/>',
+        percent: '<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+        'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/>',
+        'map-pin': '<path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/>',
+        store: '<path d="M4 10v10h16V10"/><path d="M3 10l2-6h14l2 6"/><path d="M8 20v-6h8v6"/><path d="M3 10c0 2 3 2 3 0 0 2 3 2 3 0 0 2 3 2 3 0 0 2 3 2 3 0 0 2 3 2 3 0"/>',
+        truck: '<path d="M3 5h11v11H3z"/><path d="M14 9h4l3 3v4h-7"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>',
+        list: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
+        ticket: '<path d="M3 9a2 2 0 0 0 0 4v4h18v-4a2 2 0 0 0 0-4V5H3v4Z"/><path d="M13 5v12"/>',
+        headset: '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><path d="M4 14h3v6H5a1 1 0 0 1-1-1v-5ZM20 14h-3v6h2a1 1 0 0 0 1-1v-5Z"/><path d="M17 20c0 1-2 2-5 2"/>',
+        messages: '<path d="M21 11a8 8 0 0 1-8 8H7l-4 3 1.2-5A8 8 0 1 1 21 11Z"/><path d="M8 10h8M8 14h5"/>',
+        message: '<path d="M21 15a4 4 0 0 1-4 4H8l-5 3 1.5-5A8 8 0 1 1 21 15Z"/><path d="M8 10h8M8 14h5"/>',
+        bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>',
+        users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+        clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+        flower: '<circle cx="12" cy="12" r="2"/><path d="M12 4c2-3 5-1 4 2-.5 1.5-2 3-4 4-2-1-3.5-2.5-4-4-1-3 2-5 4-2ZM20 12c3 2 1 5-2 4-1.5-.5-3-2-4-4 1-2 2.5-3.5 4-4 3-1 5 2 2 4ZM12 20c-2 3-5 1-4-2 .5-1.5 2-3 4-4 2 1 3.5 2.5 4 4 1 3-2 5-4 2ZM4 12c-3-2-1-5 2-4 1.5.5 3 2 4 4-1 2-2.5 3.5-4 4-3 1-5-2-2-4Z"/>',
+        palette: '<path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H12a1.5 1.5 0 0 1 0-3h2a7 7 0 0 0 7-7c0-2.2-4-4-9-4Z"/><circle cx="7.5" cy="9" r="1"/><circle cx="10.5" cy="6.5" r="1"/><circle cx="15" cy="7" r="1"/>',
+        sparkles: '<path d="m12 3-1.2 3.2L8 7.5l2.8 1.3L12 12l1.2-3.2L16 7.5l-2.8-1.3L12 3Z"/><path d="m6 13-.8 2.2L3 16l2.2.8L6 19l.8-2.2L9 16l-2.2-.8L6 13ZM18 13l-.8 2.2L15 16l2.2.8L18 19l.8-2.2L21 16l-2.2-.8L18 13Z"/>',
+        leaf: '<path d="M20 4c-8 0-14 4-14 10 0 3 2 6 6 6 6 0 8-8 8-16Z"/><path d="M6 18c3-4 6-6 11-9"/>',
+        droplet: '<path d="M12 2s6 7 6 12a6 6 0 0 1-12 0c0-5 6-12 6-12Z"/>',
+        wand: '<path d="m4 20 10-10"/><path d="m14 4 1-2 1 2 2 1-2 1-1 2-1-2-2-1 2-1ZM19 11l.7-1.5.8 1.5 1.5.8-1.5.7-.8 1.5-.7-1.5-1.5-.7 1.5-.8Z"/><path d="m5 7 .8-1.5L6.5 7 8 7.8l-1.5.7-.7 1.5L5 8.5l-1.5-.7L5 7Z"/>',
+        grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+        circle: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>',
+        flag: '<path d="M5 22V4"/><path d="M5 5h10l-1 4 1 4H5"/>',
+        waves: '<path d="M3 6c3 0 3 2 6 2s3-2 6-2 3 2 6 2M3 12c3 0 3 2 6 2s3-2 6-2 3 2 6 2M3 18c3 0 3 2 6 2s3-2 6-2 3 2 6 2"/>',
+        'user-circle': '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="9" r="3"/><path d="M6.5 18a6.5 6.5 0 0 1 11 0"/>',
+        shapes: '<circle cx="7" cy="7" r="4"/><rect x="13" y="3" width="8" height="8" rx="1"/><path d="m7 13-4 8h8l-4-8Z"/><path d="m17 14-4 7h8l-4-7Z"/>',
+        box: '<path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="M4 7v10l8 4 8-4V7M12 11v10"/>',
+        beaker: '<path d="M9 3v6l-5 9a2 2 0 0 0 1.7 3h12.6A2 2 0 0 0 20 18l-5-9V3"/><path d="M8 13h8M8 3h8"/>',
+        sliders: '<path d="M4 5h10M18 5h2M4 12h3M11 12h9M4 19h8M16 19h4"/><circle cx="16" cy="5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="14" cy="19" r="2"/>',
+        home: '<path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>',
+        globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>'
+    };
 
     const collapsedGroups = new Map(
         GROUPS.map(group => [group.id, group.collapsed])
@@ -325,7 +409,7 @@
                 display: flex !important;
                 align-items: center !important;
                 justify-content: flex-start !important;
-                gap: 0 !important;
+                gap: 10px !important;
                 width: 100% !important;
                 min-width: 0 !important;
                 min-height: 40px !important;
@@ -334,8 +418,8 @@
                 padding: 8px 12px !important;
             }
 
-            [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:first-child:not(:last-child),
-            [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} > div > span:first-child:not(:last-child) {
+            [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:first-child:not([${ICON_ATTR}]):not(:last-child),
+            [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} > div > span:first-child:not([${ICON_ATTR}]):not(:last-child) {
                 display: none !important;
                 width: 0 !important;
                 height: 0 !important;
@@ -344,6 +428,35 @@
                 margin: 0 !important;
                 padding: 0 !important;
                 border: 0 !important;
+            }
+
+            [${CLEANUP_ATTR}] [${ICON_ATTR}] {
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                flex: 0 0 18px !important;
+                width: 18px !important;
+                height: 18px !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                color: #8e8ea9 !important;
+            }
+
+            [${CLEANUP_ATTR}] [${ICON_ATTR}] svg {
+                display: block !important;
+                width: 16px !important;
+                height: 16px !important;
+                fill: none !important;
+                stroke: currentColor !important;
+                stroke-width: 1.6 !important;
+                stroke-linecap: round !important;
+                stroke-linejoin: round !important;
+                vector-effect: non-scaling-stroke;
+            }
+
+            [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR}:hover [${ICON_ATTR}],
+            [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR}:hover [${ICON_ATTR}] {
+                color: #c0c0cf !important;
             }
 
             [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:last-child,
@@ -372,7 +485,8 @@
             }
 
             [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] *,
-            [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] > div > span:last-child {
+            [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] > div > span:last-child,
+            [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] [${ICON_ATTR}] {
                 color: #ffffff !important;
                 font-weight: 600 !important;
             }
@@ -488,9 +602,7 @@
             return false;
         }
 
-        if (layout === nextLayout && main === nextMain && originalLayout) {
-            return true;
-        }
+        if (layout === nextLayout && main === nextMain && originalLayout) return true;
 
         layout = nextLayout;
         main = nextMain;
@@ -573,9 +685,7 @@
                 row = row.parentElement;
             }
 
-            if (!row.contains(collectionList)) {
-                row.setAttribute(HIDDEN_ATTR, '');
-            }
+            if (!row.contains(collectionList)) row.setAttribute(HIDDEN_ATTR, '');
         }
     }
 
@@ -701,8 +811,8 @@
 
         const collectionItems = collectItems(COLLECTION_LINK_SELECTOR);
         const singleItems = collectItems(SINGLE_LINK_SELECTOR);
-
         const byUid = new Map();
+
         for (const item of collectionItems) {
             const link = item.querySelector(COLLECTION_LINK_SELECTOR);
             const uid = getUid(link, 'collection');
@@ -757,6 +867,52 @@
         });
 
         hideNativeSingleChrome();
+    }
+
+    function createIcon(name) {
+        const icon = document.createElement('span');
+        icon.setAttribute(ICON_ATTR, name);
+        icon.setAttribute('aria-hidden', 'true');
+        icon.innerHTML = `<svg viewBox="0 0 24 24" focusable="false">${ICONS[name] || ICONS.sliders}</svg>`;
+        return icon;
+    }
+
+    function getIconName(link) {
+        if (link.matches(COLLECTION_LINK_SELECTOR)) {
+            const uid = getUid(link, 'collection');
+            return COLLECTION_ICONS[uid] || 'sliders';
+        }
+
+        const label = normalizeText(getLinkLabel(link));
+        return SINGLE_ICONS[label] || 'file-text';
+    }
+
+    function ensureIcons() {
+        if (!collectionList) return;
+
+        const links = [
+            ...collectionList.querySelectorAll(COLLECTION_LINK_SELECTOR),
+            ...collectionList.querySelectorAll(SINGLE_LINK_SELECTOR)
+        ];
+
+        for (const link of links) {
+            const row = link.querySelector(':scope > div');
+            if (!row) {
+                console.warn('[sidebar] Link row not found for icon', link);
+                continue;
+            }
+
+            const name = getIconName(link);
+            let icon = row.querySelector(`:scope > [${ICON_ATTR}]`);
+
+            if (!icon) {
+                icon = createIcon(name);
+                const label = row.querySelector(':scope > span:last-child');
+                row.insertBefore(icon, label || row.firstChild);
+            } else if (icon.getAttribute(ICON_ATTR) !== name) {
+                icon.replaceWith(createIcon(name));
+            }
+        }
     }
 
     function applyActiveState() {
@@ -886,6 +1042,7 @@
             hideNativeCollectionHeader();
             organizeItems();
             hideNativeSingleChrome();
+            ensureIcons();
             applyActiveState();
             applyVisibility();
         }
