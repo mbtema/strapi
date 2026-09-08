@@ -1,7 +1,7 @@
 // ==StrapiExtension==
 // @name         sidebar-ui-cleanup
-// @version      1.1.0
-// @description  Перестраивает Content Manager sidebar: поиск, быстрый доступ, группы коллекций и активное состояние
+// @version      1.1.1
+// @description  Перестраивает Content Manager sidebar: поиск, закрепленные коллекции, группы Collection Types и Single Types, активное состояние
 // ==/StrapiExtension==
 
 (function () {
@@ -89,15 +89,21 @@
         }
     ];
 
+    const SINGLE_GROUP = {
+        id: 'single-types',
+        title: 'SINGLE TYPES',
+        collapsed: false
+    };
+
     const QUICK_LINKS = [
         { uid: 'api::product.product', label: 'Товары' },
-        { uid: 'api::attribute.attribute', label: 'Предложения' },
-        { uid: 'api::brand.brand', label: 'Бренды' }
+        { uid: 'api::attribute.attribute', label: 'Предложения' }
     ];
 
-    const collapsedGroups = new Map(
-        GROUPS.map(group => [group.id, group.collapsed])
-    );
+    const collapsedGroups = new Map([
+        ...GROUPS.map(group => [group.id, group.collapsed]),
+        [SINGLE_GROUP.id, SINGLE_GROUP.collapsed]
+    ]);
 
     let sidebar = null;
     let collectionList = null;
@@ -135,21 +141,10 @@
                 z-index: 5;
                 display: flex;
                 flex-direction: column;
-                gap: 10px;
-                padding: 16px 16px 12px;
+                gap: 8px;
+                padding: 12px 16px;
                 background: #181826;
                 border-bottom: 1px solid #32324d;
-            }
-
-            [${TOOLBAR_ATTR}] .tm-sidebar-toolbar-title {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 12px;
-                color: #ffffff;
-                font-size: 15px;
-                line-height: 20px;
-                font-weight: 600;
             }
 
             [${TOOLBAR_ATTR}] .tm-sidebar-search {
@@ -173,15 +168,6 @@
             [${TOOLBAR_ATTR}] .tm-sidebar-search:focus {
                 border-color: #7b79ff;
                 box-shadow: 0 0 0 2px rgba(123, 121, 255, 0.18);
-            }
-
-            [${TOOLBAR_ATTR}] .tm-sidebar-quick-label {
-                color: #8e8ea9;
-                font-size: 10px;
-                line-height: 14px;
-                font-weight: 600;
-                letter-spacing: 0.06em;
-                text-transform: uppercase;
             }
 
             [${TOOLBAR_ATTR}] .tm-sidebar-quick-row {
@@ -272,6 +258,12 @@
             [${SIDEBAR_ATTR}] [${GROUP_ITEM_ATTR}] {
                 margin: 1px 0 !important;
                 padding: 0 !important;
+                list-style: none !important;
+            }
+
+            [${SIDEBAR_ATTR}] [${GROUP_ITEM_ATTR}]::marker {
+                content: '' !important;
+                font-size: 0 !important;
             }
 
             [${SIDEBAR_ATTR}] ${COLLECTION_LINK_SELECTOR},
@@ -291,6 +283,18 @@
                 box-sizing: border-box !important;
                 padding-top: 7px !important;
                 padding-bottom: 7px !important;
+            }
+
+            [${SIDEBAR_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:first-child:empty,
+            [${SIDEBAR_ATTR}] ${SINGLE_LINK_SELECTOR} > div > span:first-child:empty {
+                display: none !important;
+                width: 0 !important;
+                height: 0 !important;
+                min-width: 0 !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                border: 0 !important;
             }
 
             [${SIDEBAR_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:last-child,
@@ -319,26 +323,6 @@
             [${SIDEBAR_ATTR}] a[${ACTIVE_ATTR}] * {
                 color: #ffffff !important;
                 font-weight: 600 !important;
-            }
-
-            [${SIDEBAR_ATTR}] .tm-sidebar-single-header {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                min-height: 30px;
-                margin: 10px 10px 4px;
-                padding: 6px 8px;
-                box-sizing: border-box;
-                color: #8e8ea9;
-                font-size: 10px;
-                line-height: 14px;
-                font-weight: 600;
-                letter-spacing: 0.05em;
-            }
-
-            [${SIDEBAR_ATTR}] .tm-sidebar-single-count {
-                color: #666687;
-                font-weight: 500;
             }
         `;
 
@@ -444,10 +428,6 @@
         const wrapper = document.createElement('div');
         wrapper.setAttribute(TOOLBAR_ATTR, '');
 
-        const title = document.createElement('div');
-        title.className = 'tm-sidebar-toolbar-title';
-        title.textContent = 'Content Manager';
-
         const search = document.createElement('input');
         search.className = 'tm-sidebar-search';
         search.type = 'search';
@@ -458,10 +438,6 @@
             searchQuery = search.value.trim().toLocaleLowerCase();
             applyVisibility();
         });
-
-        const quickLabel = document.createElement('div');
-        quickLabel.className = 'tm-sidebar-quick-label';
-        quickLabel.textContent = 'Быстрый доступ';
 
         const quickRow = document.createElement('div');
         quickRow.className = 'tm-sidebar-quick-row';
@@ -479,7 +455,7 @@
             quickRow.appendChild(button);
         }
 
-        wrapper.append(title, search, quickLabel, quickRow);
+        wrapper.append(search, quickRow);
         return wrapper;
     }
 
@@ -497,9 +473,9 @@
         }
     }
 
-    function ensureGroupHeader(group, count) {
-        let header = collectionList.querySelector(
-            `[${GROUP_HEADER_ATTR}="${group.id}"]`
+    function ensureGroupHeader(list, group, count) {
+        let header = list.querySelector(
+            `:scope > [${GROUP_HEADER_ATTR}="${group.id}"]`
         );
 
         if (!header) {
@@ -563,7 +539,7 @@
 
             if (!groupItems.length) continue;
 
-            const header = ensureGroupHeader(group, groupItems.length);
+            const header = ensureGroupHeader(collectionList, group, groupItems.length);
             desired.push(header);
 
             for (const item of groupItems) {
@@ -583,7 +559,7 @@
         if (leftovers.length) {
             const other = { id: 'other', title: 'ДРУГОЕ', collapsed: false };
             if (!collapsedGroups.has(other.id)) collapsedGroups.set(other.id, false);
-            const header = ensureGroupHeader(other, leftovers.length);
+            const header = ensureGroupHeader(collectionList, other, leftovers.length);
             desired.push(header);
 
             for (const item of leftovers) {
@@ -598,7 +574,7 @@
         ]);
 
         collectionList
-            .querySelectorAll(`[${GROUP_HEADER_ATTR}]`)
+            .querySelectorAll(`:scope > [${GROUP_HEADER_ATTR}]`)
             .forEach(header => {
                 if (!validGroupIds.has(header.getAttribute(GROUP_HEADER_ATTR))) {
                     header.remove();
@@ -615,32 +591,39 @@
         });
     }
 
-    function ensureSingleHeader() {
-        if (!singleList?.parentElement) return null;
+    function organizeSingleTypes() {
+        if (!singleList) return;
 
-        let header = singleList.parentElement.querySelector('.tm-sidebar-single-header');
-        if (!header) {
-            header = document.createElement('div');
-            header.className = 'tm-sidebar-single-header';
-
-            const title = document.createElement('span');
-            title.textContent = 'SINGLE TYPES';
-
-            const counter = document.createElement('span');
-            counter.className = 'tm-sidebar-single-count';
-
-            header.append(title, counter);
-            singleList.parentElement.insertBefore(header, singleList);
-        }
-
-        const counter = header.querySelector('.tm-sidebar-single-count');
-        if (counter) {
-            counter.textContent = String(
-                singleList.querySelectorAll(`:scope > li ${SINGLE_LINK_SELECTOR}`).length
+        const items = [...singleList.children]
+            .filter(child =>
+                !child.hasAttribute(GROUP_HEADER_ATTR) &&
+                Boolean(child.querySelector(SINGLE_LINK_SELECTOR))
             );
+
+        if (!items.length) return;
+
+        const header = ensureGroupHeader(singleList, SINGLE_GROUP, items.length);
+        const desired = [header];
+
+        for (const item of items) {
+            item.setAttribute(GROUP_ITEM_ATTR, SINGLE_GROUP.id);
+            desired.push(item);
         }
 
-        return header;
+        singleList
+            .querySelectorAll(`:scope > [${GROUP_HEADER_ATTR}]`)
+            .forEach(node => {
+                if (node !== header) node.remove();
+            });
+
+        desired.forEach((node, index) => {
+            if (singleList.children[index] !== node) {
+                singleList.insertBefore(
+                    node,
+                    singleList.children[index] || null
+                );
+            }
+        });
     }
 
     function applyActiveState() {
@@ -692,9 +675,12 @@
 
         for (const header of groupHeaders) {
             const groupId = header.getAttribute(GROUP_HEADER_ATTR);
+            const list = header.parentElement;
+            if (!list) continue;
+
             const items = [
-                ...collectionList.querySelectorAll(
-                    `[${GROUP_ITEM_ATTR}="${groupId}"]`
+                ...list.querySelectorAll(
+                    `:scope > [${GROUP_ITEM_ATTR}="${groupId}"]`
                 )
             ];
 
@@ -713,22 +699,6 @@
 
             const button = header.querySelector('button');
             if (button) button.setAttribute('aria-expanded', String(query || !collapsed));
-        }
-
-        if (singleList) {
-            const singleItems = [...singleList.children].filter(child =>
-                Boolean(child.querySelector(SINGLE_LINK_SELECTOR))
-            );
-
-            let visibleSingles = 0;
-            for (const item of singleItems) {
-                const matches = !query || item.textContent.toLocaleLowerCase().includes(query);
-                item.hidden = !matches;
-                if (matches) visibleSingles++;
-            }
-
-            const singleHeader = singleList.parentElement?.querySelector('.tm-sidebar-single-header');
-            if (singleHeader) singleHeader.hidden = Boolean(query) && visibleSingles === 0;
         }
     }
 
@@ -754,7 +724,7 @@
 
         ensureToolbar();
         organizeCollections();
-        ensureSingleHeader();
+        organizeSingleTypes();
         applyActiveState();
         applyVisibility();
     }
