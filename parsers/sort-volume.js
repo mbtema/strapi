@@ -1,7 +1,7 @@
 // ==ConsoleParser==
 // @name         sort-volume
-// @version      1.2
-// @description  Выявляет товары с неправильной сортировкой volume в торговых предложениях
+// @version      1.3
+// @description  Выявляет товары с неправильной сортировкой volume с учетом единиц измерения
 // @output       CSV
 // ==/ConsoleParser==
 
@@ -11,15 +11,69 @@
 
   const badProducts = [];
   const unreadableVolumes = [];
+  const mixedUnits = [];
 
-  function getNumber(value) {
+  const UNIT_MAP = new Map([
+    ['МЛ', { dimension: 'volume', factor: 1, baseUnit: 'мл' }],
+    ['ML', { dimension: 'volume', factor: 1, baseUnit: 'мл' }],
+    ['Л', { dimension: 'volume', factor: 1000, baseUnit: 'мл' }],
+    ['L', { dimension: 'volume', factor: 1000, baseUnit: 'мл' }],
+    ['МГ', { dimension: 'mass', factor: 1, baseUnit: 'мг' }],
+    ['MG', { dimension: 'mass', factor: 1, baseUnit: 'мг' }],
+    ['Г', { dimension: 'mass', factor: 1000, baseUnit: 'мг' }],
+    ['ГР', { dimension: 'mass', factor: 1000, baseUnit: 'мг' }],
+    ['G', { dimension: 'mass', factor: 1000, baseUnit: 'мг' }],
+    ['GR', { dimension: 'mass', factor: 1000, baseUnit: 'мг' }],
+    ['КГ', { dimension: 'mass', factor: 1000000, baseUnit: 'мг' }],
+    ['KG', { dimension: 'mass', factor: 1000000, baseUnit: 'мг' }]
+  ]);
+
+  function parseVolume(value) {
     if (value == null) return null;
 
-    const match = String(value)
+    const source = String(value).trim();
+    const numberMatch = source
       .replace(',', '.')
       .match(/\d+(?:\.\d+)?/);
 
-    return match ? Number(match[0]) : null;
+    if (!numberMatch) {
+      return {
+        readable: false,
+        reason: 'number_not_found'
+      };
+    }
+
+    const number = Number(numberMatch[0]);
+    const unitKey = source
+      .toUpperCase()
+      .replace(/[^A-ZА-ЯЁ]+/g, '');
+
+    if (!unitKey) {
+      return {
+        readable: true,
+        number,
+        dimension: 'unitless',
+        normalized: number,
+        baseUnit: ''
+      };
+    }
+
+    const unit = UNIT_MAP.get(unitKey);
+
+    if (!unit) {
+      return {
+        readable: false,
+        reason: `unsupported_unit:${unitKey}`
+      };
+    }
+
+    return {
+      readable: true,
+      number,
+      dimension: unit.dimension,
+      normalized: number * unit.factor,
+      baseUnit: unit.baseUnit
+    };
   }
 
   function getTimestamp() {
@@ -39,7 +93,8 @@
       'currentOrder',
       'expectedOrder',
       'attributeDocumentIds',
-      'unreadableVolumes'
+      'unreadableVolumes',
+      'mixedUnits'
     ];
 
     const escapeValue = value =>
@@ -118,22 +173,40 @@
         volumes.push({
           attributeDocumentId: attribute.documentId,
           volume: volumeName,
-          number: getNumber(volumeName)
+          parsed: parseVolume(volumeName)
         });
       }
 
       if (volumes.length < 2) continue;
 
       const unreadable = volumes.filter(
-        item => item.number === null
+        item => !item.parsed?.readable
       );
 
       if (unreadable.length) {
         unreadableVolumes.push({
           productDocumentId: product.documentId,
           volumes: unreadable
-            .map(item => item.volume)
+            .map(item => {
+              const reason = item.parsed?.reason || 'unknown';
+              return `${item.volume} [${reason}]`;
+            })
             .join(' | ')
+        });
+        continue;
+      }
+
+      const dimensions = new Set(
+        volumes.map(item => item.parsed.dimension)
+      );
+
+      if (dimensions.size > 1) {
+        mixedUnits.push({
+          productDocumentId: product.documentId,
+          volumes: volumes
+            .map(item => item.volume)
+            .join(' → '),
+          dimensions: [...dimensions].join(' | ')
         });
         continue;
       }
@@ -141,7 +214,10 @@
       let isCorrect = true;
 
       for (let i = 1; i < volumes.length; i++) {
-        if (volumes[i].number < volumes[i - 1].number) {
+        if (
+          volumes[i].parsed.normalized <
+          volumes[i - 1].parsed.normalized
+        ) {
           isCorrect = false;
           break;
         }
@@ -149,7 +225,10 @@
 
       if (!isCorrect) {
         const expectedVolumes = [...volumes]
-          .sort((a, b) => a.number - b.number);
+          .sort(
+            (a, b) =>
+              a.parsed.normalized - b.parsed.normalized
+          );
 
         badProducts.push({
           productDocumentId: product.documentId,
@@ -174,7 +253,8 @@
       console.log(
         `Страница ${page}/${pageCount} | ` +
         `Проверено: ${checkedProducts}/${apiTotal} | ` +
-        `Неверный порядок: ${badProducts.length}`
+        `Неверный порядок: ${badProducts.length} | ` +
+        `Смешанные типы: ${mixedUnits.length}`
       );
     }
 
@@ -184,15 +264,21 @@
   console.table(badProducts);
 
   if (unreadableVolumes.length) {
-    console.warn('Volume без читаемого числового значения:');
+    console.warn('Volume без читаемого значения/единицы:');
     console.table(unreadableVolumes);
+  }
+
+  if (mixedUnits.length) {
+    console.warn('Volume разных физических типов в одном товаре:');
+    console.table(mixedUnits);
   }
 
   const report = [
     ...badProducts.map(item => ({
       type: 'bad_order',
       ...item,
-      unreadableVolumes: ''
+      unreadableVolumes: '',
+      mixedUnits: ''
     })),
     ...unreadableVolumes.map(item => ({
       type: 'unreadable_volume',
@@ -200,12 +286,23 @@
       currentOrder: '',
       expectedOrder: '',
       attributeDocumentIds: '',
-      unreadableVolumes: item.volumes
+      unreadableVolumes: item.volumes,
+      mixedUnits: ''
+    })),
+    ...mixedUnits.map(item => ({
+      type: 'mixed_units',
+      productDocumentId: item.productDocumentId,
+      currentOrder: '',
+      expectedOrder: '',
+      attributeDocumentIds: '',
+      unreadableVolumes: '',
+      mixedUnits: `${item.volumes} [${item.dimensions}]`
     }))
   ];
 
   window.badVolumeOrder = badProducts;
   window.unreadableVolumes = unreadableVolumes;
+  window.mixedVolumeUnits = mixedUnits;
 
   downloadCSV(
     report,
@@ -215,6 +312,7 @@
   console.log(
     `Готово: проверено ${checkedProducts}, ` +
     `неверный порядок ${badProducts.length}, ` +
-    `нечитаемых ${unreadableVolumes.length}`
+    `нечитаемых ${unreadableVolumes.length}, ` +
+    `смешанных типов ${mixedUnits.length}`
   );
 })();
