@@ -1,14 +1,15 @@
-Набор рабочих инструментов для админки Strapi: features, UI/UX-кастомы, парсеры и Postman.
+Набор рабочих инструментов для админки Strapi: постоянные extensions, UI/UX-кастомы, парсеры, Postman и централизованный контекст проекта.
 
 ## Структура
 
 | Папка | Назначение |
 |---|---|
-| [`extension/`](./extension) | Единый Tampermonkey loader и manifest всех постоянных расширений Strapi |
-| [`features/`](./features) | Функциональные возможности: горячие клавиши, barcode, Parser Launcher, Vimium helper |
+| [`extension/`](./extension) | Единый Tampermonkey loader и manifest постоянных расширений Strapi |
+| [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
-| [`parsers/`](./parsers) | Одноразовые массовые проверки данных с CSV-выгрузкой |
-| [`postman/`](./postman) | Postman collection с общими переменными и API paths |
+| [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
+| [`postman/`](./postman) | Postman collection с общими variables и API paths |
+| [`promts/`](./promts) | Централизованное хранилище Project Instructions и полного project context |
 
 ## Extension loader
 
@@ -33,36 +34,37 @@ Loader при открытии Strapi:
 {
   "id": "sidebar",
   "path": "ui-ux/sidebar.js",
-  "version": "2.0.0",
+  "version": "2.2.1",
   "enabled": true
 }
 ```
 
-При изменении файла обязательно увеличивать его `version` в manifest. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
+При изменении extension обязательно увеличивать его `version` в manifest. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
 
 ## Features
 
 - `barcode-extractor.js` — `Ctrl+B`, копирует barcode из карточки товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Ctrl+Enter`, публикует текущую запись.
 - `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`.
-- `vimium-open-row.js` — добавляет строки таблиц, доступные для Vimium.
+- `vimium-open-row.js` — делает строки таблиц доступными для Vimium.
 
 ## UI/UX
 
-- `sidebar.js` — единый sidebar-модуль: скрытие/показ по `Alt+S`, поиск, быстрый доступ, группировка Collection Types и Single Types, active state и очистка глобальной левой навигации.
+- `sidebar.js` — единый sidebar-модуль: скрытие/показ по `Alt+S`, поиск, быстрый доступ, группы Collection Types/Single Types, active state, минималистичные иконки, future-safe fallback для новых коллекций и очистка глобальной левой навигации.
 - `record-list-scrollbars.js` — визуально скрывает scrollbar в списке записей Content Manager, сохраняя прокрутку.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
 
 ## Версионирование
 
-- `1.3` — новое заметное изменение / функционал.
-- `1.3.1` — небольшой фикс, доработка или оптимизация существующего функционала.
-- `1.4` — следующее заметное нововведение.
-- `2.0` — крупная новая версия.
+- patch (`1.3.1`) — небольшой фикс, доработка или оптимизация существующего поведения;
+- minor (`1.4`) — заметное новое поведение;
+- major (`2.0`) — крупная переработка.
+
+Версия extension независима от версии loader.
 
 ## Parsers
 
-Парсеры запускаются через `Alt+P`, проходят API постранично, выводят прогресс в Console и автоматически скачивают CSV.
+Парсеры запускаются через `Alt+P`. Проверочные парсеры проходят API постранично, выводят прогресс в Console и автоматически скачивают CSV. Вспомогательные parsers могут иметь другой output, если это указано в meta header.
 
 - `price-checker.js` — дробные значения `price`.
 - `sort-volume.js` — неправильный порядок volume.
@@ -74,9 +76,10 @@ Loader при открытии Strapi:
 - `missing-brand.js` — активные товары без `brand`.
 - `missing-categories.js` — активные товары без `categories`.
 - `products-without-price.js` — активные товары с предложениями, но без цены `> 0`.
+- `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `manifest.json` — список парсеров для Parser Launcher.
 
-Для нового парсера достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`.
+Для нового регулярного парсера достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`.
 
 ## Postman
 
@@ -84,7 +87,7 @@ Loader при открытии Strapi:
 
 `postman/admin-api.json`
 
-Коллекция намеренно не содержит готовых запросов. Повторяющиеся значения вынесены в collection variables.
+Коллекция намеренно не содержит большого набора готовых запросов. Повторяющиеся значения вынесены в collection variables.
 
 Пример:
 
@@ -95,17 +98,28 @@ Loader при открытии Strapi:
 {{baseUrl}}{{categories}}
 ```
 
-Основные переменные:
+Основные variables:
 
-- URL: `baseUrl`, `contentManagerUrl`, `bffUrl`
-- API paths: `products`, `attributes`, `promotions`, `brands`, `categories` и другие endpoints
-- пагинация: `page`, `pageSize`, `sort`
-- локали: `locale`, `altLocale`
-- идентификаторы: `documentId`, `productDocumentId`, `attributeDocumentId`, `brandDocumentId`, `categoryDocumentId`
-- рабочие значения: `barcode`, `productKey`, `brandName`, `categoryCode`, `slug`
-- секреты: `jwtToken`, `bearerToken`, `categoryDebugToken`
+- URL: `baseUrl`, `contentManagerUrl`, `bffUrl`;
+- API paths: `products`, `attributes`, `promotions`, `brands`, `categories` и другие endpoints;
+- пагинация: `page`, `pageSize`, `sort`;
+- локали: `locale`, `altLocale`;
+- идентификаторы: `documentId`, `productDocumentId`, `attributeDocumentId`, `brandDocumentId`, `categoryDocumentId`;
+- рабочие значения: `barcode`, `productKey`, `brandName`, `categoryCode`, `slug`;
+- секреты: `jwtToken`, `bearerToken`, `categoryDebugToken`.
 
 Секреты в GitHub не хранятся и заполняются только локально в Postman.
+
+## Promts / project context
+
+`promts/` — живое централизованное хранилище контекста, а не архив.
+
+- `promts/project-context.md` — полный рабочий контекст: архитектура, endpoints, ограничения, принятые решения, структура repo, исторические кейсы и рабочие паттерны.
+- `promts/project-instructions.md` — правила совместной работы: формат ответов, приоритеты, подход к Strapi/API/GitHub/парсерам/ТЗ.
+
+После существенных изменений архитектуры, workflow или накопления нового важного контекста эти файлы нужно синхронизировать. При изменении структуры/назначения репозитория одновременно обновляется README.
+
+GitHub-версии файлов в `promts/` считаются централизованным source of truth; пользователь периодически копирует их в Project ChatGPT, чтобы контекст проекта оставался свежим.
 
 ## Дерево
 
@@ -125,6 +139,7 @@ Loader при открытии Strapi:
 │   └── record-list-scrollbars.js
 ├── parsers/
 │   ├── manifest.json
+│   ├── dom-stealer.js
 │   ├── missing-brand.js
 │   ├── missing-categories.js
 │   ├── missing-shades.js
@@ -137,5 +152,8 @@ Loader при открытии Strapi:
 │   └── zero-prices.js
 ├── postman/
 │   └── admin-api.json
+├── promts/
+│   ├── project-context.md
+│   └── project-instructions.md
 └── README.md
 ```
