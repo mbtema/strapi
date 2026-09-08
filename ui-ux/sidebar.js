@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         sidebar
-// @version      2.0.1
+// @version      2.0.2
 // @description  Единый UI/UX sidebar: глобальная навигация, Alt+S, поиск, быстрый доступ, группы и активное состояние
 // ==/StrapiExtension==
 
@@ -143,7 +143,7 @@
 
             [${GLOBAL_NAV_ATTR}] > ul {
                 margin-top: 0 !important;
-                padding-top: 12px !important;
+                padding-top: 22px !important;
             }
 
             [${GLOBAL_PROFILE_ATTR}] {
