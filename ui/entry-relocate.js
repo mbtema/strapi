@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         entry-relocate
-// @version      1.4.3
+// @version      1.4.4
 // @description  Переносит действия Entry в строку с Draft / Published
 // ==/StrapiExtension==
 
@@ -26,8 +26,8 @@
             const parent = node.parentElement;
             const children = [...parent.children];
 
-            const entryColumn = children.find(
-                child => child.contains(aside)
+            const entryColumn = children.find(child =>
+                child === node || child.contains(aside)
             );
 
             if (!entryColumn) {
@@ -41,19 +41,18 @@
                 .filter(child => child !== entryColumn)
                 .map(child => ({
                     child,
-                    rect: child.getBoundingClientRect()
+                    rect: child.getBoundingClientRect(),
+                    style: getComputedStyle(child)
                 }))
-                .filter(({ rect }) => (
+                .filter(({ rect, style }) => (
+                    style.display !== 'none' &&
                     rect.width > entryRect.width &&
-                    rect.width > 500 &&
-                    rect.height > 200
+                    rect.width > 250 &&
+                    rect.height > 40
                 ))
                 .sort((a, b) => b.rect.width - a.rect.width)[0];
 
-            if (
-                mainColumn &&
-                Math.abs(mainColumn.rect.top - entryRect.top) < 100
-            ) {
+            if (mainColumn) {
                 return {
                     container: parent,
                     entryColumn,
@@ -187,13 +186,17 @@
             document.contains(currentToolbar)
         ) return;
 
-        const layout = findLayout(aside);
         const tabList = findTabList();
-
-        if (!layout || !tabList) return;
+        if (!tabList) return;
 
         const buttons = classifyButtons(aside);
         if (!buttons.publish || !buttons.save) return;
+
+        const layout = findLayout(aside);
+        if (!layout) {
+            console.warn('[entry-relocate] Entry found, but layout was not detected');
+            return;
+        }
 
         cleanupOldToolbars(tabList);
 
