@@ -14,6 +14,12 @@
       "enabled": true
     },
     {
+      "id": "list-view",
+      "path": "ui-ux/list-view.js",
+      "version": "1.0.0",
+      "enabled": true
+    },
+    {
       "id": "entry-relocate",
       "path": "ui-ux/entry-relocate.js",
       "version": "1.4.5",
