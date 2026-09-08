@@ -472,7 +472,7 @@ Snapshot 2026-09-08:
 |---|---|---:|---|
 | `sidebar` | `ui-ux/sidebar.js` | `2.2.1` | yes |
 | `record-list-scrollbars` | `ui-ux/record-list-scrollbars.js` | `1.0.2` | yes |
-| `entry-relocate` | `ui-ux/entry-relocate.js` | `1.4.4` | yes |
+| `entry-relocate` | `ui-ux/entry-relocate.js` | `1.4.5` | yes |
 | `barcode-extractor` | `features/barcode-extractor.js` | `1.4.1` | yes |
 | `ctrl-enter-publisher` | `features/ctrl-enter-publisher.js` | `1.1` | yes |
 | `parser-launcher` | `features/parser-launcher.js` | `1.3` | yes |
@@ -504,7 +504,7 @@ Snapshot 2026-09-08:
 - быстрые кнопки `Товары` и `Предложения`;
 - активная collection выделяется фиолетовым фоном `#302c6f`, белым текстом/иконкой;
 - у collection/single type строк минималистичные inline SVG icons;
-- текст и иконки выровнены по тому же левому краю, что и названия групп;
+- иконки выровнены по тому же левому краю, что и названия групп; текст начинается после иконки;
 - Strapi logo и лишние separators глобальной левой панели скрыты;
 - Settings gear скрыт визуально, прямой `/admin/settings` остаётся доступен;
 - профиль внизу сохраняется;
@@ -588,9 +588,11 @@ Snapshot 2026-09-08:
 
 - переносит Entry actions в строку Draft/Published;
 - освобождает ширину формы;
+- layout определяется DOM-first через `Document status`, `role="tabpanel"` и прямые DOM-связи, без `getBoundingClientRect()`;
+- Entry column скрывается и main column растягивается сразу после появления document layout, не дожидаясь загрузки Publish/Save — это убирает стартовое сужение карточки;
 - перемещает реальные Strapi buttons, сохраняя React handlers/state;
-- особенно чувствителен к SPA navigation и меняющемуся DOM/layout;
-- при будущем review отдельно проверять reliance на `getBoundingClientRect()`, cleanup/restoration и React re-render.
+- повторно проверяет actions после React re-render и не должен дублировать старые buttons;
+- сохраняет исходные inline styles/позиции и умеет восстановить toolbar/buttons/layout при SPA cleanup.
 
 ---
 
