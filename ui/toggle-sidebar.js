@@ -1,7 +1,7 @@
 // ==StrapiExtension==
 // @name         toggle-sidebar
-// @version      1.3.5
-// @description  Sidebar скрыт по умолчанию, Alt+S переключает его; scrollbar и маркеры коллекций скрыты визуально
+// @version      1.3.6
+// @description  Sidebar скрыт по умолчанию, Alt+S переключает его; scrollbar и маркеры коллекций скрыты визуально; Settings скрыт из глобального меню
 // ==/StrapiExtension==
 
 (function () {
@@ -25,6 +25,10 @@
         const style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent = `
+            nav li:has(> span > a[aria-label="Settings"][href^="/admin/settings"]) {
+                display: none !important;
+            }
+
             [${SIDEBAR_ATTR}],
             [${SIDEBAR_ATTR}] * {
                 scrollbar-width: none !important;
