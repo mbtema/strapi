@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         sidebar
-// @version      2.0.2
+// @version      2.0.3
 // @description  Единый UI/UX sidebar: глобальная навигация, Alt+S, поиск, быстрый доступ, группы и активное состояние
 // ==/StrapiExtension==
 
@@ -179,12 +179,7 @@
                 list-style: none !important;
             }
 
-            [${SIDEBAR_ATTR}] li::marker {
-                content: '' !important;
-                color: transparent !important;
-                font-size: 0 !important;
-            }
-
+            [${SIDEBAR_ATTR}] li::marker,
             [${SIDEBAR_ATTR}] li::before {
                 content: none !important;
                 display: none !important;
@@ -199,7 +194,7 @@
             [${CLEANUP_ATTR}] [${LIST_ATTR}],
             [${CLEANUP_ATTR}] [${SINGLE_LIST_ATTR}] {
                 margin: 0 !important;
-                padding: 0 10px 10px !important;
+                padding: 0 10px 16px !important;
             }
 
             [${TOOLBAR_ATTR}] {
@@ -209,16 +204,24 @@
                 display: flex;
                 flex-direction: column;
                 gap: 8px;
-                padding: 12px 16px;
+                padding: 12px 16px 14px;
                 background: #181826;
-                border-bottom: 1px solid #32324d;
+                border: 0 !important;
+                border-bottom: 0 !important;
+                box-shadow: none !important;
+            }
+
+            [${TOOLBAR_ATTR}]::after {
+                content: none !important;
+                display: none !important;
             }
 
             [${TOOLBAR_ATTR}] .tm-sidebar-search {
                 width: 100%;
+                height: 36px;
                 min-height: 36px;
                 box-sizing: border-box;
-                padding: 7px 10px;
+                padding: 8px 10px;
                 border: 1px solid #4a4a6a;
                 border-radius: 6px;
                 outline: none;
@@ -226,6 +229,8 @@
                 color: #ffffff;
                 font: inherit;
                 font-size: 13px;
+                font-weight: 400;
+                line-height: 18px;
             }
 
             [${TOOLBAR_ATTR}] .tm-sidebar-search::placeholder {
@@ -240,7 +245,7 @@
             [${TOOLBAR_ATTR}] .tm-sidebar-quick-row {
                 display: flex;
                 flex-wrap: wrap;
-                gap: 6px;
+                gap: 8px;
             }
 
             [${TOOLBAR_ATTR}] [${QUICK_ATTR}] {
@@ -252,6 +257,7 @@
                 color: #dcdce4;
                 font: inherit;
                 font-size: 12px;
+                font-weight: 500;
                 line-height: 16px;
                 cursor: pointer;
             }
@@ -268,7 +274,7 @@
             }
 
             [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] {
-                margin: 10px 0 4px !important;
+                margin: 14px 0 4px !important;
                 padding: 0 !important;
             }
 
@@ -276,18 +282,18 @@
                 display: flex;
                 align-items: center;
                 width: 100%;
-                min-height: 30px;
+                min-height: 24px;
                 box-sizing: border-box;
-                padding: 6px 8px;
+                padding: 4px 12px;
                 border: 0;
                 border-radius: 5px;
                 background: transparent;
                 color: #8e8ea9;
                 font: inherit;
-                font-size: 10px;
-                line-height: 14px;
+                font-size: 11px;
                 font-weight: 600;
-                letter-spacing: 0.05em;
+                line-height: 16px;
+                letter-spacing: 0.04em;
                 text-align: left;
                 cursor: pointer;
             }
@@ -302,41 +308,18 @@
                 flex: 1;
             }
 
-            [${CLEANUP_ATTR}] .tm-sidebar-group-count {
-                margin-left: 8px;
-                color: #666687;
-                font-size: 10px;
-                font-weight: 500;
-            }
-
-            [${CLEANUP_ATTR}] .tm-sidebar-group-chevron {
-                width: 12px;
-                margin-right: 5px;
-                color: #666687;
-                font-size: 10px;
-                text-align: center;
-                transition: transform 120ms ease;
-            }
-
-            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}][data-tm-collapsed="false"] .tm-sidebar-group-chevron {
-                transform: rotate(90deg);
-            }
-
             [${CLEANUP_ATTR}] [${GROUP_ITEM_ATTR}] {
-                margin: 1px 0 !important;
+                margin: 0 !important;
                 padding: 0 !important;
                 list-style: none !important;
             }
 
-            [${CLEANUP_ATTR}] [${GROUP_ITEM_ATTR}]::marker {
-                content: '' !important;
-                font-size: 0 !important;
-            }
-
             [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR},
             [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} {
+                display: flex !important;
+                align-items: center !important;
                 width: 100% !important;
-                min-height: 38px !important;
+                min-height: 40px !important;
                 margin: 0 !important;
                 box-sizing: border-box !important;
                 border-radius: 6px !important;
@@ -344,12 +327,14 @@
 
             [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div,
             [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR} > div {
+                display: flex !important;
+                align-items: center !important;
+                width: 100% !important;
                 min-width: 0 !important;
                 height: auto !important;
-                min-height: 38px !important;
+                min-height: 40px !important;
                 box-sizing: border-box !important;
-                padding-top: 7px !important;
-                padding-bottom: 7px !important;
+                padding: 8px 12px !important;
             }
 
             [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:first-child:empty,
@@ -371,10 +356,11 @@
                 overflow: visible !important;
                 white-space: normal !important;
                 text-overflow: clip !important;
-                line-height: 1.35 !important;
                 overflow-wrap: anywhere !important;
                 word-break: normal !important;
                 font-size: 13px !important;
+                font-weight: 400 !important;
+                line-height: 18px !important;
             }
 
             [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] {
@@ -387,7 +373,8 @@
                 border-inline-end: 0 !important;
             }
 
-            [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] * {
+            [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] *,
+            [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] > div > span:last-child {
                 color: #ffffff !important;
                 font-weight: 600 !important;
             }
@@ -399,9 +386,11 @@
     function directChildContaining(parent, node) {
         if (!parent || !node) return null;
         let current = node;
+
         while (current?.parentElement && current.parentElement !== parent) {
             current = current.parentElement;
         }
+
         return current?.parentElement === parent ? current : null;
     }
 
@@ -414,6 +403,7 @@
 
         const logo = nav.querySelector('img[alt="Application logo"]');
         const logoRoot = directChildContaining(nav, logo);
+
         if (logoRoot) {
             logoRoot.setAttribute(GLOBAL_LOGO_ATTR, '');
             const next = logoRoot.nextElementSibling;
@@ -606,7 +596,7 @@
         }
     }
 
-    function ensureGroupHeader(list, group, count) {
+    function ensureGroupHeader(list, group) {
         let header = list.querySelector(
             `:scope > [${GROUP_HEADER_ATTR}="${group.id}"]`
         );
@@ -619,18 +609,11 @@
             button.type = 'button';
             button.setAttribute('aria-expanded', 'true');
 
-            const chevron = document.createElement('span');
-            chevron.className = 'tm-sidebar-group-chevron';
-            chevron.textContent = '›';
-
             const title = document.createElement('span');
             title.className = 'tm-sidebar-group-title';
             title.textContent = group.title;
 
-            const counter = document.createElement('span');
-            counter.className = 'tm-sidebar-group-count';
-
-            button.append(chevron, title, counter);
+            button.appendChild(title);
             button.addEventListener('click', () => {
                 const current = collapsedGroups.get(group.id) || false;
                 collapsedGroups.set(group.id, !current);
@@ -639,9 +622,6 @@
 
             header.appendChild(button);
         }
-
-        const counter = header.querySelector('.tm-sidebar-group-count');
-        if (counter) counter.textContent = String(count);
 
         return header;
     }
@@ -672,7 +652,7 @@
 
             if (!groupItems.length) continue;
 
-            desired.push(ensureGroupHeader(collectionList, group, groupItems.length));
+            desired.push(ensureGroupHeader(collectionList, group));
 
             for (const item of groupItems) {
                 item.setAttribute(GROUP_ITEM_ATTR, group.id);
@@ -691,7 +671,7 @@
         if (leftovers.length) {
             const other = { id: 'other', title: 'ДРУГОЕ', collapsed: false };
             if (!collapsedGroups.has(other.id)) collapsedGroups.set(other.id, false);
-            desired.push(ensureGroupHeader(collectionList, other, leftovers.length));
+            desired.push(ensureGroupHeader(collectionList, other));
 
             for (const item of leftovers) {
                 item.setAttribute(GROUP_ITEM_ATTR, other.id);
@@ -730,7 +710,7 @@
 
         if (!items.length) return;
 
-        const header = ensureGroupHeader(singleList, SINGLE_GROUP, items.length);
+        const header = ensureGroupHeader(singleList, SINGLE_GROUP);
         const desired = [header];
 
         for (const item of items) {
@@ -816,7 +796,6 @@
             }
 
             header.hidden = Boolean(query) && visibleCount === 0;
-            header.dataset.tmCollapsed = String(collapsed && !query);
 
             const button = header.querySelector('button');
             if (button) button.setAttribute('aria-expanded', String(query || !collapsed));
