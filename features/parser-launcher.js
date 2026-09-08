@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         parser-launcher
-// @version      1.3
+// @version      1.3.1
 // @description  Запускает парсеры из GitHub по Alt+P
 // ==/StrapiExtension==
 
@@ -12,6 +12,7 @@
 
   const MANIFEST_FILE = 'manifest.json';
   const OVERLAY_ID = 'tm-parser-launcher-overlay';
+  const PARSER_FILE_RE = /^[a-z0-9-]+\.js$/;
 
   async function loadText(file) {
     const response = await fetch(`${RAW_BASE}${file}?t=${Date.now()}`, {
@@ -29,15 +30,28 @@
     const text = await loadText(MANIFEST_FILE);
     const manifest = JSON.parse(text);
 
-    if (!Array.isArray(manifest.parsers)) {
+    if (
+      !manifest ||
+      manifest.schemaVersion !== 1 ||
+      !Array.isArray(manifest.parsers)
+    ) {
       throw new Error('Некорректный manifest.json');
     }
 
-    return manifest.parsers.filter(parser =>
-      parser &&
-      typeof parser.name === 'string' &&
-      typeof parser.file === 'string'
-    );
+    return manifest.parsers
+      .filter(parser =>
+        parser &&
+        typeof parser.name === 'string' &&
+        typeof parser.file === 'string'
+      )
+      .map(parser => ({
+        name: parser.name.trim(),
+        file: parser.file.trim()
+      }))
+      .filter(parser =>
+        parser.name.length > 0 &&
+        PARSER_FILE_RE.test(parser.file)
+      );
   }
 
   function executeParser(code, file) {
