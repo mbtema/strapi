@@ -57,7 +57,8 @@
 - Loader запускает кеш и обновляет его по manifest; новая версия при старом кеше обычно применяется после следующего reload Strapi.
 - Структура: `ui-ux/` — UI/UX, `features/` — функции, `parsers/` — массовые проверки, `postman/` — API.
 - Sidebar UI/UX хранить централизованно в `ui-ux/sidebar.js`; не плодить отдельные sidebar-скрипты без необходимости.
-- Стандарт парсера: meta header (имя/версия/назначение) → все страницы API → проверка → прогресс/счётчики → автоматический CSV с понятным именем. Если парсер общий — учитывать `parsers/manifest.json`/Parser Launcher.
+- `promts/project-context.md` — живой полный контекст, `promts/project-instructions.md` — актуальные правила работы. После существенных изменений архитектуры/workflow/контекста синхронизировать их; при изменении структуры или использования repo обновлять и README. GitHub-версии этих файлов — централизованный source of truth, который пользователь периодически переносит в Project ChatGPT.
+- Стандарт парсера: meta header (имя/версия/назначение) → все страницы API → проверка → прогресс/счётчики → автоматический CSV с понятным именем. Если parser вспомогательный и output не CSV, явно указывать это в meta header. Если parser общий — учитывать `parsers/manifest.json`/Parser Launcher.
 
 ## 8. Мобильное приложение / CMS / UI
 - Главная: Single Type + Dynamic Zone; частые `home.main-banners`, `home.highlights-slider`, `home.product-slider`, `home.product-grid`; поля `title`, `deeplink`, `mode`, `maxItems`, `products`.
