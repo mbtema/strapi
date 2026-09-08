@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         list-view
-// @version      1.0.0
+// @version      1.2.0
 // @description  Точечные UI-правки List View Content Manager
 // ==/StrapiExtension==
 
