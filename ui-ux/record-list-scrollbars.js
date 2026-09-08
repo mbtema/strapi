@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         record-list-scrollbars
-// @version      1.0.2
+// @version      1.0.3
 // @description  Скрывает scrollbar и overflow-подсветку в списке записей Content Manager, сохраняя прокрутку
 // ==/StrapiExtension==
 
@@ -44,6 +44,15 @@
         `;
 
         (document.head || document.documentElement).appendChild(style);
+    }
+
+    function clearMarkers(root) {
+        root
+            .querySelectorAll(`[${HIDDEN_ATTR}], [${SHADOW_ATTR}]`)
+            .forEach(element => {
+                element.removeAttribute(HIDDEN_ATTR);
+                element.removeAttribute(SHADOW_ATTR);
+            });
     }
 
     function isScrollable(element) {
@@ -123,6 +132,8 @@
         const root = document.querySelector('main') || document.body;
         if (!root) return;
 
+        clearMarkers(root);
+
         root.querySelectorAll(TABLE_SELECTOR).forEach(table => {
             markScrollContainers(table, root);
         });
@@ -170,6 +181,7 @@
         });
 
         window.addEventListener('popstate', scheduleApply);
+        window.addEventListener('resize', scheduleApply, { passive: true });
         scheduleApply();
     }
 
