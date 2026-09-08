@@ -7,6 +7,8 @@
 > Если данные в этом файле конфликтуют с явной текущей инструкцией пользователя, актуальным API-response, Strapi UI/Network или текущим состоянием GitHub — использовать более свежий источник.
 >
 > Для исторических задач действует правило: считать их справочным контекстом, а не гарантией текущего состояния системы.
+>
+> `promts/project-context.md` — живой файл. После существенных изменений архитектуры, workflow, repo или накопления важного нового контекста его нужно синхронизировать. GitHub-версия считается централизованным source of truth; пользователь периодически копирует свежий `project-context.md` и `project-instructions.md` в Project ChatGPT.
 
 **Последняя сборка контекста:** 2026-09-08  
 **Основной репозиторий:** `mbtema/strapi`  
@@ -346,78 +348,55 @@ categoryDebugToken
 
 # 9. GitHub repository `mbtema/strapi`
 
-Назначение: рабочие инструменты для Strapi Admin — постоянные extensions, UI-кастомы, parsers и Postman.
+Назначение: единый рабочий репозиторий для Strapi Admin tooling, parsers, Postman и централизованного контекста проекта.
 
 ## Текущая структура main
 
 ```text
 .
 ├── README.md
-├── extensions/
+├── extension/
 │   ├── loader.js
 │   └── manifest.json
 ├── features/
+│   ├── barcode-extractor.js
+│   ├── ctrl-enter-publisher.js
+│   ├── parser-launcher.js
+│   └── vimium-open-row.js
+├── ui-ux/
+│   ├── sidebar.js
+│   ├── entry-relocate.js
+│   └── record-list-scrollbars.js
 ├── parsers/
+│   ├── manifest.json
+│   ├── dom-stealer.js
+│   ├── missing-brand.js
+│   ├── missing-categories.js
+│   ├── missing-shades.js
+│   ├── orphan-attributes.js
+│   ├── price-checker.js
+│   ├── products-without-attributes.js
+│   ├── products-without-price.js
+│   ├── sort-volume.js
+│   ├── volume-checker.js
+│   └── zero-prices.js
 ├── postman/
-└── ui/
+│   └── admin-api.json
+└── promts/
+    ├── project-context.md
+    └── project-instructions.md
 ```
 
-Расширенное дерево, подтверждённое README:
+## Назначение папок
 
-```text
-extensions/
-  loader.js
-  manifest.json
+- `extension/` — инфраструктура загрузки постоянных extensions;
+- `features/` — независимые функции/хоткеи;
+- `ui-ux/` — постоянные UI/UX-кастомы Strapi;
+- `parsers/` — массовые проверки и вспомогательные browser parsers;
+- `postman/` — API variables/collection;
+- `promts/` — живое централизованное хранилище полного project context и рабочих инструкций.
 
-features/
-  barcode-extractor.js
-  ctrl-enter-publisher.js
-  parser-launcher.js
-  vimium-open-row.js
-
-ui/
-  entry-relocate.js
-  record-list-scrollbars.js
-  sidebar-sorter.js
-  sidebar-ui-cleanup.js
-  toggle-sidebar.js
-
-parsers/
-  manifest.json
-  missing-brand.js
-  missing-categories.js
-  missing-shades.js
-  orphan-attributes.js
-  price-checker.js
-  products-without-attributes.js
-  products-without-price.js
-  sort-volume.js
-  volume-checker.js
-  zero-prices.js
-
-postman/
-  admin-api.json
-```
-
-## Актуальность snapshot
-
-На 2026-09-08 последний наблюдавшийся commit main:
-
-```text
-c231667e1ea3157e48cf67426e29e010d40ab3d5
-Bump entry-relocate to 1.4.4
-```
-
-Непосредственно перед ним:
-
-```text
-077fbea8961ab0fe3708c5bd39116087a4ed6781
-Make entry layout detection resilient
-```
-
-Это важно как контекст: `entry-relocate` недавно дорабатывался именно на устойчивость определения layout/SPA.
-
-Перед любым новым code review состояние GitHub нужно читать заново — этот snapshot не должен заменять актуальный repo.
+Перед любым новым code review состояние GitHub нужно читать заново. Snapshot в этом файле не должен заменять актуальный repo.
 
 ---
 
@@ -425,11 +404,11 @@ Make entry layout detection resilient
 
 Tampermonkey должен содержать один основной script:
 
-`extensions/loader.js`
+`extension/loader.js`
 
-Текущая версия loader в snapshot:
+Актуальная версия loader на момент этой сборки:
 
-`1.0.2`
+`1.1.1`
 
 Основные параметры:
 
@@ -443,9 +422,9 @@ Loader:
 
 1. читает локальный cache;
 2. запускает кешированные extensions сразу;
-3. в фоне загружает `extensions/manifest.json`;
+3. в фоне загружает `extension/manifest.json`;
 4. сравнивает `id/path/version`;
-5. скачивает изменившиеся extensions;
+5. скачивает только изменившиеся extensions;
 6. сохраняет новый cache;
 7. если ранее рабочий cache уже был — сообщает, что нужен reload;
 8. если GitHub недоступен, но cache есть — продолжает работать с cache.
@@ -464,11 +443,16 @@ data-tm-strapi-extensions-loader
 
 для защиты от повторного запуска.
 
-Manifest принимает только enabled extensions из `features/*.js` и `ui/*.js`.
+Manifest принимает enabled extensions только из:
+
+```text
+features/*.js
+ui-ux/*.js
+```
 
 ## Практическое правило обновления
 
-Изменил extension → повысил его `version` в `extensions/manifest.json`.
+Изменил extension → повысил его `version` в `extension/manifest.json`.
 
 Если version не повысить, пользователь может продолжать запускать старый cache и решить, что код «не обновился».
 
@@ -486,11 +470,9 @@ Snapshot 2026-09-08:
 
 | id | path | version | enabled |
 |---|---|---:|---|
-| `toggle-sidebar` | `ui/toggle-sidebar.js` | `1.3.5` | yes |
-| `sidebar-ui-cleanup` | `ui/sidebar-ui-cleanup.js` | `1.0.4` | yes |
-| `sidebar-sorter` | `ui/sidebar-sorter.js` | `1.0.2` | **no** |
-| `record-list-scrollbars` | `ui/record-list-scrollbars.js` | `1.0.2` | yes |
-| `entry-relocate` | `ui/entry-relocate.js` | `1.4.4` | yes |
+| `sidebar` | `ui-ux/sidebar.js` | `2.2.1` | yes |
+| `record-list-scrollbars` | `ui-ux/record-list-scrollbars.js` | `1.0.2` | yes |
+| `entry-relocate` | `ui-ux/entry-relocate.js` | `1.4.4` | yes |
 | `barcode-extractor` | `features/barcode-extractor.js` | `1.4.1` | yes |
 | `ctrl-enter-publisher` | `features/ctrl-enter-publisher.js` | `1.1` | yes |
 | `parser-launcher` | `features/parser-launcher.js` | `1.3` | yes |
@@ -503,63 +485,112 @@ Snapshot 2026-09-08:
 - проверить latest version;
 - после изменения bump version.
 
+Версия extension независима от версии loader.
+
 ---
 
 # 12. Известные extensions и хоткеи
 
+## `sidebar.js`
+
+`ui-ux/sidebar.js` — единый централизованный sidebar-модуль. Старые отдельные `toggle-sidebar`, `sidebar-ui-cleanup`, `sidebar-sorter` больше не являются текущей архитектурой.
+
+Текущее поведение:
+
+- sidebar скрыт по умолчанию;
+- `Alt+S` — показать/скрыть;
+- width sidebar — 320px;
+- поиск по Collection Types и Single Types;
+- быстрые кнопки `Товары` и `Предложения`;
+- активная collection выделяется фиолетовым фоном `#302c6f`, белым текстом/иконкой;
+- у collection/single type строк минималистичные inline SVG icons;
+- текст и иконки выровнены по тому же левому краю, что и названия групп;
+- Strapi logo и лишние separators глобальной левой панели скрыты;
+- Settings gear скрыт визуально, прямой `/admin/settings` остаётся доступен;
+- профиль внизу сохраняется;
+- group header остаётся кликабельным для collapse/expand, chevrons/counts скрыты.
+
+Группы:
+
+### Каталог
+
+- Товары;
+- Предложения;
+- Разделы;
+- Бренды;
+- Акции;
+- Страницы.
+
+### Справочник
+
+- Города;
+- Магазины;
+- Методы доставки;
+- Пункты меню (МП);
+- Дизайны сертификатов (МП);
+- Контакты службы поддержки;
+- Способы связи со службой поддержки;
+- Темы обратной связи.
+
+### Фильтры
+
+- fallback для Collection Types, которые явно не назначены в другие группы;
+- новая неизвестная Collection Type должна автоматически попадать сюда;
+- для неизвестной collection используется нейтральная `sliders` icon.
+
+### Прочее
+
+- `notification-template`;
+- Home Page;
+- web-home-page;
+- Блок рекомендаций;
+- новые Single Types автоматически должны попадать сюда.
+
+Важные принципы реализации:
+
+- не использовать `sc-*`;
+- собственные markers — `data-tm-*`;
+- перемещать реальные Strapi list items, а не копировать;
+- повторный `apply()` не должен дублировать toolbar/groups/icons/listeners/styles;
+- логика должна переживать SPA navigation и React subtree recreation.
+
 ## `barcode-extractor.js`
 
-Назначение:
-
+- `Ctrl+B`;
 - копирует barcode из карточки товара;
-- hotkey: `Ctrl+B`;
-- показывает toast в UI Strapi;
-- успех и ошибка должны визуально сообщаться пользователю.
-
-Это появилось как замена ручному наведению/копированию barcode через мышь/Vimium.
+- показывает success/error toast;
+- Clipboard API + fallback `execCommand`.
 
 ## `ctrl-enter-publisher.js`
 
-- hotkey: `Ctrl+Enter`;
-- публикует текущую запись.
+- `Ctrl+Enter`;
+- публикует текущую запись, если Publish button существует и не disabled.
 
 ## `parser-launcher.js`
 
-- hotkey: `Alt+P`;
-- открывает список parsers из `parsers/manifest.json`.
+- `Alt+P`;
+- открывает список parsers из `parsers/manifest.json`;
+- загружает parser с GitHub и выполняет его в странице Strapi.
 
 ## `vimium-open-row.js`
 
-- делает строки таблицы доступными/удобными для Vimium navigation.
-
-## `toggle-sidebar.js`
-
-- sidebar скрыт по умолчанию;
-- hotkey в текущем README: `Alt+S`;
-- визуально скрываются scrollbar/лишние точки.
-
-Исторически использовался `Ctrl+S`; текущий README указывает `Alt+S`, поэтому актуальным считать значение из repo.
-
-## `sidebar-ui-cleanup.js`
-
-- убирает верхний блок Content Manager/Search/COLLECTION TYPES/count;
-- активную collection выделяет визуально.
-
-## `sidebar-sorter.js`
-
-- drag-and-drop sorting collections;
-- текущий manifest: `enabled: false`.
+- делает строки таблицы доступными/удобными для Vimium navigation;
+- добавляет минимальную ссылку в первую cell;
+- работает через MutationObserver + requestAnimationFrame batching.
 
 ## `record-list-scrollbars.js`
 
 - визуально скрывает scrollbar/overflow decoration списка records;
-- прокрутка должна сохраняться.
+- прокрутка должна сохраняться;
+- маркирует только найденные scroll containers вокруг table/grid.
 
 ## `entry-relocate.js`
 
 - переносит Entry actions в строку Draft/Published;
 - освобождает ширину формы;
-- особенно чувствителен к SPA navigation и меняющемуся DOM/layout.
+- перемещает реальные Strapi buttons, сохраняя React handlers/state;
+- особенно чувствителен к SPA navigation и меняющемуся DOM/layout;
+- при будущем review отдельно проверять reliance на `getBoundingClientRect()`, cleanup/restoration и React re-render.
 
 ---
 
@@ -587,7 +618,7 @@ Strapi Admin — React SPA. DOM нельзя считать статичным.
 
 Повторный вызов не должен:
 
-- создавать второй toolbar/button;
+- создавать второй toolbar/button/icon;
 - повторно добавлять style;
 - накапливать listeners;
 - ломать layout;
@@ -656,7 +687,7 @@ console.warn('[extension-name] ...конкретная причина...')
 
 # 14. Парсеры
 
-Общий стандарт:
+Общий стандарт регулярного parser:
 
 ```text
 meta header
@@ -668,30 +699,32 @@ meta header
 → automatic CSV download
 ```
 
-Парсер не должен требовать ручного копирования JSON/Console.
+Parser не должен требовать ручного копирования JSON/Console, если результат можно отдать файлом.
 
 Meta header должен содержать минимум:
 
 - имя;
 - version;
-- назначение.
+- назначение;
+- output, если он отличается от стандартного CSV.
 
 ## Parser Launcher manifest — snapshot
 
-| Название | Файл |
-|---|---|
-| Предложения с дробными ценами | `price-checker.js` |
-| Проверка сортировки объемов | `sort-volume.js` |
-| Проверка единиц объемов | `volume-checker.js` |
-| Отсутствующие оттенки | `missing-shades.js` |
-| Предложения с нулевой ценой | `zero-prices.js` |
-| Предложения без товара | `orphan-attributes.js` |
-| Товары без предложений | `products-without-attributes.js` |
-| Товары без бренда | `missing-brand.js` |
-| Товары без категорий | `missing-categories.js` |
-| Товары без цены | `products-without-price.js` |
+| Название | Файл | Output |
+|---|---|---|
+| Предложения с дробными ценами | `price-checker.js` | CSV |
+| Проверка сортировки объемов | `sort-volume.js` | CSV |
+| Проверка единиц объемов | `volume-checker.js` | CSV |
+| Отсутствующие оттенки | `missing-shades.js` | CSV |
+| Предложения с нулевой ценой | `zero-prices.js` | CSV |
+| Предложения без товара | `orphan-attributes.js` | CSV |
+| Товары без предложений | `products-without-attributes.js` | CSV |
+| Товары без бренда | `missing-brand.js` | CSV |
+| Товары без категорий | `missing-categories.js` | CSV |
+| Товары без цены | `products-without-price.js` | CSV |
+| Копировать DOM страницы | `dom-stealer.js` | Clipboard |
 
-Назначения по README:
+Назначения:
 
 - `price-checker.js` — дробные `price`;
 - `sort-volume.js` — неверный порядок volume;
@@ -702,9 +735,10 @@ Meta header должен содержать минимум:
 - `products-without-attributes.js` — active products без offers;
 - `missing-brand.js` — active products без `brand`;
 - `missing-categories.js` — active products без `categories`;
-- `products-without-price.js` — active products с offers, но без цены `> 0`.
+- `products-without-price.js` — active products с offers, но без цены `> 0`;
+- `dom-stealer.js` — копирует `document.documentElement.outerHTML` в Clipboard для диагностики Strapi DOM; Clipboard API + fallback `execCommand`.
 
-Для нового parser:
+Для нового регулярного parser:
 
 1. добавить `.js` в `parsers/`;
 2. добавить запись в `parsers/manifest.json`, если он должен появиться в `Alt+P`;
@@ -712,6 +746,8 @@ Meta header должен содержать минимум:
 4. добавить auto-download CSV;
 5. дать понятное имя CSV;
 6. вывести totals/progress.
+
+Если parser вспомогательный и его естественный output — Clipboard/другой формат, это допустимо, но должно быть явно отражено в meta header и README/context.
 
 ---
 
@@ -983,7 +1019,7 @@ Bitrix — один из источников product content.
 
 - дать Content Manager возможность удалять records;
 - поля `xml_id` и `code_1c` сделать необязательными;
-- сейчас/на момент задачи без них нельзя было создать новый volume.
+- на момент задачи без них нельзя было создать новый volume.
 
 ## Brands
 
@@ -1201,6 +1237,8 @@ JWT из Strapi Admin LocalStorage технически можно увидет�
 
 Не публиковать реальные tokens в GitHub, документации, screenshots или shared snippets.
 
+Репозиторий `mbtema/strapi` на момент ревью публичный. Реальные секреты в repo не хранятся; Postman secret variables имеют пустые values. Вопрос приватизации repo и выдачи read-only GitHub token Tampermonkey обсуждался, но пока сознательно отложен, чтобы не усложнять loader/workflow.
+
 ---
 
 # 32. Приоритеты диагностики
@@ -1255,8 +1293,8 @@ JWT из Strapi Admin LocalStorage технически можно увидет�
 5. filtering condition;
 6. counters;
 7. empty/error responses;
-8. CSV creation;
-9. auto-download;
+8. CSV/declared output creation;
+9. auto-download/copy;
 10. parser manifest entry.
 
 ---
@@ -1276,18 +1314,97 @@ JWT из Strapi Admin LocalStorage технически можно увидет�
 - держать постоянный Tampermonkey script отдельно от loader architecture;
 - забывать bump extension version;
 - делать parser только на page 1;
-- оставлять parser result только в Console, если его можно скачать;
+- оставлять parser result только в Console, если его можно скачать/скопировать;
 - завязывать UI extension на `sc-*`;
 - копировать штатный Strapi React element, если его можно переместить;
 - оптимизировать MutationObserver ценой нестабильности;
 - считать historical task автоматически актуальным;
-- считать deeplink рабочим только по его внешнему виду.
+- считать deeplink рабочим только по его внешнему виду;
+- плодить отдельные sidebar scripts, если поведение относится к централизованному `ui-ux/sidebar.js`.
 
 ---
 
-# 34. Как использовать этот файл в будущих задачах
+# 34. Promts и регулярное обновление контекста
 
-Project Instructions должны содержать ссылку на `project-context.md`.
+Папка:
+
+`promts/`
+
+не участвует в runtime Strapi и существует как централизованное хранилище контекста, с которым работают пользователь и ChatGPT.
+
+## `promts/project-context.md`
+
+Knowledge layer — вся важная информация сразу:
+
+- архитектура;
+- repo structure;
+- endpoints;
+- Strapi/API patterns;
+- ограничения;
+- локализация;
+- parser/extension architecture;
+- известные UI решения;
+- historical task context;
+- предметный e-commerce/content context;
+- ранее принятые решения.
+
+Файл должен развиваться вместе с проектом, а не оставаться snapshot старой архитектуры.
+
+## `promts/project-instructions.md`
+
+Operational layer — правила того, как работать с этим контекстом:
+
+- стиль ответа;
+- приоритеты;
+- формат технических решений;
+- правила code review;
+- правила работы с Strapi/API/GitHub/parsers/ТЗ.
+
+Не нужно переносить в него всю историю; подробности живут в `project-context.md`.
+
+## Когда обновлять
+
+После существенных изменений:
+
+- структуры repo;
+- loader/manifest architecture;
+- постоянных extensions;
+- parser workflow;
+- важных endpoints/ограничений;
+- правил совместной работы;
+- крупных новых предметных блоков.
+
+Если изменилось только конкретное значение/версия extension, достаточно убедиться, что snapshot/context не вводит в заблуждение; не требуется переписывать весь файл после каждого patch.
+
+Если меняется структура или способ использования repo — одновременно актуализировать README.
+
+Пользователь периодически копирует свежие `project-context.md` и `project-instructions.md` из GitHub в Project ChatGPT, чтобы расширенный контекст проекта не расходился с repo.
+
+---
+
+# 35. Как использовать этот файл и связь с Project Instructions
+
+Project Instructions — operational layer: как отвечать и какие принципы применять всегда.
+
+`project-context.md` — knowledge layer: что известно о проекте, архитектуре, инструментах, исторических задачах и рабочих паттернах.
+
+Использовать их вместе:
+
+```text
+текущее требование пользователя
+        ↓
+Project Instructions
+        ↓
+выбирают подход/формат
+        ↓
+актуальный GitHub / API / Network / UI
+        ↓
+подтверждают текущее состояние
+        ↓
+project-context.md
+        ↓
+даёт подробный предметный и исторический контекст
+```
 
 Когда задача простая — не нужно вытаскивать весь контекст.
 
@@ -1310,28 +1427,12 @@ Project Instructions должны содержать ссылку на `project-
 
 Если пользователь прислал новый контекст, который меняет правило, свежий контекст выше этого файла.
 
----
-
-# 35. Связь с Project Instructions
-
-Короткая Project Instructions — operational layer: как отвечать и какие принципы применять всегда.
-
-`project-context.md` — knowledge layer: что известно о проекте, архитектуре, инструментах, исторических задачах и рабочих паттернах.
-
-Использовать их вместе:
+Приоритет:
 
 ```text
-Project Instructions
-        ↓
-выбирают подход/формат
-        ↓
-project-context.md
-        ↓
-даёт подробный предметный контекст
-        ↓
-актуальный API / GitHub / Network
-        ↓
-подтверждает текущее состояние
+текущая инструкция пользователя
+→ Project Instructions
+→ актуальные данные/репозиторий/API/Network
+→ project-context.md
+→ исторические примеры
 ```
-
-Приоритет всегда остаётся у текущего явно заданного пользователем требования и актуальных данных системы.
