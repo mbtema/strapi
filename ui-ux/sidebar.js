@@ -1,7 +1,7 @@
 // ==StrapiExtension==
 // @name         sidebar
-// @version      2.0.3
-// @description  Единый UI/UX sidebar: глобальная навигация, Alt+S, поиск, быстрый доступ, группы и активное состояние
+// @version      2.1.0
+// @description  Единый UI/UX sidebar: глобальная навигация, Alt+S, поиск, быстрый доступ, группы и future-safe fallback
 // ==/StrapiExtension==
 
 (function () {
@@ -17,9 +17,10 @@
 
     const SIDEBAR_ATTR = 'data-tm-content-manager-sidebar';
     const CLEANUP_ATTR = 'data-tm-sidebar-cleanup';
-    const LIST_ATTR = 'data-tm-sidebar-collection-list';
-    const SINGLE_LIST_ATTR = 'data-tm-sidebar-single-list';
-    const HIDDEN_ATTR = 'data-tm-sidebar-header-hidden';
+    const LIST_ATTR = 'data-tm-sidebar-main-list';
+    const HIDDEN_ATTR = 'data-tm-sidebar-hidden';
+    const SINGLE_SOURCE_ATTR = 'data-tm-sidebar-single-source-hidden';
+    const SINGLE_WRAPPER_ATTR = 'data-tm-sidebar-single-wrapper-hidden';
     const ACTIVE_ATTR = 'data-tm-sidebar-active-collection';
     const TOOLBAR_ATTR = 'data-tm-sidebar-toolbar';
     const GROUP_HEADER_ATTR = 'data-tm-sidebar-group-header';
@@ -32,91 +33,66 @@
 
     const GROUPS = [
         {
-            id: 'commerce',
-            title: 'КОММЕРЦИЯ',
+            id: 'catalog',
+            title: 'Каталог',
             collapsed: false,
             uids: [
                 'api::product.product',
                 'api::attribute.attribute',
-                'api::promotion.promotion',
-                'api::brand.brand'
-            ]
-        },
-        {
-            id: 'catalog',
-            title: 'КАТАЛОГ',
-            collapsed: false,
-            uids: [
                 'api::category.category',
-                'api::shade.shade',
-                'api::color-variant.color-variant',
-                'api::volume.volume',
-                'api::filtry.filtry'
+                'api::brand.brand',
+                'api::promotion.promotion',
+                'api::page.page'
             ]
         },
         {
-            id: 'references',
-            title: 'СПРАВОЧНИКИ',
-            collapsed: true,
-            uids: [
-                'api::product-age-group.product-age-group',
-                'api::product-usage-time.product-usage-time',
-                'api::city.city',
-                'api::fragrance-group.fragrance-group',
-                'api::shade-group.shade-group',
-                'api::product-feature.product-feature',
-                'api::ingredient.ingredient',
-                'api::fragrance-concentration.fragrance-concentration',
-                'api::product-effect.product-effect',
-                'api::product-segment.product-segment',
-                'api::product-coverage.product-coverage',
-                'api::brand-country.brand-country',
-                'api::hair-type.hair-type',
-                'api::skin-type.skin-type',
-                'api::product-form.product-form',
-                'api::product-finish.product-finish',
-                'api::product-release-form.product-release-form'
-            ]
-        },
-        {
-            id: 'content-service',
-            title: 'КОНТЕНТ И СЕРВИС',
+            id: 'reference',
+            title: 'Справочник',
             collapsed: false,
             uids: [
-                'api::notification-template.notification-template',
-                'api::gift-certificate.gift-certificate',
-                'api::feedback-contact-info.feedback-contact-info',
+                'api::city.city',
                 'api::shop.shop',
                 'api::delivery-method.delivery-method',
                 'api::menu-item.menu-item',
+                'api::gift-certificate.gift-certificate',
+                'api::feedback-contact-info.feedback-contact-info',
                 'api::feedback-contact-method.feedback-contact-method',
-                'api::article.article',
-                'api::page.page',
                 'api::feedback-topic.feedback-topic'
             ]
+        },
+        {
+            id: 'filters',
+            title: 'Фильтры',
+            collapsed: true,
+            fallbackCollections: true
+        },
+        {
+            id: 'other',
+            title: 'Прочее',
+            collapsed: false,
+            singleTypes: true
         }
     ];
-
-    const SINGLE_GROUP = {
-        id: 'single-types',
-        title: 'SINGLE TYPES',
-        collapsed: false
-    };
 
     const QUICK_LINKS = [
         { uid: 'api::product.product', label: 'Товары' },
         { uid: 'api::attribute.attribute', label: 'Предложения' }
     ];
 
-    const collapsedGroups = new Map([
-        ...GROUPS.map(group => [group.id, group.collapsed]),
-        [SINGLE_GROUP.id, SINGLE_GROUP.collapsed]
+    const SINGLE_ORDER = new Map([
+        ['home page', 0],
+        ['web-home-page', 1],
+        ['блок рекомендаций', 2]
     ]);
+
+    const collapsedGroups = new Map(
+        GROUPS.map(group => [group.id, group.collapsed])
+    );
 
     let hidden = true;
     let sidebar = null;
     let collectionList = null;
-    let singleList = null;
+    let singleSourceList = null;
     let toolbar = null;
     let layout = null;
     let main = null;
@@ -137,7 +113,10 @@
 
             [${GLOBAL_LOGO_ATTR}],
             [${GLOBAL_TOP_SEPARATOR_ATTR}],
-            [${GLOBAL_PROFILE_SEPARATOR_ATTR}] {
+            [${GLOBAL_PROFILE_SEPARATOR_ATTR}],
+            [${HIDDEN_ATTR}],
+            [${SINGLE_SOURCE_ATTR}],
+            [${SINGLE_WRAPPER_ATTR}] {
                 display: none !important;
             }
 
@@ -155,10 +134,6 @@
             [${GLOBAL_PROFILE_ATTR}]::before,
             [${GLOBAL_PROFILE_ATTR}]::after {
                 content: none !important;
-                display: none !important;
-            }
-
-            [${HIDDEN_ATTR}] {
                 display: none !important;
             }
 
@@ -191,8 +166,7 @@
                 max-width: 320px !important;
             }
 
-            [${CLEANUP_ATTR}] [${LIST_ATTR}],
-            [${CLEANUP_ATTR}] [${SINGLE_LIST_ATTR}] {
+            [${CLEANUP_ATTR}] [${LIST_ATTR}] {
                 margin: 0 !important;
                 padding: 0 10px 16px !important;
             }
@@ -204,13 +178,13 @@
                 display: flex;
                 flex-direction: column;
                 gap: 8px;
-                padding: 12px 16px 14px;
+                padding: 12px 16px 12px;
                 background: #181826;
                 border: 0 !important;
-                border-bottom: 0 !important;
                 box-shadow: none !important;
             }
 
+            [${TOOLBAR_ATTR}]::before,
             [${TOOLBAR_ATTR}]::after {
                 content: none !important;
                 display: none !important;
@@ -274,8 +248,12 @@
             }
 
             [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] {
-                margin: 14px 0 4px !important;
+                margin: 12px 0 2px !important;
                 padding: 0 !important;
+            }
+
+            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}]:first-child {
+                margin-top: 8px !important;
             }
 
             [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] > button {
@@ -287,6 +265,7 @@
                 padding: 4px 12px;
                 border: 0;
                 border-radius: 5px;
+                outline: none;
                 background: transparent;
                 color: #8e8ea9;
                 font: inherit;
@@ -294,13 +273,24 @@
                 font-weight: 600;
                 line-height: 16px;
                 letter-spacing: 0.04em;
+                text-transform: uppercase;
                 text-align: left;
                 cursor: pointer;
+                box-shadow: none;
             }
 
             [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] > button:hover {
                 background: #212134;
                 color: #c0c0cf;
+            }
+
+            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] > button:focus {
+                outline: none;
+                box-shadow: none;
+            }
+
+            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] > button:focus-visible {
+                box-shadow: 0 0 0 2px rgba(123, 121, 255, 0.35);
             }
 
             [${CLEANUP_ATTR}] .tm-sidebar-group-title {
@@ -331,8 +321,8 @@
                 align-items: center !important;
                 width: 100% !important;
                 min-width: 0 !important;
-                height: auto !important;
                 min-height: 40px !important;
+                height: auto !important;
                 box-sizing: border-box !important;
                 padding: 8px 12px !important;
             }
@@ -417,9 +407,7 @@
             .find(button => directChildContaining(nav, button));
         const profileRoot = directChildContaining(nav, profileButton);
 
-        if (profileRoot) {
-            profileRoot.setAttribute(GLOBAL_PROFILE_ATTR, '');
-        }
+        if (profileRoot) profileRoot.setAttribute(GLOBAL_PROFILE_ATTR, '');
 
         if (menu && profileRoot) {
             let node = menu.nextElementSibling;
@@ -433,8 +421,8 @@
     }
 
     function getUid(link, type) {
-        const href = link.getAttribute('href') || '';
-        const segment = type === 'single-types' ? 'single-types/' : 'collection-types/';
+        const href = link?.getAttribute('href') || '';
+        const segment = type === 'single' ? 'single-types/' : 'collection-types/';
         const index = href.indexOf(segment);
         if (index === -1) return '';
 
@@ -450,16 +438,27 @@
                 .pathname
                 .replace(/\/+$/, '');
         } catch {
-            return (link.getAttribute('href') || '')
+            return (link?.getAttribute('href') || '')
                 .split('?')[0]
                 .replace(/\/+$/, '');
         }
     }
 
+    function normalizeText(value) {
+        return String(value || '')
+            .trim()
+            .replace(/\s+/g, ' ')
+            .toLocaleLowerCase();
+    }
+
+    function getLinkLabel(link) {
+        return (link?.textContent || '').trim().replace(/\s+/g, ' ');
+    }
+
     function clearSidebarReferences() {
         sidebar = null;
         collectionList = null;
-        singleList = null;
+        singleSourceList = null;
         toolbar = null;
         layout = null;
         main = null;
@@ -503,48 +502,71 @@
         return true;
     }
 
-    function findLists(currentSidebar) {
-        const collectionLink = currentSidebar.querySelector(COLLECTION_LINK_SELECTOR);
-        const singleLink = currentSidebar.querySelector(SINGLE_LINK_SELECTOR);
-
+    function findLists() {
+        const collectionLink = sidebar?.querySelector(COLLECTION_LINK_SELECTOR);
         collectionList = collectionLink?.closest('ol') || null;
-        singleList = singleLink?.closest('ol') || null;
 
         if (collectionList) collectionList.setAttribute(LIST_ATTR, '');
-        if (singleList) singleList.setAttribute(SINGLE_LIST_ATTR, '');
+
+        if (
+            !singleSourceList ||
+            !document.contains(singleSourceList) ||
+            singleSourceList === collectionList
+        ) {
+            const sourceLink = [...(sidebar?.querySelectorAll(SINGLE_LINK_SELECTOR) || [])]
+                .find(link => link.closest('ol') !== collectionList);
+            singleSourceList = sourceLink?.closest('ol') || null;
+        }
     }
 
-    function hideNativeSectionHeader(list) {
-        const parent = list?.parentElement;
+    function hideNativeSidebarHeader() {
+        const heading = [...sidebar.querySelectorAll('h1, h2')]
+            .find(node => node.textContent.trim() === 'Content Manager');
+        if (!heading) return;
+
+        let node = heading;
+        while (node.parentElement && node.parentElement !== sidebar) {
+            node = node.parentElement;
+        }
+
+        if (node.parentElement === sidebar) node.setAttribute(HIDDEN_ATTR, '');
+    }
+
+    function hideNativeCollectionHeader() {
+        const parent = collectionList?.parentElement;
         if (!parent) return;
 
         for (const child of [...parent.children]) {
-            if (child === list || child.hasAttribute(TOOLBAR_ATTR)) continue;
+            if (child === collectionList || child.hasAttribute(TOOLBAR_ATTR)) continue;
             child.setAttribute(HIDDEN_ATTR, '');
         }
     }
 
-    function hideNativeSidebarHeader(currentSidebar) {
-        const heading = [...currentSidebar.querySelectorAll('h1, h2')]
-            .find(node => node.textContent.trim() === 'Content Manager');
+    function hideSingleSource() {
+        if (!singleSourceList || singleSourceList === collectionList) return;
 
-        if (!heading) return;
+        singleSourceList.setAttribute(SINGLE_SOURCE_ATTR, '');
 
-        let node = heading;
-        while (node.parentElement && node.parentElement !== currentSidebar) {
+        let node = singleSourceList;
+        while (
+            node.parentElement &&
+            node.parentElement !== sidebar &&
+            !node.parentElement.contains(collectionList)
+        ) {
             node = node.parentElement;
         }
 
-        if (node.parentElement === currentSidebar) {
-            node.setAttribute(HIDDEN_ATTR, '');
+        if (
+            node.parentElement === sidebar &&
+            !node.contains(collectionList)
+        ) {
+            node.setAttribute(SINGLE_WRAPPER_ATTR, '');
         }
     }
 
     function findCollectionLink(uid) {
-        if (!sidebar) return null;
-
-        return [...sidebar.querySelectorAll(COLLECTION_LINK_SELECTOR)]
-            .find(link => getUid(link, 'collection-types') === uid) || null;
+        return [...(sidebar?.querySelectorAll(COLLECTION_LINK_SELECTOR) || [])]
+            .find(link => getUid(link, 'collection') === uid) || null;
     }
 
     function createToolbar() {
@@ -558,7 +580,7 @@
         search.autocomplete = 'off';
         search.value = searchQuery;
         search.addEventListener('input', () => {
-            searchQuery = search.value.trim().toLocaleLowerCase();
+            searchQuery = normalizeText(search.value);
             applyVisibility();
         });
 
@@ -596,8 +618,8 @@
         }
     }
 
-    function ensureGroupHeader(list, group) {
-        let header = list.querySelector(
+    function ensureGroupHeader(group) {
+        let header = collectionList.querySelector(
             `:scope > [${GROUP_HEADER_ATTR}="${group.id}"]`
         );
 
@@ -611,78 +633,99 @@
 
             const title = document.createElement('span');
             title.className = 'tm-sidebar-group-title';
-            title.textContent = group.title;
 
             button.appendChild(title);
             button.addEventListener('click', () => {
-                const current = collapsedGroups.get(group.id) || false;
-                collapsedGroups.set(group.id, !current);
+                collapsedGroups.set(
+                    group.id,
+                    !(collapsedGroups.get(group.id) || false)
+                );
                 applyVisibility();
             });
 
             header.appendChild(button);
         }
 
+        const title = header.querySelector('.tm-sidebar-group-title');
+        if (title) title.textContent = group.title;
+
         return header;
     }
 
-    function organizeCollections() {
+    function collectItems(selector) {
+        const seen = new Set();
+        const items = [];
+
+        for (const link of sidebar.querySelectorAll(selector)) {
+            const item = link.closest('li');
+            if (!item || item.hasAttribute(GROUP_HEADER_ATTR) || seen.has(item)) continue;
+            seen.add(item);
+            items.push(item);
+        }
+
+        return items;
+    }
+
+    function sortSingleTypes(items) {
+        return items
+            .map((item, index) => {
+                const link = item.querySelector(SINGLE_LINK_SELECTOR);
+                const label = normalizeText(getLinkLabel(link));
+                return {
+                    item,
+                    index,
+                    rank: SINGLE_ORDER.has(label) ? SINGLE_ORDER.get(label) : 1000
+                };
+            })
+            .sort((a, b) => a.rank - b.rank || a.index - b.index)
+            .map(entry => entry.item);
+    }
+
+    function organizeItems() {
         if (!collectionList) return;
 
-        const items = [...collectionList.children]
-            .filter(child =>
-                !child.hasAttribute(GROUP_HEADER_ATTR) &&
-                Boolean(child.querySelector(COLLECTION_LINK_SELECTOR))
-            );
+        const collectionItems = collectItems(COLLECTION_LINK_SELECTOR);
+        const singleItems = collectItems(SINGLE_LINK_SELECTOR);
 
         const byUid = new Map();
-        for (const item of items) {
+        for (const item of collectionItems) {
             const link = item.querySelector(COLLECTION_LINK_SELECTOR);
-            const uid = getUid(link, 'collection-types');
+            const uid = getUid(link, 'collection');
             if (uid) byUid.set(uid, item);
         }
 
         const used = new Set();
         const desired = [];
+        const validGroupIds = new Set();
 
         for (const group of GROUPS) {
-            const groupItems = group.uids
-                .map(uid => byUid.get(uid))
-                .filter(Boolean);
+            let items = [];
 
-            if (!groupItems.length) continue;
+            if (group.uids) {
+                items = group.uids.map(uid => byUid.get(uid)).filter(Boolean);
+                for (const item of items) {
+                    const link = item.querySelector(COLLECTION_LINK_SELECTOR);
+                    used.add(getUid(link, 'collection'));
+                }
+            } else if (group.fallbackCollections) {
+                items = collectionItems.filter(item => {
+                    const link = item.querySelector(COLLECTION_LINK_SELECTOR);
+                    return !used.has(getUid(link, 'collection'));
+                });
+            } else if (group.singleTypes) {
+                items = sortSingleTypes(singleItems);
+            }
 
-            desired.push(ensureGroupHeader(collectionList, group));
+            if (!items.length) continue;
 
-            for (const item of groupItems) {
+            validGroupIds.add(group.id);
+            desired.push(ensureGroupHeader(group));
+
+            for (const item of items) {
                 item.setAttribute(GROUP_ITEM_ATTR, group.id);
                 desired.push(item);
-
-                const link = item.querySelector(COLLECTION_LINK_SELECTOR);
-                used.add(getUid(link, 'collection-types'));
             }
         }
-
-        const leftovers = items.filter(item => {
-            const link = item.querySelector(COLLECTION_LINK_SELECTOR);
-            return !used.has(getUid(link, 'collection-types'));
-        });
-
-        if (leftovers.length) {
-            const other = { id: 'other', title: 'ДРУГОЕ', collapsed: false };
-            if (!collapsedGroups.has(other.id)) collapsedGroups.set(other.id, false);
-            desired.push(ensureGroupHeader(collectionList, other));
-
-            for (const item of leftovers) {
-                item.setAttribute(GROUP_ITEM_ATTR, other.id);
-                desired.push(item);
-            }
-        }
-
-        const validGroupIds = new Set([
-            ...GROUPS.map(group => group.id),
-            ...(leftovers.length ? ['other'] : [])
-        ]);
 
         collectionList
             .querySelectorAll(`:scope > [${GROUP_HEADER_ATTR}]`)
@@ -697,38 +740,8 @@
                 collectionList.insertBefore(node, collectionList.children[index] || null);
             }
         });
-    }
 
-    function organizeSingleTypes() {
-        if (!singleList) return;
-
-        const items = [...singleList.children]
-            .filter(child =>
-                !child.hasAttribute(GROUP_HEADER_ATTR) &&
-                Boolean(child.querySelector(SINGLE_LINK_SELECTOR))
-            );
-
-        if (!items.length) return;
-
-        const header = ensureGroupHeader(singleList, SINGLE_GROUP);
-        const desired = [header];
-
-        for (const item of items) {
-            item.setAttribute(GROUP_ITEM_ATTR, SINGLE_GROUP.id);
-            desired.push(item);
-        }
-
-        singleList
-            .querySelectorAll(`:scope > [${GROUP_HEADER_ATTR}]`)
-            .forEach(node => {
-                if (node !== header) node.remove();
-            });
-
-        desired.forEach((node, index) => {
-            if (singleList.children[index] !== node) {
-                singleList.insertBefore(node, singleList.children[index] || null);
-            }
-        });
+        hideSingleSource();
     }
 
     function applyActiveState() {
@@ -771,34 +784,36 @@
     }
 
     function applyVisibility() {
-        if (!sidebar) return;
+        if (!collectionList) return;
 
-        const query = searchQuery;
-        const groupHeaders = [...sidebar.querySelectorAll(`[${GROUP_HEADER_ATTR}]`)];
+        for (const group of GROUPS) {
+            const header = collectionList.querySelector(
+                `:scope > [${GROUP_HEADER_ATTR}="${group.id}"]`
+            );
+            if (!header) continue;
 
-        for (const header of groupHeaders) {
-            const groupId = header.getAttribute(GROUP_HEADER_ATTR);
-            const list = header.parentElement;
-            if (!list) continue;
+            const items = [...collectionList.querySelectorAll(
+                `:scope > [${GROUP_ITEM_ATTR}="${group.id}"]`
+            )];
 
-            const items = [
-                ...list.querySelectorAll(`:scope > [${GROUP_ITEM_ATTR}="${groupId}"]`)
-            ];
-
-            const collapsed = collapsedGroups.get(groupId) || false;
+            const collapsed = collapsedGroups.get(group.id) || false;
             let visibleCount = 0;
 
             for (const item of items) {
-                const matches = !query || item.textContent.toLocaleLowerCase().includes(query);
-                const visible = query ? matches : !collapsed;
+                const matches = !searchQuery || normalizeText(item.textContent).includes(searchQuery);
+                const visible = searchQuery ? matches : !collapsed;
                 item.hidden = !visible;
                 if (matches) visibleCount++;
             }
 
-            header.hidden = Boolean(query) && visibleCount === 0;
-
+            header.hidden = Boolean(searchQuery) && visibleCount === 0;
             const button = header.querySelector('button');
-            if (button) button.setAttribute('aria-expanded', String(query || !collapsed));
+            if (button) {
+                button.setAttribute(
+                    'aria-expanded',
+                    String(Boolean(searchQuery) || !collapsed)
+                );
+            }
         }
     }
 
@@ -847,17 +862,14 @@
         sidebar.setAttribute(SIDEBAR_ATTR, '');
         sidebar.setAttribute(CLEANUP_ATTR, '');
 
-        findLists(sidebar);
+        findLists();
         captureLayout(sidebar);
 
         if (collectionList) {
-            hideNativeSidebarHeader(sidebar);
-            hideNativeSectionHeader(collectionList);
-            if (singleList) hideNativeSectionHeader(singleList);
-
+            hideNativeSidebarHeader();
             ensureToolbar();
-            organizeCollections();
-            organizeSingleTypes();
+            hideNativeCollectionHeader();
+            organizeItems();
             applyActiveState();
             applyVisibility();
         }
@@ -866,9 +878,7 @@
     }
 
     function toggleSidebar() {
-        if (!sidebar || !document.contains(sidebar)) {
-            apply();
-        }
+        if (!sidebar || !document.contains(sidebar)) apply();
         if (!sidebar) return;
 
         hidden = !hidden;
