@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         sidebar
-// @version      2.2.0
+// @version      2.2.1
 // @description  Единый UI/UX sidebar: навигация, Alt+S, поиск, группы, иконки и future-safe fallback
 // ==/StrapiExtension==
 
@@ -400,6 +400,7 @@
                 width: 100% !important;
                 min-height: 40px !important;
                 margin: 0 !important;
+                padding: 0 !important;
                 box-sizing: border-box !important;
                 border-radius: 6px !important;
             }
