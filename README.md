@@ -71,7 +71,7 @@ Loader при открытии Strapi:
 - `volume-checker.js` — разные единицы измерения volume.
 - `missing-shades.js` — активные предложения с `color_variant1C`, но без `shade`.
 - `shade-and-volume.js` — все предложения, у которых одновременно заполнены `shade` и `volume`.
-- `orphan-attributes.js` — предложения без `product`.
+- `attributes-without-product.js` — все предложения без `product`.
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-brand.js` — активные товары без `brand`.
 - `products-without-categories.js` — активные товары без `categories`.
@@ -142,10 +142,10 @@ GitHub-версии файлов в `promts/` считаются централ�
 │   └── record-list-scrollbars.js
 ├── parsers/
 │   ├── manifest.json
+│   ├── attributes-without-product.js
 │   ├── dom-stealer.js
 │   ├── missing-shades.js
 │   ├── shade-and-volume.js
-│   ├── orphan-attributes.js
 │   ├── products-with-missing-content.js
 │   ├── products-with-wrong-variants.js
 │   ├── products-without-attributes.js
