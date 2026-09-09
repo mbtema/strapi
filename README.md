@@ -76,7 +76,7 @@ Loader при открытии Strapi:
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-brand.js` — активные товары без `brand`.
 - `products-without-categories.js` — активные товары без `categories`.
-- `products-with-zero-price.js` — активные товары, у которых хотя бы одно предложение имеет `price = 0`, пустой `price` или дробный `price`.
+- `products-with-wrong-prices.js` — активные товары, у которых хотя бы одно предложение имеет `price = 0`, пустой `price` или дробный `price`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `manifest.json` — список парсеров для Parser Launcher.
 
@@ -148,7 +148,7 @@ GitHub-версии файлов в `promts/` считаются централ�
 │   ├── products-without-attributes.js
 │   ├── products-without-brand.js
 │   ├── products-without-categories.js
-│   ├── products-with-zero-price.js
+│   ├── products-with-wrong-prices.js
 │   ├── sort-volume.js
 │   ├── volume-checker.js
 │   └── zero-prices.js
