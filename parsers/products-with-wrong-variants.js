@@ -1,6 +1,6 @@
 // ==ConsoleParser==
 // @name         products-with-wrong-variants
-// @version      1.0.1
+// @version      1.0.2
 // @description  Ищет активные товары с несколькими предложениями, которые нельзя однозначно выбрать по shade или volume
 // @output       CSV
 // ==/ConsoleParser==
@@ -18,7 +18,6 @@
     'attributeCount',
     'variantMode',
     'issues',
-    'colorVariantCount',
     'shadeOnlyCount',
     'volumeOnlyCount',
     'emptyCount',
@@ -65,8 +64,7 @@
     'populate[shade][fields][0]': 'documentId',
     'populate[shade][fields][1]': 'name',
     'populate[volume][fields][0]': 'documentId',
-    'populate[volume][fields][1]': 'name',
-    'populate[color_variant1C][fields][0]': 'documentId'
+    'populate[volume][fields][1]': 'name'
   });
 
   let page = 1;
@@ -102,17 +100,14 @@
 
       const shade = relationOne(attribute.shade);
       const volume = relationOne(attribute.volume);
-      const colorVariant = relationOne(attribute.color_variant1C);
 
       row.variants.push({
         documentId: attribute.documentId ?? '',
         barcode: attribute.barcode ?? '',
         shade,
         volume,
-        colorVariant,
         hasShade: Boolean(shade),
-        hasVolume: Boolean(volume),
-        hasColorVariant: Boolean(colorVariant)
+        hasVolume: Boolean(volume)
       });
     }
 
@@ -134,7 +129,6 @@
     const volumeOnly = variants.filter(v => !v.hasShade && v.hasVolume);
     const empty = variants.filter(v => !v.hasShade && !v.hasVolume);
     const both = variants.filter(v => v.hasShade && v.hasVolume);
-    const colorVariantCount = variants.filter(v => v.hasColorVariant).length;
 
     const shadeKeys = variants.map(v => relationKey(v.shade)).filter(Boolean);
     const volumeKeys = variants.map(v => relationKey(v.volume)).filter(Boolean);
@@ -146,22 +140,7 @@
     const issues = [];
     let variantMode = 'mixed';
 
-    if (colorVariantCount > 0) {
-      variantMode = 'shade';
-
-      if (variants.some(v => !v.hasShade)) {
-        issues.push('missing_shade_for_color_variant');
-      }
-      if (variants.some(v => v.hasVolume)) {
-        issues.push('volume_on_shade_product');
-      }
-      if (both.length) {
-        issues.push('shade_and_volume');
-      }
-      if (variants.every(v => v.hasShade) && uniqueShadeCount !== variants.length) {
-        issues.push('duplicate_shade');
-      }
-    } else if (allShade) {
+    if (allShade) {
       variantMode = 'shade';
       if (uniqueShadeCount !== variants.length) issues.push('duplicate_shade');
     } else if (allVolume) {
@@ -183,7 +162,6 @@
       const parts = [];
       if (v.shade) parts.push(`shade=${v.shade.name ?? relationKey(v.shade) ?? ''}`);
       if (v.volume) parts.push(`volume=${v.volume.name ?? relationKey(v.volume) ?? ''}`);
-      if (v.colorVariant) parts.push('color1C=yes');
       return `${barcode}:${parts.length ? parts.join('|') : 'none'}`;
     }).join(', ');
 
@@ -195,7 +173,6 @@
       attributeCount: variants.length,
       variantMode,
       issues: [...new Set(issues)].join(', '),
-      colorVariantCount,
       shadeOnlyCount: shadeOnly.length,
       volumeOnlyCount: volumeOnly.length,
       emptyCount: empty.length,
