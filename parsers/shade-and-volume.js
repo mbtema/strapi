@@ -1,6 +1,6 @@
 // ==ConsoleParser==
 // @name         shade-and-volume
-// @version      1.0
+// @version      1.0.1
 // @description  Ищет все торговые предложения, у которых одновременно заполнены shade и volume
 // @output       CSV
 // ==/ConsoleParser==
@@ -8,77 +8,34 @@
 (async () => {
   const BASE_URL = '/api/attributes';
   const PAGE_SIZE = 100;
-  const CSV_HEADERS = [
-    'id',
-    'documentId',
-    'barcode',
-    'productDocumentId',
-    'shadeDocumentId',
-    'shadeName',
-    'volumeDocumentId',
-    'volumeName'
+  const HEADERS = [
+    'id', 'documentId', 'barcode', 'productDocumentId',
+    'shadeDocumentId', 'shadeName', 'volumeDocumentId', 'volumeName'
   ];
-
   const matches = [];
 
-  function getTimestamp() {
-    const now = new Date();
-    const pad = value => String(value).padStart(2, '0');
+  const timestamp = () => {
+    const d = new Date();
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+  };
 
-    return [
-      `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
-      `${pad(now.getHours())}${pad(now.getMinutes())}`
-    ].join('_');
-  }
+  const getRelation = relation => Array.isArray(relation)
+    ? relation[0] ?? null
+    : Array.isArray(relation?.data)
+      ? relation.data[0] ?? null
+      : relation?.data ?? relation ?? null;
 
-  function getRelation(relation) {
-    if (!relation) return null;
-
-    if (Array.isArray(relation)) {
-      return relation[0] ?? null;
-    }
-
-    if (relation.data) {
-      if (Array.isArray(relation.data)) {
-        return relation.data[0] ?? null;
-      }
-
-      return relation.data ?? null;
-    }
-
-    return relation;
-  }
-
-  function downloadCSV(rows, filename) {
-    const escapeValue = value =>
-      `"${String(value ?? '').replace(/"/g, '""')}"`;
-
-    const csv = [
-      CSV_HEADERS.join(';'),
-      ...rows.map(row =>
-        CSV_HEADERS
-          .map(header => escapeValue(row[header]))
-          .join(';')
-      )
-    ].join('\n');
-
-    const blob = new Blob(
-      ['\uFEFF' + csv],
-      { type: 'text/csv;charset=utf-8;' }
-    );
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-
-    link.href = url;
-    link.download = filename;
-
+  const downloadCSV = (items, filename) => {
+    const q = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const csv = [HEADERS.join(';'), ...items.map(row => HEADERS.map(key => q(row[key])).join(';'))].join('\n');
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }));
+    const link = Object.assign(document.createElement('a'), { href: url, download: filename });
     document.body.appendChild(link);
     link.click();
     link.remove();
-
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
+  };
 
   const params = new URLSearchParams({
     'pagination[pageSize]': String(PAGE_SIZE),
@@ -96,34 +53,21 @@
 
   let page = 1;
   let pageCount = 1;
-  let apiTotal = 0;
-  let checked = 0;
+  let total = 0;
 
   while (page <= pageCount) {
     params.set('pagination[page]', String(page));
+    const response = await fetch(`${BASE_URL}?${params}`);
+    if (!response.ok) throw new Error(`Ошибка ${response.status} на странице ${page}`);
 
-    const response = await fetch(
-      `${BASE_URL}?${params.toString()}`
-    );
+    const { data, meta } = await response.json();
+    pageCount = meta.pagination.pageCount;
+    total = meta.pagination.total;
 
-    if (!response.ok) {
-      throw new Error(
-        `Ошибка ${response.status} на странице ${page}`
-      );
-    }
-
-    const json = await response.json();
-
-    pageCount = json.meta.pagination.pageCount;
-    apiTotal = json.meta.pagination.total;
-
-    for (const item of json.data) {
-      checked++;
-
+    for (const item of data) {
       const product = getRelation(item.product);
       const shade = getRelation(item.shade);
       const volume = getRelation(item.volume);
-
       matches.push({
         id: item.id,
         documentId: item.documentId,
@@ -136,29 +80,14 @@
       });
     }
 
-    if (
-      page === 1 ||
-      page % 25 === 0 ||
-      page === pageCount
-    ) {
-      console.log(
-        `Страница ${page}/${pageCount} | ` +
-        `Найдено: ${checked}/${apiTotal}`
-      );
+    if (page === 1 || page % 25 === 0 || page === pageCount) {
+      console.log(`Страница ${page}/${pageCount} | Найдено: ${matches.length}/${total}`);
     }
-
     page++;
   }
 
   console.table(matches);
-  console.log(
-    `Готово: найдено предложений одновременно с shade и volume: ${matches.length}`
-  );
-
+  console.log(`Готово: найдено предложений одновременно с shade и volume: ${matches.length}`);
   window.attributesWithShadeAndVolume = matches;
-
-  downloadCSV(
-    matches,
-    `attributes_with_shade_and_volume_${getTimestamp()}.csv`
-  );
+  downloadCSV(matches, `attributes_with_shade_and_volume_${timestamp()}.csv`);
 })();
