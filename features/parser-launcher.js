@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         parser-launcher
-// @version      1.4.4
+// @version      1.4.5
 // @description  Запускает парсеры из GitHub по Alt+P
 // ==/StrapiExtension==
 
@@ -31,8 +31,6 @@
       id: 'offers',
       title: 'Предложения',
       files: [
-        'price-checker.js',
-        'zero-prices.js',
         'orphan-attributes.js'
       ]
     },
