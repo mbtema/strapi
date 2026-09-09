@@ -1,7 +1,7 @@
 // ==ConsoleParser==
 // @name         products-with-wrong-variants
-// @version      1.0.2
-// @description  Ищет активные товары с несколькими предложениями, которые нельзя однозначно выбрать по shade или volume
+// @version      1.0.3
+// @description  Ищет активные товары с несколькими предложениями, которые нельзя последовательно выбрать по shade или volume
 // @output       CSV
 // ==/ConsoleParser==
 
@@ -22,8 +22,6 @@
     'volumeOnlyCount',
     'emptyCount',
     'bothCount',
-    'uniqueShadeCount',
-    'uniqueVolumeCount',
     'variantValues'
   ];
   const products = new Map();
@@ -130,11 +128,6 @@
     const empty = variants.filter(v => !v.hasShade && !v.hasVolume);
     const both = variants.filter(v => v.hasShade && v.hasVolume);
 
-    const shadeKeys = variants.map(v => relationKey(v.shade)).filter(Boolean);
-    const volumeKeys = variants.map(v => relationKey(v.volume)).filter(Boolean);
-    const uniqueShadeCount = new Set(shadeKeys).size;
-    const uniqueVolumeCount = new Set(volumeKeys).size;
-
     const allShade = shadeOnly.length === variants.length;
     const allVolume = volumeOnly.length === variants.length;
     const issues = [];
@@ -142,10 +135,8 @@
 
     if (allShade) {
       variantMode = 'shade';
-      if (uniqueShadeCount !== variants.length) issues.push('duplicate_shade');
     } else if (allVolume) {
       variantMode = 'volume';
-      if (uniqueVolumeCount !== variants.length) issues.push('duplicate_volume');
     } else if (empty.length === variants.length) {
       variantMode = 'none';
       issues.push('no_variant_relations');
@@ -177,8 +168,6 @@
       volumeOnlyCount: volumeOnly.length,
       emptyCount: empty.length,
       bothCount: both.length,
-      uniqueShadeCount,
-      uniqueVolumeCount,
       variantValues
     });
   }
