@@ -35,15 +35,15 @@
     },
     {
       "name": "Товары без бренда",
-      "file": "missing-brand.js"
+      "file": "products-without-brand.js"
     },
     {
       "name": "Товары без категорий",
-      "file": "missing-categories.js"
+      "file": "products-without-categories.js"
     },
     {
       "name": "Товары без цены",
-      "file": "products-without-price.js"
+      "file": "products-with-zero-price.js"
     },
     {
       "name": "Копировать DOM страницы",
