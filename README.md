@@ -52,6 +52,7 @@ Loader при открытии Strapi:
 
 - `sidebar.js` — единый sidebar-модуль: скрытие/показ по `Alt+S`, поиск, быстрый доступ, группы Collection Types/Single Types, active state, минималистичные иконки, future-safe fallback для новых коллекций и очистка глобальной левой навигации.
 - `record-list-scrollbars.js` — визуально скрывает scrollbar в списке записей Content Manager, сохраняя прокрутку.
+- `list-view.js` — доработки list view Content Manager.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
 
 ## Версионирование
@@ -66,19 +67,17 @@ Loader при открытии Strapi:
 
 Парсеры запускаются через `Alt+P`. Проверочные парсеры проходят API постранично, выводят прогресс в Console и автоматически скачивают CSV. Вспомогательные parsers могут иметь другой output, если это указано в meta header.
 
-- `price-checker.js` — дробные значения `price`.
 - `sort-volume.js` — неправильный порядок volume.
 - `volume-checker.js` — разные единицы измерения volume.
 - `missing-shades.js` — активные предложения с `color_variant1C`, но без `shade`.
 - `shade-and-volume.js` — все предложения, у которых одновременно заполнены `shade` и `volume`.
-- `zero-prices.js` — предложения с `price = 0`, связанные с активными товарами.
 - `orphan-attributes.js` — предложения без `product`.
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-brand.js` — активные товары без `brand`.
 - `products-without-categories.js` — активные товары без `categories`.
 - `products-with-wrong-prices.js` — активные товары, у которых хотя бы одно предложение имеет `price = 0`, пустой `price` или дробный `price`.
 - `products-with-missing-content.js` — активные товары без одного или нескольких критичных контентных полей: `name1`, `name2`, `detail_picture`, `detail_text`.
-- `products-with-wrong-variants.js` — активные товары с несколькими предложениями, которые нельзя однозначно выбрать по единому типу relation `shade` или `volume`: отсутствующие relations, смешанный тип, одновременные `shade + volume` или повторяющиеся значения варианта.
+- `products-with-wrong-variants.js` — активные товары с несколькими предложениями, у которых нет единого типа выбора по `shade` или `volume`: отсутствующие relations, смешанный тип или одновременные `shade + volume`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `manifest.json` — список парсеров для Parser Launcher.
 
@@ -139,6 +138,7 @@ GitHub-версии файлов в `promts/` считаются централ�
 ├── ui-ux/
 │   ├── sidebar.js
 │   ├── entry-relocate.js
+│   ├── list-view.js
 │   └── record-list-scrollbars.js
 ├── parsers/
 │   ├── manifest.json
@@ -146,7 +146,6 @@ GitHub-версии файлов в `promts/` считаются централ�
 │   ├── missing-shades.js
 │   ├── shade-and-volume.js
 │   ├── orphan-attributes.js
-│   ├── price-checker.js
 │   ├── products-with-missing-content.js
 │   ├── products-with-wrong-variants.js
 │   ├── products-without-attributes.js
@@ -154,8 +153,7 @@ GitHub-версии файлов в `promts/` считаются централ�
 │   ├── products-without-categories.js
 │   ├── products-with-wrong-prices.js
 │   ├── sort-volume.js
-│   ├── volume-checker.js
-│   └── zero-prices.js
+│   └── volume-checker.js
 ├── postman/
 │   └── admin-api.json
 ├── promts/
