@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         parser-launcher
-// @version      1.4.1
+// @version      1.4.2
 // @description  Запускает парсеры из GitHub по Alt+P
 // ==/StrapiExtension==
 
@@ -22,7 +22,7 @@
         'products-without-attributes.js',
         'products-without-brand.js',
         'products-without-categories.js',
-        'products-with-zero-price.js'
+        'products-with-wrong-prices.js'
       ]
     },
     {
