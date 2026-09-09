@@ -72,6 +72,7 @@ Loader при открытии Strapi:
 - `missing-shades.js` — активные предложения с `color_variant1C`, но без `shade`.
 - `shade-and-volume.js` — все предложения, у которых одновременно заполнены `shade` и `volume`.
 - `attributes-without-product.js` — все предложения без `product`.
+- `attributes-without-detail-picture.js` — предложения активных товаров без `detail_picture`.
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-brand.js` — активные товары без `brand`.
 - `products-without-categories.js` — активные товары без `categories`.
@@ -142,6 +143,7 @@ GitHub-версии файлов в `promts/` считаются централ�
 │   └── record-list-scrollbars.js
 ├── parsers/
 │   ├── manifest.json
+│   ├── attributes-without-detail-picture.js
 │   ├── attributes-without-product.js
 │   ├── dom-stealer.js
 │   ├── missing-shades.js
