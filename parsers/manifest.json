@@ -46,6 +46,10 @@
       "file": "products-with-wrong-prices.js"
     },
     {
+      "name": "Товары с незаполненным контентом",
+      "file": "products-with-missing-content.js"
+    },
+    {
       "name": "Копировать DOM страницы",
       "file": "dom-stealer.js"
     }
