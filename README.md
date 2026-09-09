@@ -1,4 +1,4 @@
-Набор рабочих инструментов для админки Strapi: постоянные extensions, UI/UX-кастомы, парсеры, Postman и централизованный контекст проекта.
+Набор рабочих инструментов для админки Strapi и миграции контента: постоянные extensions, UI/UX-кастомы, парсеры, Bitrix-утилиты, Postman и централизованный контекст проекта.
 
 ## Структура
 
@@ -8,6 +8,7 @@
 | [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
+| [`bitrix/`](./bitrix) | Утилиты для аудита и миграции данных из Bitrix |
 | [`postman/`](./postman) | Postman collection с общими variables и API paths |
 | [`promts/`](./promts) | Централизованное хранилище Project Instructions и полного project context |
 
@@ -84,6 +85,13 @@ Loader при открытии Strapi:
 
 Для нового регулярного парсера достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`.
 
+## Bitrix
+
+- `detail-picture-audit.js` — запускается в Bitrix Admin, принимает CSV от `attributes-without-detail-picture`, по barcode находит родительский товар и торговое предложение, проверяет `DETAIL_PICTURE` и автоматически скачивает mapping CSV для последующей миграции в Strapi.
+- Скрипт группирует строки по `productDocumentId`, чтобы не искать один и тот же родительский товар повторно, сохраняет checkpoint в LocalStorage и при повторном запуске с тем же CSV продолжает незавершённый аудит.
+- Статусы результата: `ok`, `no_detail_picture`, `product_not_found`, `offer_not_found`, `duplicate_barcode_in_source`, `missing_barcode`, `error`.
+- Bitrix-утилиты не входят в Parser Launcher Strapi и запускаются только на домене Bitrix Admin, где доступна авторизованная сессия.
+
 ## Postman
 
 Основной файл:
@@ -156,6 +164,8 @@ GitHub-версии файлов в `promts/` считаются централ�
 │   ├── products-with-wrong-prices.js
 │   ├── sort-volume.js
 │   └── volume-checker.js
+├── bitrix/
+│   └── detail-picture-audit.js
 ├── postman/
 │   └── admin-api.json
 ├── promts/
