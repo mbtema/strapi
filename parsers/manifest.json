@@ -2,10 +2,6 @@
   "schemaVersion": 1,
   "parsers": [
     {
-      "name": "Предложения с дробными ценами",
-      "file": "price-checker.js"
-    },
-    {
       "name": "Проверка сортировки объемов",
       "file": "sort-volume.js"
     },
@@ -20,10 +16,6 @@
     {
       "name": "Предложения с оттенком и объемом",
       "file": "shade-and-volume.js"
-    },
-    {
-      "name": "Предложения с нулевой ценой",
-      "file": "zero-prices.js"
     },
     {
       "name": "Предложения без товара",
