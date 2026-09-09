@@ -42,7 +42,7 @@
       "file": "products-without-categories.js"
     },
     {
-      "name": "Товары без цены",
+      "name": "Товары с некорректной ценой",
       "file": "products-with-zero-price.js"
     },
     {
