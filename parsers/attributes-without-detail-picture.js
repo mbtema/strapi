@@ -1,7 +1,7 @@
 // ==ConsoleParser==
 // @name         attributes-without-detail-picture
-// @version      1.0.0
-// @description  Ищет предложения активных товаров без detail_picture
+// @version      1.0.1
+// @description  Ищет предложения активных товаров без detail_picture и приоритизирует их по isInStock
 // @output       CSV
 // ==/ConsoleParser==
 
@@ -16,6 +16,7 @@
     'barcode',
     'name',
     'price',
+    'isInStock',
     'productDocumentId',
     'productName'
   ];
@@ -32,6 +33,8 @@
     : Array.isArray(relation?.data)
       ? relation.data[0] ?? null
       : relation?.data ?? relation ?? null;
+
+  const stockRank = value => value === true ? 0 : value === false ? 1 : 2;
 
   const downloadCSV = (items, filename) => {
     const q = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -62,6 +65,7 @@
     'fields[0]': 'barcode',
     'fields[1]': 'name',
     'fields[2]': 'price',
+    'fields[3]': 'isInStock',
     'populate[product][fields][0]': 'documentId',
     'populate[product][fields][1]': 'name'
   });
@@ -90,20 +94,37 @@
         barcode: item.barcode ?? '',
         name: item.name ?? '',
         price: item.price ?? '',
+        isInStock: item.isInStock ?? '',
         productDocumentId: product?.documentId ?? '',
         productName: product?.name ?? ''
       };
     }));
 
     if (page === 1 || page % 25 === 0 || page === pageCount) {
-      console.log(`Страница ${page}/${pageCount} | Найдено: ${rows.length}/${total}`);
+      console.log(`Страница ${page}/${pageCount} | Найдено без detail_picture: ${rows.length}/${total}`);
     }
 
     page++;
   }
 
+  rows.sort((a, b) => {
+    const byStock = stockRank(a.isInStock) - stockRank(b.isInStock);
+    if (byStock) return byStock;
+    return String(a.barcode).localeCompare(String(b.barcode));
+  });
+
+  const inStockCount = rows.filter(row => row.isInStock === true).length;
+  const outOfStockCount = rows.filter(row => row.isInStock === false).length;
+  const unknownStockCount = rows.length - inStockCount - outOfStockCount;
+
   console.table(rows);
-  console.log(`Готово: найдено предложений активных товаров без detail_picture: ${rows.length}`);
+  console.log(
+    `Готово: без detail_picture — ${rows.length} | ` +
+    `isInStock=true: ${inStockCount} | ` +
+    `isInStock=false: ${outOfStockCount} | ` +
+    `isInStock не заполнен: ${unknownStockCount}`
+  );
+
   window.attributesWithoutDetailPicture = rows;
   downloadCSV(rows, `attributes_without_detail_picture_${timestamp()}.csv`);
 })();
