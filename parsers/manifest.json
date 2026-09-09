@@ -50,6 +50,10 @@
       "file": "products-with-missing-content.js"
     },
     {
+      "name": "Товары с некорректными вариантами предложений",
+      "file": "products-with-wrong-variants.js"
+    },
+    {
       "name": "Копировать DOM страницы",
       "file": "dom-stealer.js"
     }
