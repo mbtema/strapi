@@ -74,9 +74,9 @@ Loader при открытии Strapi:
 - `zero-prices.js` — предложения с `price = 0`, связанные с активными товарами.
 - `orphan-attributes.js` — предложения без `product`.
 - `products-without-attributes.js` — активные товары без предложений.
-- `missing-brand.js` — активные товары без `brand`.
-- `missing-categories.js` — активные товары без `categories`.
-- `products-without-price.js` — активные товары с предложениями, но без цены `> 0`.
+- `products-without-brand.js` — активные товары без `brand`.
+- `products-without-categories.js` — активные товары без `categories`.
+- `products-with-zero-price.js` — активные товары с предложениями, но без цены `> 0`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `manifest.json` — список парсеров для Parser Launcher.
 
@@ -141,14 +141,14 @@ GitHub-версии файлов в `promts/` считаются централ�
 ├── parsers/
 │   ├── manifest.json
 │   ├── dom-stealer.js
-│   ├── missing-brand.js
-│   ├── missing-categories.js
 │   ├── missing-shades.js
 │   ├── shade-and-volume.js
 │   ├── orphan-attributes.js
 │   ├── price-checker.js
 │   ├── products-without-attributes.js
-│   ├── products-without-price.js
+│   ├── products-without-brand.js
+│   ├── products-without-categories.js
+│   ├── products-with-zero-price.js
 │   ├── sort-volume.js
 │   ├── volume-checker.js
 │   └── zero-prices.js
