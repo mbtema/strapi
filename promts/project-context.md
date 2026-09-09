@@ -2,213 +2,363 @@
 
 > Расширенный технический и рабочий контекст проекта.
 >
-> Этот файл дополняет Project Instructions, но не заменяет их. Project Instructions определяют operational rules; здесь хранится knowledge layer: архитектура, рабочие паттерны, endpoints, repo state, известные решения и предметный контекст.
+> Этот файл **дополняет Project Instructions, но не заменяет их**. Базовые правила поведения, формат ответа и приоритеты определяются Project Instructions. Здесь хранится подробная архитектура, рабочие паттерны, известные endpoints, структура репозитория, исторические решения и предметный контекст.
 >
-> Приоритет всегда такой: текущая инструкция пользователя → Project Instructions → актуальные GitHub/API/Network/UI данные → этот файл → исторические примеры.
+> Если данные в этом файле конфликтуют с явной текущей инструкцией пользователя, актуальным API-response, Strapi UI/Network или текущим состоянием GitHub — использовать более свежий источник.
 >
-> GitHub-версия `promts/project-context.md` считается source of truth. Snapshot ниже нужно обновлять после существенных изменений workflow, repo или архитектуры.
+> Для исторических задач действует правило: считать их справочным контекстом, а не гарантией текущего состояния системы.
+>
+> `promts/project-context.md` — живой файл. После существенных изменений архитектуры, workflow, repo или накопления важного нового контекста его нужно синхронизировать. GitHub-версия считается централизованным source of truth; пользователь периодически копирует свежий `project-context.md` и `project-instructions.md` в Project ChatGPT.
+>
+> Политика обновления накопительная: не переписывать этот файл «с нуля» ради сокращения. Точечно обновлять устаревшие факты, добавлять новый устойчивый контекст, а старое удалять только если оно ошибочно, реально бесполезно или полностью дублируется. Полезную устаревшую деталь лучше пометить как historical, чем стирать.
 
 **Последняя сборка контекста:** 2026-09-09  
 **Основной репозиторий:** `mbtema/strapi`  
-**Strapi backend:** `http://10.10.3.80:1337`  
-**Локали:** `ru/kk`
+**Основной Strapi backend:** `http://10.10.3.80:1337`
 
 ---
 
-# 1. Рабочая модель проекта
+# 1. Назначение проекта и рабочая модель
 
-Strapi используется как CMS для мобильного приложения MonAmie и связанных e-commerce/content процессов.
-
-Основной рабочий стек:
+Strapi используется как CMS для мобильного приложения MonAmie и связанных процессов контента/e-commerce. Работа регулярно находится на стыке:
 
 - Strapi Content Manager;
 - Public REST API Strapi;
 - internal Content Manager API;
 - Flutter/mobile client;
-- Bitrix как legacy/source system части товарных данных;
-- DevTools / Network / Console;
-- browser JavaScript;
-- Node.js для локальных migration scripts;
-- PowerShell на Windows как shell/launcher;
+- Bitrix как источник части товарных данных;
+- BFF;
 - Postman;
+- DevTools;
+- browser JavaScript;
+- Node.js для локальных migration/automation scripts;
+- PowerShell на Windows как shell/launcher для Node;
 - Tampermonkey;
 - GitHub;
+- n8n/Make;
 - Notion;
-- CSV/Excel;
-- n8n/Make при реально повторяемых межсистемных workflow.
+- таблицы/CSV;
+- контент, локализация `ru/kk`, товарный ассортимент и технические задания разработчикам.
 
-Главный принцип: сокращать путь от вопроса до рабочего результата. Типичная задача — не строить новую систему, а быстро найти источник проблемы, проверить данные, получить точный endpoint, автоматизировать массовую проверку/миграцию или оформить понятное ТЗ.
+Типичная задача — не «написать систему с нуля», а быстро найти источник проблемы, проверить данные, сформировать точный API-запрос, автоматизировать массовую проверку или грамотно упаковать изменение для разработчика.
 
 Главная диагностическая цепочка:
 
-```text
-Strapi data → API response → Flutter/mobile rendering/logic
-```
+`Strapi data → API response → Flutter/mobile rendering/logic`
 
-Если Strapi и API корректны, не менять CMS без причины — следующий уровень проверки клиент.
+Нельзя автоматически считать проблему CMS-проблемой. Если данные в Strapi сохранены корректно и API возвращает нужный массив/значение, следующий уровень проверки — клиент.
 
 ---
 
-# 2. Данные и основные сущности
+# 2. Стиль работы и формат результата
 
-Частые сущности и поля:
+Предпочтительный результат должен быть максимально прикладным:
 
-```text
-documentId
-id
-barcode
-active
-isInStock
-locale
-products
-attributes / offers
-brand
-categories
-shade
-volume
-price
-detail_picture
-preview_picture
-xml_id
-code_1c
-bitrix_id
-slug
-shareUrl
-```
+- готовый URL;
+- готовый JS для Console;
+- готовый Postman script;
+- готовый parser;
+- CSV, который скачивается автоматически;
+- готовое ТЗ;
+- готовое письмо/сообщение;
+- компактная таблица;
+- конкретные действия в DevTools.
 
-Основной идентификатор в Strapi — `documentId`.
+Не требуется длинное объяснение там, где достаточно рабочего решения.
 
-При сравнении массивов по умолчанию сравнивать по `documentId`:
+Если пользователь присылает ошибку или ответ разработчика, полезный формат:
 
-- количество;
+1. что это значит простыми словами;
+2. где вероятнее всего проблема;
+3. что сделать или проверить;
+4. готовый исправленный вариант, если проблема синтаксическая/техническая.
+
+Если пользователь просит идти «по порядку», не давать многоэтажный ответ с несколькими параллельными решениями. Сначала один endpoint/шаг, затем следующий.
+
+---
+
+# 3. Данные, JSON и сравнения
+
+Часто используемые сущности/поля:
+
+- `documentId`;
+- `id`;
+- `barcode`;
+- `active`;
+- `isInStock`;
+- `locale`;
+- `products`;
+- `attributes`;
+- `offers`;
+- `brand`;
+- `categories`;
+- `volume`;
+- `shade`;
+- `price`;
+- `detail_picture`;
+- `preview_picture`;
+- `slug`;
+- `shareUrl`;
+- `title`;
+- `name`;
+- `xml_id`;
+- `code_1c`;
+- `bitrix_id`.
+
+## Правила обработки
+
+Если пользователь прислал большой JSON:
+
+- не пересказывать его словами;
+- для просмотра/сравнения — таблица;
+- для извлечения — `.map()`, `.filter()`, `.find()` или короткий parser;
+- при массовой обработке не заставлять вручную копировать Console output.
+
+При сравнении списков стандартный ключ — `documentId`, если не указано другое.
+
+Желательно показывать:
+
+- размер первого списка;
+- размер второго списка;
 - совпадения;
 - отсутствующие;
 - лишние;
-- дубликаты.
+- дубликаты, если они влияют на результат.
 
-Большой JSON не пересказывать словами. Для просмотра/сравнения — таблица; для извлечения — `.map()`, `.filter()`, `.find()` или короткий parser.
+Если пользователю нужен только один слой данных, не тащить лишнюю вложенность. Пример подхода:
 
-Массовый результат должен быть сразу пригоден: CSV/таблица/список без ручной чистки.
+- первый слой → только `documentId`;
+- relation `product` → только нужная relation;
+- внутри `brand` → только `name`.
 
 ---
 
-# 3. Strapi окружение и ограничения
+# 4. Strapi: окружение и ограничения
 
-Backend:
+Основной backend:
 
-```text
-http://10.10.3.80:1337
-```
+`http://10.10.3.80:1337`
 
-Admin:
+Strapi Admin:
 
-```text
-http://10.10.3.80:1337/admin/
-```
+`http://10.10.3.80:1337/admin/`
 
-Практические ограничения пользователя:
+Пользователь работает с ограниченными административными правами:
 
-- нет свободного изменения collection schema;
+- нет свободного изменения схем collection types;
 - нет свободного управления Public API roles/permissions;
-- `/api/auth/local` может возвращать `400`;
-- не использовать «попросить permissions/backend» как первый workaround.
+- стандартный `/api/auth/local` может возвращать `400`;
+- поэтому совет «просто включить permission» часто практически бесполезен.
 
-Приоритет практических путей:
-
-```text
-Public API query
-→ DevTools/Network
-→ Postman/Console
-→ internal Content Manager API
-→ browser/Node automation
-→ n8n/Make
-→ backend change
-```
+Не использовать запрос на расширение прав как первый workaround, если задачу можно решить существующей admin-сессией, Network, internal API, Postman или browser script.
 
 ---
 
-# 4. Public REST API Strapi
+# 5. Public REST API Strapi
 
-Основные query-параметры:
+Рабочие элементы query:
 
-```text
-filters
-fields
-populate
-pagination
-sort
-locale
-```
+- `filters`;
+- `fields`;
+- `populate`;
+- `pagination`;
+- `sort`;
+- `locale`.
+
+При ответе удобнее давать полный URL, а не отдельный кусок фильтра.
+
+## Populate
 
 Рабочее правило:
 
-- диагностика неизвестной структуры → `populate=*` допустим;
-- рабочий запрос → минимальный точный `populate`;
-- relations ограничивать нужными `fields`;
-- полный URL предпочтительнее фрагмента query.
+- production/рабочий запрос → минимально нужный `populate`;
+- `populate=*` → допустим как быстрый диагностический способ посмотреть неизвестную структуру;
+- после диагностики запрос нужно сузить.
 
-Учитывать отдельно:
+Relations желательно ограничивать только нужными `fields`.
+
+Особое внимание:
 
 - Dynamic Zones;
+- вложенные components;
 - nested relations;
-- локализацию поля;
-- локализацию relation field;
-- локализацию target entity.
+- локализованные relations;
+- различие поля relation и локализации связанной collection.
 
-Исторический рабочий пример:
+## Известный пример запроса товаров
+
+Использовался запрос в стиле:
 
 ```text
 http://10.10.3.80:1337/api/products?pagination[pageSize]=1&pagination[page]=1&fields[0]=documentId&populate[attributes][fields][0]=documentId&populate[attributes][populate][volume][fields][0]=name
 ```
 
-Для актуальной задачи всегда проверять реальный response, а не полагаться на старый snapshot.
+Назначение: получить `documentId` товара, `documentId` attributes и `volume.name` без лишних полей.
+
+Это исторический рабочий пример синтаксиса; при изменении Strapi schema/версии проверять фактический response.
 
 ---
 
-# 5. Internal Content Manager API / DevTools / Postman
+# 6. Internal Content Manager API
 
-Если Public API не позволяет выполнить действие, использовать реальный request Strapi Admin:
+Если Public API не позволяет выполнить операцию, использовать internal API Content Manager:
 
 ```text
 /content-manager/collection-types/api::...
 ```
 
-Стандартный workflow:
+Рабочая схема:
 
-```text
-действие в Strapi UI
-→ DevTools Network
-→ endpoint + method + payload
-→ повторить через Postman/Console/Node
-```
+1. пользователь авторизован в Strapi Admin;
+2. Strapi Admin уже выполняет нужное действие;
+3. в DevTools → Network находится реальный request;
+4. копируются endpoint, method, headers/payload;
+5. запрос повторяется/изменяется через Postman или Console.
 
-Internal endpoint/method/payload не угадывать.
+JWT admin-сессии обычно доступен в LocalStorage как `jwtToken`.
 
-Admin JWT доступен в LocalStorage как `jwtToken`; для custom fetch обычно используется:
+Не угадывать internal endpoint, если его можно получить из Network.
 
-```text
-Authorization: Bearer <jwtToken>
-```
+## Быстрая трактовка ошибок
 
-Быстрая трактовка:
-
-- `400` → body/query/структура/locale;
-- `403` → token/cookies/Authorization/permission;
-- `404` → endpoint/UID/documentId/locale.
-
-Основной Postman-файл:
-
-```text
-postman/admin-api.json
-```
-
-Секретные variables (`jwtToken`, `bearerToken`, `categoryDebugToken`) в GitHub не хранить.
+- `400` → структура body/query, неправильные параметры, формат relation/locale;
+- `403` → токен, cookies, Authorization, permission/session;
+- `404` → endpoint, UID collection, `documentId`, locale, неправильный API namespace.
 
 ---
 
-# 6. Репозиторий `mbtema/strapi`
+# 7. DevTools
 
-Текущая структура:
+Основные вкладки:
+
+- Network;
+- Application;
+- LocalStorage;
+- Cookies;
+- Console.
+
+## Типовой workflow
+
+```text
+Strapi UI action
+→ Network
+→ найти request
+→ endpoint + method + payload
+→ повторить в Postman/Console
+→ при необходимости массово изменить
+```
+
+Network имеет приоритет над попытками восстановить internal Strapi API по памяти.
+
+Для диагностики UI-extensions Console используется до изменения кода:
+
+- существует ли нужный DOM-элемент;
+- где он находится;
+- сохраняется ли после SPA navigation;
+- есть ли `data-tm-*`;
+- не пересоздан ли toolbar;
+- не потерялись ли event handlers;
+- на каком этапе прекращается `apply()/init()`.
+
+---
+
+# 8. Postman
+
+Основной файл репозитория:
+
+`postman/admin-api.json`
+
+Текущая идея collection: не хранить большой набор готовых requests, а хранить общие paths/variables и добавлять запросы по мере необходимости.
+
+## URL variables
+
+```text
+baseUrl = http://10.10.3.80:1337
+contentManagerUrl = http://10.10.3.80:1337/content-manager
+bffUrl = https://bff2.monamie.kz
+```
+
+## Основные API path variables
+
+```text
+products = /api/products
+attributes = /api/attributes
+promotions = /api/promotions
+brands = /api/brands
+cities = /api/cities
+giftCertificates = /api/gift-certificates
+feedbackContactInfos = /api/feedback-contact-infos
+shops = /api/shops
+deliveryMethods = /api/delivery-methods
+menuItems = /api/menu-items
+categories = /api/categories
+feedbackContactMethods = /api/feedback-contact-methods
+articles = /api/articles
+pages = /api/pages
+brandCountries = /api/brand-countries
+feedbackTopics = /api/feedback-topics
+volumes = /api/volumes
+shades = /api/shades
+colorVariants = /api/color-variants
+productAgeGroups = /api/product-age-groups
+productUsageTimes = /api/product-usage-times
+fragranceGroups = /api/fragrance-groups
+shadeGroups = /api/shade-groups
+productFeatures = /api/product-features
+ingredients = /api/ingredients
+fragranceConcentrations = /api/fragrance-concentrations
+productEffects = /api/product-effects
+productSegments = /api/product-segments
+productCoverages = /api/product-coverages
+hairTypes = /api/hair-types
+skinTypes = /api/skin-types
+productForms = /api/product-forms
+filtries = /api/filtries
+productFinishes = /api/product-finishes
+productReleaseForms = /api/product-release-forms
+homePage = /api/home-page
+```
+
+## Общие variables
+
+```text
+page = 1
+pageSize = 100
+sort = id:asc
+locale = ru
+altLocale = kk
+active = true
+
+documentId
+productDocumentId
+attributeDocumentId
+brandDocumentId
+categoryDocumentId
+
+barcode
+productKey
+brandName
+categoryCode
+slug
+```
+
+## Secret variables
+
+```text
+jwtToken
+bearerToken
+categoryDebugToken
+```
+
+Секреты не должны храниться в GitHub; они заполняются локально.
+
+---
+
+# 9. GitHub repository `mbtema/strapi`
+
+Назначение: единый рабочий репозиторий для Strapi Admin tooling, parsers, Postman и централизованного контекста проекта.
+
+## Текущая структура main
 
 ```text
 .
@@ -234,11 +384,11 @@ postman/admin-api.json
 │   ├── missing-shades.js
 │   ├── shade-and-volume.js
 │   ├── products-with-missing-content.js
+│   ├── products-with-wrong-prices.js
 │   ├── products-with-wrong-variants.js
 │   ├── products-without-attributes.js
 │   ├── products-without-brand.js
 │   ├── products-without-categories.js
-│   ├── products-with-wrong-prices.js
 │   ├── sort-volume.js
 │   └── volume-checker.js
 ├── bitrix/
@@ -250,33 +400,50 @@ postman/admin-api.json
     └── project-instructions.md
 ```
 
-Назначение:
+## Назначение папок
 
-- `extension/` — loader/manifest;
-- `features/` — постоянные функции/хоткеи;
-- `ui-ux/` — постоянные UI/UX-кастомы;
-- `parsers/` — регулярные проверки Strapi;
-- `bitrix/` — browser tools для Bitrix audit/migration preparation;
-- `postman/` — API collection/variables;
-- `promts/` — Project Instructions + полный context.
+- `extension/` — инфраструктура загрузки постоянных extensions;
+- `features/` — независимые функции/хоткеи;
+- `ui-ux/` — постоянные UI/UX-кастомы Strapi;
+- `parsers/` — массовые проверки и вспомогательные browser parsers;
+- `bitrix/` — утилиты для аудита/миграции данных из Bitrix; не входят в Strapi Parser Launcher;
+- `postman/` — API variables/collection;
+- `promts/` — живое централизованное хранилище полного project context и рабочих инструкций.
 
-Перед изменением кода читать актуальный GitHub. Snapshot в этом файле вторичен.
+Исторические имена/пути вроде `extensions/`, `ui/`, `orphan-attributes.js`, `missing-brand.js`, `missing-categories.js`, `price-checker.js`, `zero-prices.js`, `products-without-price.js` могут встречаться в старых чатах/коммитах, но не являются текущей структурой.
+
+Перед любым новым code review состояние GitHub нужно читать заново. Snapshot в этом файле не должен заменять актуальный repo.
 
 ---
 
-# 7. Loader и extensions
+# 10. Extensions loader
 
-В Tampermonkey должен оставаться один основной script:
+Tampermonkey должен содержать один основной script:
+
+`extension/loader.js`
+
+Актуальная версия loader на момент этой сборки:
+
+`1.1.1`
+
+Основные параметры:
 
 ```text
-extension/loader.js
+@match      http://10.10.3.80:1337/admin/*
+@run-at     document-start
+@connect    raw.githubusercontent.com
 ```
 
-Loader version:
+Loader:
 
-```text
-1.1.1
-```
+1. читает локальный cache;
+2. запускает кешированные extensions сразу;
+3. в фоне загружает `extension/manifest.json`;
+4. сравнивает `id/path/version`;
+5. скачивает только изменившиеся extensions;
+6. сохраняет новый cache;
+7. если ранее рабочий cache уже был — сообщает, что нужен reload;
+8. если GitHub недоступен, но cache есть — продолжает работать с cache.
 
 Cache key:
 
@@ -284,95 +451,326 @@ Cache key:
 tm-strapi-extensions-cache-v1
 ```
 
-Loader:
-
-1. запускает кешированные extensions сразу;
-2. в фоне читает `extension/manifest.json`;
-3. сравнивает `id/path/version`;
-4. скачивает только изменившиеся extensions;
-5. сохраняет cache;
-6. обновлённый extension обычно применяется после reload Strapi.
-
-Loader не менять ради обычного extension fix.
-
-Изменил extension → bump его `version` в `extension/manifest.json`.
-
-Актуальный manifest snapshot 2026-09-09:
-
-| id | path | version |
-|---|---|---:|
-| sidebar | `ui-ux/sidebar.js` | 2.2.1 |
-| record-list-scrollbars | `ui-ux/record-list-scrollbars.js` | 1.0.3 |
-| list-view | `ui-ux/list-view.js` | 1.3.0 |
-| entry-relocate | `ui-ux/entry-relocate.js` | 1.4.5 |
-| barcode-extractor | `features/barcode-extractor.js` | 1.4.1 |
-| ctrl-enter-publisher | `features/ctrl-enter-publisher.js` | 1.1.1 |
-| parser-launcher | `features/parser-launcher.js` | 1.4.7 |
-| vimium-open-row | `features/vimium-open-row.js` | 1.1.1 |
-
-Основные hotkeys:
+Loader ставит атрибут:
 
 ```text
-Ctrl+B      barcode extractor
-Ctrl+Enter  publish
-Alt+P       Parser Launcher
-Alt+S       sidebar
+data-tm-strapi-extensions-loader
+```
+
+для защиты от повторного запуска.
+
+Manifest принимает enabled extensions только из:
+
+```text
+features/*.js
+ui-ux/*.js
+```
+
+## Практическое правило обновления
+
+Изменил extension → повысил его `version` в `extension/manifest.json`.
+
+Если version не повысить, пользователь может продолжать запускать старый cache и решить, что код «не обновился».
+
+Изменение path также меняет сигнатуру cache.
+
+Старые отдельные Tampermonkey scripts должны быть отключены/удалены, иначе один функционал может выполняться дважды.
+
+Loader менять только когда меняется сама инфраструктура загрузки/cache, а не ради обычной правки extension.
+
+---
+
+# 11. Актуальный extensions manifest
+
+Snapshot 2026-09-09 (перед изменением всё равно читать актуальный `extension/manifest.json`):
+
+| id | path | version | enabled |
+|---|---|---:|---|
+| `sidebar` | `ui-ux/sidebar.js` | `2.2.1` | yes |
+| `record-list-scrollbars` | `ui-ux/record-list-scrollbars.js` | `1.0.3` | yes |
+| `list-view` | `ui-ux/list-view.js` | `1.3.0` | yes |
+| `entry-relocate` | `ui-ux/entry-relocate.js` | `1.4.5` | yes |
+| `barcode-extractor` | `features/barcode-extractor.js` | `1.4.1` | yes |
+| `ctrl-enter-publisher` | `features/ctrl-enter-publisher.js` | `1.1.1` | yes |
+| `parser-launcher` | `features/parser-launcher.js` | `1.4.7` | yes |
+| `vimium-open-row` | `features/vimium-open-row.js` | `1.1.1` | yes |
+
+Перед изменением extension:
+
+- прочитать текущий файл;
+- прочитать актуальный manifest;
+- проверить latest version;
+- после изменения bump version.
+
+Версия extension независима от версии loader.
+
+---
+
+# 12. Известные extensions и хоткеи
+
+## `sidebar.js`
+
+`ui-ux/sidebar.js` — единый централизованный sidebar-модуль. Старые отдельные `toggle-sidebar`, `sidebar-ui-cleanup`, `sidebar-sorter` больше не являются текущей архитектурой.
+
+Текущее поведение:
+
+- sidebar скрыт по умолчанию;
+- `Alt+S` — показать/скрыть;
+- width sidebar — 320px;
+- поиск по Collection Types и Single Types;
+- быстрые кнопки `Товары` и `Предложения`;
+- активная collection выделяется фиолетовым фоном `#302c6f`, белым текстом/иконкой;
+- у collection/single type строк минималистичные inline SVG icons;
+- иконки выровнены по тому же левому краю, что и названия групп; текст начинается после иконки;
+- Strapi logo и лишние separators глобальной левой панели скрыты;
+- Settings gear скрыт визуально, прямой `/admin/settings` остаётся доступен;
+- профиль внизу сохраняется;
+- group header остаётся кликабельным для collapse/expand, chevrons/counts скрыты.
+
+Группы:
+
+### Каталог
+
+- Товары;
+- Предложения;
+- Разделы;
+- Бренды;
+- Акции;
+- Страницы.
+
+### Справочник
+
+- Города;
+- Магазины;
+- Методы доставки;
+- Пункты меню (МП);
+- Дизайны сертификатов (МП);
+- Контакты службы поддержки;
+- Способы связи со службой поддержки;
+- Темы обратной связи.
+
+### Фильтры
+
+- fallback для Collection Types, которые явно не назначены в другие группы;
+- новая неизвестная Collection Type должна автоматически попадать сюда;
+- для неизвестной collection используется нейтральная `sliders` icon.
+
+### Прочее
+
+- `notification-template`;
+- Home Page;
+- web-home-page;
+- Блок рекомендаций;
+- новые Single Types автоматически должны попадать сюда.
+
+Важные принципы реализации:
+
+- не использовать `sc-*`;
+- собственные markers — `data-tm-*`;
+- перемещать реальные Strapi list items, а не копировать;
+- повторный `apply()` не должен дублировать toolbar/groups/icons/listeners/styles;
+- логика должна переживать SPA navigation и React subtree recreation.
+
+## `barcode-extractor.js`
+
+- `Ctrl+B`;
+- копирует barcode из карточки товара;
+- показывает success/error toast;
+- Clipboard API + fallback `execCommand`.
+
+## `ctrl-enter-publisher.js`
+
+- `Ctrl+Enter`;
+- публикует текущую запись, если Publish button существует и не disabled.
+
+## `parser-launcher.js`
+
+- `Alt+P`;
+- открывает список parsers из `parsers/manifest.json`;
+- загружает parser с GitHub и выполняет его в странице Strapi.
+
+## `vimium-open-row.js`
+
+- делает строки таблицы доступными/удобными для Vimium navigation;
+- добавляет минимальную ссылку в первую cell;
+- работает через MutationObserver + requestAnimationFrame batching.
+
+## `record-list-scrollbars.js`
+
+- визуально скрывает scrollbar/overflow decoration списка records;
+- прокрутка должна сохраняться;
+- маркирует только найденные scroll containers вокруг table/grid.
+
+## `entry-relocate.js`
+
+- переносит Entry actions в строку Draft/Published;
+- освобождает ширину формы;
+- layout определяется DOM-first через `Document status`, `role="tabpanel"` и прямые DOM-связи, без критической зависимости от `getBoundingClientRect()`;
+- Entry column скрывается и main column растягивается сразу после появления document layout, не дожидаясь загрузки Publish/Save — это убирает стартовое сужение карточки;
+- перемещает реальные Strapi buttons, сохраняя React handlers/state;
+- повторно проверяет actions после React re-render и не должен дублировать старые buttons;
+- сохраняет исходные inline styles/позиции и умеет восстановить toolbar/buttons/layout при SPA cleanup.
+
+## `list-view.js`
+
+- точечные UI-правки List View Content Manager;
+- скрывает колонку `To be released in`;
+- компактно оформляет колонку `Available in`;
+- показывает RU/KK как компактные locale pills;
+- работает только на list-view routes Content Manager;
+- использует собственные `data-tm-*`, MutationObserver и `requestAnimationFrame`, повторный apply должен быть безопасным.
+
+---
+
+# 13. Стандарты Strapi Admin extension code
+
+Strapi Admin — React SPA. DOM нельзя считать статичным.
+
+## Селекторы
+
+Приоритет:
+
+1. `aria-*`;
+2. `role`;
+3. стабильные `data-*`;
+4. собственные `data-tm-*`;
+5. семантическая DOM-структура;
+6. назначение/текст элемента;
+7. геометрия — только дополнительный сигнал.
+
+Не использовать generated styled-components classes `sc-*` как главный selector.
+
+## Идемпотентность
+
+`init()` / `apply()` может вызываться много раз.
+
+Повторный вызов не должен:
+
+- создавать второй toolbar/button/icon;
+- повторно добавлять style;
+- накапливать listeners;
+- ломать layout;
+- перемещать уже перемещённый элемент некорректно.
+
+## SPA navigation
+
+Проверять работу:
+
+- после hard reload;
+- после перехода в другую запись без reload;
+- после смены collection;
+- после смены locale;
+- после возврата назад;
+- когда React полностью пересоздаёт subtree.
+
+Если хранится DOM reference:
+
+```js
+document.contains(node)
+```
+
+должно использоваться для проверки актуальности.
+
+## React elements
+
+Если нужен штатный Strapi button/toolbar/action, предпочитать перемещение реального DOM node вместо clone/copy. Это сохраняет:
+
+- React handler;
+- internal state;
+- `disabled`;
+- loading;
+- accessibility;
+- штатное поведение.
+
+## MutationObserver
+
+Не нужно переоптимизировать observer ценой надёжности.
+
+Для ограничения нагрузки:
+
+- idempotent `apply()`;
+- `requestAnimationFrame`;
+- debounce/throttle;
+- локальные early returns.
+
+## Diagnostics
+
+До переписывания кода:
+
+- найти target;
+- проверить parent/ancestor relation;
+- проверить marker;
+- проверить `data-tm-*`;
+- убедиться, что target не был пересоздан;
+- увидеть точку, где `apply()` перестал находить layout;
+- только затем менять selector/logic.
+
+При невозможности выполнить функцию полезен:
+
+```js
+console.warn('[extension-name] ...конкретная причина...')
 ```
 
 ---
 
-# 8. Strapi Admin UI / code review
+# 14. Парсеры
 
-Strapi Admin — React SPA. DOM пересоздаётся без full reload.
-
-Правила:
-
-- idempotent `init()/apply()`;
-- hard reload + SPA navigation должны работать;
-- не использовать `sc-*` как критические selectors;
-- приоритет: `aria-*`, `role`, стабильные `data-*`, `data-tm-*`, semantic DOM;
-- DOM refs проверять через `document.contains()`;
-- штатные React nodes предпочитать перемещать, а не clone;
-- сохранять handlers/state/disabled/loading;
-- MutationObserver ограничивать через `requestAnimationFrame`, debounce/throttle и early returns;
-- баг сначала локализовать в Console, потом менять код;
-- при сбое давать конкретный `console.warn()`.
-
-Sidebar хранится централизованно в `ui-ux/sidebar.js`; отдельные sidebar scripts не плодить.
-
-`entry-relocate.js` работает DOM-first и не должен строить критическую логику на геометрии.
-
----
-
-# 9. Парсеры и health checks
-
-Стандарт регулярного parser:
+Общий стандарт регулярного parser:
 
 ```text
 meta header
-→ все API pages
+→ fetch API
+→ pagination
 → validation
-→ progress/counters
-→ automatic CSV
+→ Console progress
+→ totals
+→ automatic CSV download
 ```
 
-Если output не CSV — явно указать это в meta header.
+Parser не должен требовать ручного копирования JSON/Console, если результат можно отдать файлом.
 
-Актуальный Parser Launcher manifest:
+Meta header должен содержать минимум:
 
-- `sort-volume.js` — порядок volume;
-- `volume-checker.js` — единицы volume;
+- имя;
+- version;
+- назначение;
+- output, если он отличается от стандартного CSV.
+
+## Parser Launcher manifest — snapshot
+
+Snapshot 2026-09-09:
+
+| Название | Файл | Output |
+|---|---|---|
+| Проверка сортировки объемов | `sort-volume.js` | CSV |
+| Проверка единиц объемов | `volume-checker.js` | CSV |
+| Отсутствующие оттенки | `missing-shades.js` | CSV |
+| Предложения с оттенком и объемом | `shade-and-volume.js` | CSV |
+| Предложения без товара | `attributes-without-product.js` | CSV |
+| Предложения без detail_picture | `attributes-without-detail-picture.js` | CSV |
+| Товары без предложений | `products-without-attributes.js` | CSV |
+| Товары без бренда | `products-without-brand.js` | CSV |
+| Товары без категорий | `products-without-categories.js` | CSV |
+| Товары с некорректной ценой | `products-with-wrong-prices.js` | CSV |
+| Товары с незаполненным контентом | `products-with-missing-content.js` | CSV |
+| Товары с некорректными вариантами предложений | `products-with-wrong-variants.js` | CSV |
+| Копировать DOM страницы | `dom-stealer.js` | Clipboard |
+
+Назначения и текущие условия:
+
+- `sort-volume.js` — неверный порядок volume;
+- `volume-checker.js` — разные единицы измерения volume;
 - `missing-shades.js` — active offers с `color_variant1C`, но без `shade`;
-- `shade-and-volume.js` — offers с одновременно `shade + volume`;
-- `attributes-without-product.js` — offers без `product`;
-- `attributes-without-detail-picture.js` — offers активных товаров, `isInStock=true`, `detail_picture=null`;
+- `shade-and-volume.js` — offers, у которых одновременно заполнены `shade` и `volume`;
+- `attributes-without-product.js` — offers/attributes без relation `product`;
+- `attributes-without-detail-picture.js` — предложения, где связанный product `active=true`, само предложение `isInStock=true`, а `detail_picture=null`;
 - `products-without-attributes.js` — active products без offers;
-- `products-without-brand.js` — active products без brand;
-- `products-without-categories.js` — active products без categories;
-- `products-with-wrong-prices.js` — active products с нулевой/пустой/дробной ценой хотя бы у одного offer;
-- `products-with-missing-content.js` — active products без `name1`, `name2`, `detail_picture` или `detail_text`;
-- `products-with-wrong-variants.js` — active products с несколькими offers и некорректным типом выбора;
-- `dom-stealer.js` — DOM → Clipboard.
+- `products-without-brand.js` — active products без `brand`;
+- `products-without-categories.js` — active products без `categories`;
+- `products-with-wrong-prices.js` — active products, у которых хотя бы один offer имеет `price=0`, пустой/нечисловой price или дробный price;
+- `products-with-missing-content.js` — active products без одного или нескольких критичных полей `name1`, `name2`, `detail_picture`, `detail_text`;
+- `products-with-wrong-variants.js` — active products с >1 offers, которые нельзя последовательно выбрать единым типом `shade` или `volume`; `color_variant1C` не участвует в логике, duplicate shade/volume values сами по себе не ошибка; issue codes: `no_variant_relations`, `missing_variant_relation`, `shade_and_volume`, `mixed_variant_type`;
+- `dom-stealer.js` — копирует `document.documentElement.outerHTML` в Clipboard для диагностики Strapi DOM.
 
 Текущий product health layer:
 
@@ -385,7 +783,7 @@ products-with-wrong-variants
 products-with-missing-content
 ```
 
-Текущий offer/attribute layer:
+Текущий offer/attribute health layer:
 
 ```text
 attributes-without-product
@@ -396,295 +794,50 @@ sort-volume
 volume-checker
 ```
 
-`products-with-wrong-variants.js`:
-- проверяет только active products с >1 offers;
-- `color_variant1C` игнорируется;
-- допустим единый тип shade-only или volume-only;
-- duplicate shade/volume values сами по себе не ошибка;
-- ошибки: `no_variant_relations`, `missing_variant_relation`, `shade_and_volume`, `mixed_variant_type`.
+Исторически существовали отдельные `price-checker.js`, `zero-prices.js`, `products-without-price.js`, `orphan-attributes.js`, `missing-brand.js`, `missing-categories.js`. Их старые названия могут встречаться в чатах, но текущий manifest использует переименованные/объединённые проверки выше.
+
+Для нового регулярного parser:
+
+1. добавить `.js` в `parsers/`;
+2. добавить запись в `parsers/manifest.json`, если он должен появиться в `Alt+P`;
+3. убедиться, что parser проходит все API pages;
+4. добавить auto-download CSV;
+5. дать понятное имя CSV;
+6. вывести totals/progress.
+
+Если parser вспомогательный и его естественный output — Clipboard/другой формат, это допустимо, но должно быть явно отражено в meta header и README/context.
 
 ---
 
-# 10. Bitrix: точечное извлечение данных
+# 15. Массовые browser scripts
 
-Bitrix — legacy/source system части товарного контента.
+Для разовых массовых проверок предпочтителен Console JS, если:
 
-Практически доказано, что точечные выгрузки можно делать самостоятельно через:
+- нет смысла делать постоянный extension;
+- endpoint доступен;
+- пользователь может выполнить script из Strapi/DevTools;
+- нужно один раз получить CSV.
 
-```text
-Bitrix Admin
-→ DevTools Network / DOM
-→ browser JS
-→ CSV
-```
+Типовые требования:
 
-Для нового поля сначала выяснить, где оно реально находится:
+- `PAGE_SIZE` обычно 100;
+- читать `meta.pagination.pageCount` или аналог;
+- проходить до последней страницы;
+- считать checked records;
+- логировать прогресс;
+- обрабатывать пустые/нечитаемые значения отдельно;
+- автоматически собирать и скачивать CSV;
+- CSV filename должен отражать проверку.
 
-- HTML страницы;
-- filter property;
-- отдельный Network request;
-- offer row;
-- product edit page.
-
-После этого писать короткий browser parser.
-
-Для barcode в списке товаров Bitrix используется:
-
-```text
-PROPERTY_19
-```
-
-Offer rows в product edit page можно определять по:
-
-```text
-input[name="SUB_ID[]"]
-```
-
-У строки offer доступны:
-
-- Bitrix offer ID;
-- barcode;
-- `DETAIL_PICTURE` path `/upload/iblock/...`;
-- другие поля, если они присутствуют в DOM/Network.
-
-Bitrix product edit:
-
-```text
-/bitrix/admin/iblock_element_edit.php?IBLOCK_ID=1&type=catalog&lang=ru&ID=<PRODUCT_ID>&find_section_section=-1&WF=Y
-```
-
-Offer edit pattern:
-
-```text
-/bitrix/admin/iblock_subelement_edit.php?IBLOCK_ID=2&type=catalog&PRODUCT_ID=<PRODUCT_ID>&ID=<OFFER_ID>&lang=ru&WF=Y
-```
+Если parser становится регулярным — вынести в GitHub `parsers/` и Parser Launcher.
 
 ---
 
-# 11. `bitrix/detail-picture-audit.js`
+# 16. Mobile/CMS: главная страница
 
-Назначение: перед массовой миграцией определить, у каких проблемных Strapi offers реально есть `DETAIL_PICTURE` в Bitrix.
+Главная управляется Strapi Single Type + Dynamic Zone.
 
-Вход:
-
-CSV от `attributes-without-detail-picture.js`, где есть как минимум `barcode`; также используются `documentId`/`productDocumentId`, если они присутствуют.
-
-Аудит:
-
-```text
-CSV
-→ barcode
-→ Bitrix setFilter
-→ parent product
-→ конкретный offer по точному barcode
-→ DETAIL_PICTURE URL
-→ mapping CSV
-```
-
-Важно:
-
-- выполняется прямо в Bitrix Admin browser context;
-- использует текущую авторизованную Bitrix session/cookies;
-- самих изображений не скачивает;
-- Strapi не изменяет;
-- группирует source rows по `productDocumentId`, чтобы один parent product не открывать многократно;
-- сохраняет checkpoint в LocalStorage;
-- повторный запуск с тем же CSV продолжает незавершённый аудит;
-- предусмотрена остановка через `stopBitrixDetailPictureAudit()`.
-
-Основные statuses:
-
-```text
-ok
-no_detail_picture
-product_not_found
-offer_not_found
-duplicate_barcode_in_source
-missing_barcode
-error
-```
-
-Параллельно массово менять один и тот же Bitrix filter опасно: filter state живёт в admin session и concurrent `setFilter` может дать race. Поэтому текущий audit намеренно последовательный/осторожный.
-
----
-
-# 12. Bitrix → Strapi: миграция `detail_picture`
-
-Связующий ключ для текущей миграции — точный `barcode`.
-
-Рабочая архитектура разделена на два этапа:
-
-```text
-Этап 1 — Bitrix browser audit
-barcode → parent product → offer → imageUrl → status
-             ↓ CSV
-Этап 2 — local Node migrator
-imageUrl → download → Strapi upload → relation → publish ru → verify
-```
-
-Почему разделено:
-
-- Bitrix browser script удобно использует существующую admin session;
-- Strapi browser → monamie image download упирался в CORS;
-- Node не ограничен browser CORS и подходит для файловой migration;
-- audit и write разделены, поэтому ошибки source matching не смешиваются с production write.
-
-## Proven Strapi write chain
-
-Для конкретного barcode:
-
-1. найти Strapi attribute по Public API;
-2. убедиться, что найден ровно один record;
-3. убедиться, что `detail_picture` ещё пуст;
-4. скачать Bitrix image;
-5. `POST /upload` с multipart `files` + `fileInfo`;
-6. получить полный media object;
-7. partial internal PUT только поля:
-
-```json
-{"detail_picture": <media object>}
-```
-
-на:
-
-```text
-PUT /content-manager/collection-types/api::attribute.attribute/<documentId>?locale=ru
-```
-
-8. publish:
-
-```text
-POST /content-manager/collection-types/api::attribute.attribute/<documentId>/actions/publish?locale=ru
-body: {}
-```
-
-9. verify через Public API.
-
-Критически важно: partial PUT с одним `detail_picture` реально протестирован и не требует отправлять обратно все остальные offer fields.
-
-## End-to-end proof
-
-Сначала успешно мигрирован отдельный SKU.
-
-Затем batch первых 10:
-
-```text
-SUCCESS: 7
-ALREADY FILLED: 0
-NO BITRIX PICTURE: 3
-FAILED: 0
-```
-
-Все 7 source images попали в правильные Strapi attributes и были опубликованы; 3 были корректно пропущены, потому что `DETAIL_PICTURE` отсутствовал уже в Bitrix.
-
-Для этой migration-задачи `ru` — главный рабочий источник. Пишем и публикуем `locale=ru`; `kk` не является блокирующим условием.
-
----
-
-# 13. Node.js / PowerShell в migration workflow
-
-Node.js — локальная среда выполнения JavaScript, не фреймворк.
-
-На Windows:
-
-```text
-PowerShell
-→ запускает node.exe
-→ Node выполняет migration .js
-```
-
-PowerShell сам migration logic не выполняет. Он используется как shell:
-
-```powershell
-$env:STRAPI_JWT = '...'
-node --use-system-ca .\script.js
-```
-
-`STRAPI_JWT` хранится в env текущей PowerShell session и читается Node через:
-
-```js
-process.env.STRAPI_JWT
-```
-
-Токен не должен быть захардкожен в GitHub.
-
-Для `monamie.kz` Node default TLS выдавал `SELF_SIGNED_CERT_IN_CHAIN`; рабочий запуск:
-
-```text
-node --use-system-ca ...
-```
-
-На macOS принцип тот же; вместо PowerShell обычно Terminal + zsh/bash. Сам Node script в основном OS-independent.
-
-## Safeguards для массовой migration
-
-Перед full run:
-
-- source audit отдельно;
-- migrate только `status=ok`;
-- exact barcode match;
-- ровно один Strapi attribute;
-- skip, если `detail_picture` уже заполнен;
-- sequential или low concurrency;
-- retry/logging;
-- verify после publish;
-- итоговый CSV/JSON;
-- resumability.
-
-Реальный остаточный риск: upload может пройти, а PUT/publish упасть — тогда в Media Library может остаться orphan media. Для массового migrator нужен log/resume, чтобы не плодить дубли на слепых rerun.
-
----
-
-# 14. Локализация и переводы `ru/kk`
-
-Локализация field, relation field и target entity — разные уровни.
-
-Для каждого кейса выяснять отдельно:
-
-1. локализовано ли поле;
-2. локализована ли relation;
-3. локализована ли связанная entity;
-4. должен ли relation синхронизироваться;
-5. какая locale source-of-truth.
-
-Для текущей image migration приоритет — корректно заполнить и опубликовать `ru`.
-
-## RU → KK translation
-
-Plain text:
-- сохранять смысл;
-- ничего не добавлять;
-- естественный казахский;
-- избегать буквальной кальки;
-- английский без необходимости не переводить.
-
-HTML:
-- переводить только text nodes;
-- не менять tags;
-- не менять CSS/classes;
-- не менять links;
-- не менять структуру.
-
-Теоретически полностью автоматический pipeline:
-
-```text
-Bitrix ru
-→ Node
-→ LLM API
-→ kk
-→ Strapi locale=kk
-→ publish
-```
-
-Если перевод выполняется в обычном ChatGPT-чате — это полуавтоматический режим; для unattended Node pipeline нужен отдельный LLM API.
-
----
-
-# 15. Mobile / CMS / UI
-
-Главная: Strapi Single Type + Dynamic Zone.
-
-Частые components:
+Часто используемые components:
 
 ```text
 home.main-banners
@@ -703,156 +856,891 @@ maxItems
 products
 ```
 
-Deeplink `monamie://...` считается рабочим только если route реально зарегистрирован в mobile client.
+Известный исторический кейс:
 
-Если API отдаёт корректный массив relations, а Flutter показывает один — сначала client.
-
-Для UI использовать точные понятия:
-
-```text
-container
-aspect ratio
-adaptive
-media
-preview
-clipping/cropping
-dimensions
-padding/margin
-```
-
-Для preview 750×750 в Strapi Media Library использовать `medium`, если формат доступен.
+- в Strapi `home.product-slider` содержал несколько корректных `products` relations;
+- mobile показывал не более одного товара;
+- правильный подход: проверить API response;
+- если API отдаёт массив корректно — задача Flutter/client, а не CMS.
 
 ---
 
-# 16. ТЗ, переписка и отчёты
+# 17. Deeplink
 
-Рабочая форма ТЗ:
+Пример схемы:
 
 ```text
-Короткое название
+monamie://...
+```
+
+Внешне корректная строка не гарантирует рабочий deeplink.
+
+Проверять:
+
+- зарегистрирован ли route в Flutter;
+- какой path ожидается;
+- какие query/path params разрешены;
+- есть ли существующий рабочий пример.
+
+Исторический пример:
+
+```text
+monamie://brands/christian-dior
+```
+
+Не считать его универсально корректным только из-за синтаксиса — валидность зависит от route table mobile app.
+
+---
+
+# 18. UI / adaptive / media
+
+При описании UI использовать точные понятия:
+
+- container;
+- aspect ratio;
+- adaptive;
+- desktop/mobile;
+- media;
+- preview;
+- clipping/cropping;
+- dimensions;
+- padding/margin;
+- responsive behavior.
+
+Если desktop корректен, а adaptive меняет форму/обрезает контент, формулировать причинно:
+
+`изменяется container/aspect ratio → вложенное media/text обрезается/растягивается → требуется сохранить ожидаемые пропорции/поведение`.
+
+## Strapi media formats
+
+Известные форматы:
+
+```text
+thumbnail
+small
+medium
+```
+
+Историческая задача:
+
+- часть product cards использовала `small` или `thumbnail`;
+- preview выглядел пиксельным;
+- для preview требуется `medium` 750×750.
+
+Если API уже содержит `medium`, а client выбирает `small`, это client-side задача.
+
+---
+
+# 19. Локализация `ru/kk`
+
+Основной принцип: локализация field, relation field и target collection — разные уровни.
+
+Для каждого случая отдельно выяснять:
+
+1. локализовано ли поле;
+2. локализовано ли relation field;
+3. локализована ли связанная entity;
+4. должна ли relation синхронизироваться между `ru` и `kk`;
+5. какое значение должно считаться source-of-truth.
+
+Часто затрагиваются:
+
+- categories;
+- attributes;
+- brands;
+- offers;
+- product relations;
+- product fields;
+- home components.
+
+## Исторический кейс `products.name`
+
+Был запрос отключить локализацию поля `name` у товаров:
+
+- `name` не должен различаться между `ru` и `kk`;
+- приоритет должен иметь значение из `ru`;
+- авто-переведённый `kk name` мешал создавать relations, потому что поиск relation выполнялся по `name`;
+- также требовалось определить, что делать с уже существующими переводами.
+
+Это исторический task context, не гарантия, что изменение уже внедрено.
+
+---
+
+# 20. Перевод RU → KK
+
+## Plain text translator
+
+Используется для небольших текстов без сложной структуры.
+
+Требования:
+
+- перевод по исходному смыслу;
+- не добавлять информацию;
+- не сокращать важное;
+- английский без необходимости не переводить;
+- естественный казахский;
+- избегать буквальной кальки;
+- использовать принятую терминологию.
+
+## HTML translator
+
+Используется для:
+
+- product descriptions;
+- articles;
+- custom pages;
+- HTML из Bitrix.
+
+Правило:
+
+- переводить только текстовые nodes;
+- HTML tags не менять;
+- CSS/classes не менять;
+- ссылки/technical values не менять;
+- структуру не ломать.
+
+Результат должен быть пригоден для прямой вставки в CMS.
+
+---
+
+# 21. Bitrix → Strapi
+
+Bitrix — один из источников product content и legacy/source system для части товарных данных.
+
+Из ранее известных процессов:
+
+- product связан с разделом Bitrix;
+- исторически уточнялось: один product может находиться только в одном разделе;
+- для сопоставления раздела использовалось поле `code`;
+- HTML descriptions могут приходить из Bitrix;
+- часть переводов может генерироваться при sync.
+
+При ТЗ на resync всегда разносить:
+
+1. какие текущие values в Strapi очистить/перезаписать;
+2. какие данные снова загрузить из Bitrix;
+3. какие поля перевести;
+4. каким translator/prompt;
+5. какие relations должны синхронизироваться отдельно.
+
+Текущий image-migration workflow ниже — отдельный доказанный путь; он не означает автоматически, что остальные Bitrix sync работают теми же endpoints/правилами.
+
+## 21.1. Точечное извлечение данных из Bitrix
+
+Практически доказано, что точечные выгрузки из Bitrix можно делать через текущую авторизованную admin-сессию:
+
+```text
+Bitrix Admin
+→ DevTools Network / DOM
+→ browser JavaScript
+→ CSV
+```
+
+Для нового поля сначала выяснять, где оно реально находится: HTML страницы, filter property, отдельный Network request, offer row или product edit page. Endpoint/property не угадывать.
+
+Для barcode в фильтре списка товаров подтверждено поле:
+
+```text
+PROPERTY_19
+```
+
+Наблюдавшийся Filter/Grid ID:
+
+```text
+tbl_iblock_element_160552fecab66c961b2b218b964e1a9a
+```
+
+Product list pattern:
+
+```text
+/bitrix/admin/iblock_element_admin.php?IBLOCK_ID=1&type=catalog&lang=ru&find_el_y=Y&apply_filter=Y&clear_nav=Y
+```
+
+Product edit pattern:
+
+```text
+/bitrix/admin/iblock_element_edit.php?IBLOCK_ID=1&type=catalog&lang=ru&ID=<PRODUCT_ID>&find_section_section=-1&WF=Y
+```
+
+Offer edit pattern:
+
+```text
+/bitrix/admin/iblock_subelement_edit.php?IBLOCK_ID=2&type=catalog&PRODUCT_ID=<PRODUCT_ID>&ID=<OFFER_ID>&lang=ru&WF=Y
+```
+
+Реальные offer rows определяются через:
+
+```css
+input[name="SUB_ID[]"]
+```
+
+В строке offer доступны Bitrix offer ID, barcode и, если заполнено, `DETAIL_PICTURE` с `/upload/iblock/...`. Matching конкретного offer выполняется по точному barcode, а не по первому offer родителя.
+
+## 21.2. `bitrix/detail-picture-audit.js`
+
+Repo path:
+
+```text
+bitrix/detail-picture-audit.js
+```
+
+Текущая версия: `1.0.0`. Запускается только в Bitrix Admin, не через Strapi Parser Launcher.
+
+Вход — CSV от `attributes-without-detail-picture.js`. Аудит делает:
+
+```text
+CSV
+→ barcode
+→ Bitrix setFilter
+→ parent product
+→ конкретный offer по barcode
+→ DETAIL_PICTURE URL
+→ mapping CSV
+```
+
+Важно:
+
+- использует текущую Bitrix admin session/cookies;
+- самих изображений не скачивает;
+- ничего не пишет в Strapi;
+- группирует source rows по `productDocumentId`, чтобы не открывать одного parent многократно;
+- сохраняет checkpoint в LocalStorage;
+- при повторном запуске с тем же CSV продолжает незавершённый аудит;
+- можно корректно запросить остановку через `stopBitrixDetailPictureAudit()`;
+- выполняется осторожно/последовательно, потому что `setFilter` меняет общий filter state текущей Bitrix admin session; бездумная параллельность создаёт риск race/mismatched product.
+
+Статусы результата:
+
+```text
+ok
+no_detail_picture
+product_not_found
+offer_not_found
+duplicate_barcode_in_source
+missing_barcode
+error
+```
+
+## 21.3. Доказанный `detail_picture` migration pipeline
+
+Связующий ключ текущей миграции — точный `barcode`.
+
+Архитектура намеренно двухэтапная:
+
+```text
+Этап 1 — Bitrix browser audit
+barcode → parent product → offer → imageUrl → status
+             ↓ mapping CSV
+Этап 2 — local Node migrator
+imageUrl → download → Strapi upload → detail_picture → publish ru → verify
+```
+
+Причины разделения:
+
+- browser audit бесплатно использует существующую Bitrix admin session;
+- попытка скачать `monamie.kz/upload/...` из Strapi browser context упёрлась в CORS;
+- Node не ограничен browser CORS и подходит для binary files/multipart;
+- read/audit отделён от production write.
+
+### Strapi write chain — реально проверен
+
+Для каждого `status=ok`:
+
+1. Public API находит attribute по точному `barcode`;
+2. требуется ровно один match;
+3. если `detail_picture` уже заполнен — skip;
+4. Node скачивает Bitrix image;
+5. upload:
+
+```text
+POST http://10.10.3.80:1337/upload
+Authorization: Bearer <jwtToken>
+multipart: files + fileInfo
+```
+
+6. Strapi возвращает полный media object;
+7. partial PUT только relation `detail_picture`:
+
+```text
+PUT /content-manager/collection-types/api::attribute.attribute/<documentId>?locale=ru
+```
+
+Body:
+
+```json
+{"detail_picture": <full media object>}
+```
+
+Partial PUT с одним полем реально протестирован: остальные offer fields отправлять обратно не требуется.
+
+8. publish:
+
+```text
+POST /content-manager/collection-types/api::attribute.attribute/<documentId>/actions/publish?locale=ru
+body: {}
+```
+
+9. после publish обязательный verify через Public API.
+
+Для этой migration-задачи `ru` — главный рабочий источник. Пишем/публикуем `locale=ru`; `kk` не является блокирующим условием.
+
+### End-to-end proof
+
+Сначала успешно мигрирован отдельный SKU end-to-end. Затем прогнан batch первых 10 candidates:
+
+```text
+SUCCESS: 7
+ALREADY FILLED: 0
+NO BITRIX PICTURE: 3
+FAILED: 0
+```
+
+7 source images попали в правильные Strapi attributes и были опубликованы; 3 корректно пропущены, потому что `DETAIL_PICTURE` отсутствовал уже в Bitrix.
+
+На момент сборки 2026-09-09 полный Bitrix audit запущен, но финальный mapping/result ещё не зафиксирован в context. Массовый production Node migrator для всего mapping ещё не считается финализированным; в repo зафиксирован audit tool, а Node batch пока доказан тестами.
+
+## 21.4. Node.js / PowerShell в этом workflow
+
+Node.js — локальная среда выполнения JavaScript, не фреймворк.
+
+На Windows:
+
+```text
+PowerShell
+→ запускает node.exe
+→ Node выполняет migration .js
+```
+
+PowerShell сам migration logic не выполняет. Он используется как shell и для env variables:
+
+```powershell
+$env:STRAPI_JWT = '...'
+node --use-system-ca .\script.js
+```
+
+Node читает token через:
+
+```js
+process.env.STRAPI_JWT
+```
+
+JWT не хранить внутри repo/script. Переменная `$env:STRAPI_JWT` живёт в текущей PowerShell session.
+
+На `monamie.kz` обычный Node fetch ранее упирался в `SELF_SIGNED_CERT_IN_CHAIN`; рабочий запуск подтверждён с:
+
+```text
+node --use-system-ca ...
+```
+
+На macOS принцип тот же, вместо PowerShell обычно Terminal + `zsh`/`bash`; сам Node script в основном OS-independent.
+
+### Safeguards массовой migration
+
+- source audit отдельно от write;
+- migrate только `status=ok`;
+- exact barcode match;
+- ровно один Strapi attribute;
+- skip при уже заполненном `detail_picture`;
+- sequential или low concurrency;
+- retry/logging;
+- verify после publish;
+- итоговый CSV/JSON;
+- resumability/checkpoint;
+- не запускать слепой rerun после partial failure: если upload прошёл, а PUT/publish упал, в Media Library может остаться orphan media/дубликат.
+
+## 21.5. Возможный будущий Bitrix → LLM → Strapi перевод
+
+Технически возможна цепочка:
+
+```text
+Bitrix ru description
+→ Node/browser extraction
+→ LLM API по фиксированному translator prompt
+→ kk
+→ Strapi locale=kk
+→ publish
+```
+
+Для HTML переводить только текстовые nodes, не менять tags/CSS/classes/links/structure. Это пока концептуальный следующий workflow, а не внедрённая production automation.
+
+---
+
+# 22. ТЗ разработчикам
+
+ТЗ — не формальный документ ради структуры.
+
+Рабочая форма:
+
+```text
+Название
 
 Что сейчас происходит.
 В чём проблема.
 Что нужно изменить.
 ```
 
-Добавлять collection/component/field/API/UI только если нужно для понимания.
+Добавлять:
 
-Без запроса не добавлять:
+- collection;
+- component;
+- relation;
+- field;
+- endpoint;
+- UI-element;
+
+только если это реально помогает разработчику понять задачу.
+
+Не добавлять без запроса:
 
 - Acceptance Criteria;
-- DoD;
-- Expected result отдельным блоком;
+- «Что проверить»;
+- отдельный Expected result;
+- Objective;
 - Business value;
+- DoD;
 - очевидные test cases;
-- канцелярит.
+- длинные формальные сценарии.
 
-Переписка: лаконичная, деловая, человеческая.
+Не придумывать реализацию, если задача — описать поведение.
 
-Большие наборы задач — компактная таблица без лишних колонок.
-
-Notion relations/rollups/formulas использовать только если уменьшают ручную работу.
+ТЗ должно быть понятно человеку без контекста и при этом не вызывать у разработчика очевидную серию вопросов.
 
 ---
 
-# 17. Товарный контент
+# 23. Исторические Strapi/CMS задачи
 
-Частые сущности:
+Эти кейсы полезны как доменная память. Они **не означают автоматически, что задача всё ещё открыта**.
+
+## Collection `volumes`
+
+Был запрос:
+
+- дать Content Manager возможность удалять records;
+- поля `xml_id` и `code_1c` сделать необязательными;
+- на момент задачи без них нельзя было создать новый volume.
+
+## Brands
+
+Был массовый check:
+
+- найти brands, у которых `showDiscountOnProductCard !== true`.
+
+Для подобных проверок предпочтителен parser/Console script с pagination и CSV.
+
+## Product active / offers / volume
+
+Регулярные проверки включали:
+
+- active products;
+- offers/attributes;
+- volume relation;
+- несовпадающие `volume.name`;
+- price;
+- наличие product relation;
+- category/brand relation.
+
+## Promotions
+
+В проекте были отдельные ТЗ/файлы по:
+
+- promotion `slug` и `shareUrl`;
+- promotion warehouses/stocks;
+- синхронизации локалей.
+
+При возвращении к этим темам желательно запросить/прочитать актуальные файлы или API, потому что этот контекст не содержит полного текста старых PDF.
+
+---
+
+# 24. Gift certificates — исторический UX context
+
+В работе были замечания по сертификатам:
+
+1. при выборе пластикового сертификата временно вести в WebView;
+2. убрать «Заберите в любом магазине»;
+3. для электронного объяснить, что ссылка приходит через SMS/Push, сертификат отображается у конечного получателя в ЛК → «Мои сертификаты»;
+4. убрать информацию о физической доставке electronic certificate;
+5. добавить выбор даты и времени отправки;
+6. добавить возможность собственного номинала;
+7. после добавления в cart кнопка «Готово» должна вести к оплате, а не назад к выбору сертификатов;
+8. убрать «Отправим на телефон получателя»;
+9. при добавлении второго сертификата не терять первый; перед оплатой показывать список добавленных сертификатов для проверки номеров.
+
+Это исторический список замечаний; статус каждого пункта нужно уточнять по текущему build/task tracker.
+
+---
+
+# 25. Товарный контент и ассортимент
+
+Частые понятия:
+
+- SKU;
+- barcode;
+- shade;
+- offer/attribute;
+- brand;
+- category;
+- label;
+- ассортимент.
+
+Для отбора ассортимента, если задача этого типа:
+
+- постоянный ассортимент;
+- исключать сезонные;
+- исключать временные;
+- исключать лимитированные;
+- исключать низкооборачиваемые;
+- приоритет бестселлерам;
+- приоритет востребованным/коммерчески значимым shades.
+
+Оцифровка/AR может идти отдельно по каждому barcode/shade.
+
+## AR product list — известный формат
+
+Для подготовки товаров под AR-примерочную использовались правила:
+
+- отдельный файл для каждого brand;
+- brand указывать в filename;
+- column «Название товара» — полное product name;
+- column «Штрихкод» — barcode конкретного shade/SKU;
+- каждый barcode — отдельная row;
+- при нескольких shades product name можно указать один раз на группу barcode по шаблону;
+- не добавлять лишние internal fields, prices, categories, service codes;
+- включать постоянный ассортимент, bestsellers, востребованные shades.
+
+---
+
+# 26. Деловая переписка
+
+Адресаты:
+
+- developers;
+- руководство;
+- коллеги;
+- content team;
+- brand managers;
+- юристы;
+- внешние подрядчики.
+
+Стиль:
+
+- лаконично;
+- делово;
+- человечески;
+- без бюрократических штампов;
+- без искусственной сверхвежливости;
+- без пассивной агрессии.
+
+Технический контекст можно оставлять техническим:
 
 ```text
-SKU
-barcode
-shade
-offer
-brand
-category
-label
+prod
+dev
+API
+endpoint
+relation
+sync
+frontend
+backend
+deploy
+adaptive
+build
+deeplink
 ```
 
-При отборе ассортимента:
-
-- постоянные позиции;
-- исключать сезонные/временные/лимитированные;
-- исключать низкооборачиваемые;
-- приоритет bestsellers;
-- приоритет коммерчески значимых shades.
-
-AR/оцифровка может выполняться отдельно по каждому barcode/shade.
-
-Известный AR export format:
-- отдельный файл на brand;
-- product name;
-- barcode каждого shade/SKU отдельной строкой;
-- без лишних internal codes/prices/categories.
+Не нужно переводить эти слова на русский, если становится менее понятно.
 
 ---
 
-# 18. Исторические доменные кейсы
+# 27. Таблицы и отчёты
 
-Исторические задачи полезны как контекст, но их статус всегда перепроверять.
+Большие наборы задач лучше сводить в компактную рабочую таблицу.
 
-Из известных:
+Полезные fields:
 
-- `volumes`: запрос на delete permissions и необязательные `xml_id`/`code_1c`;
-- products `name`: обсуждалось отключение локализации и приоритет `ru`;
-- brands: массовая проверка `showDiscountOnProductCard !== true`;
-- promotions: `slug/shareUrl`, warehouses/stocks, locale sync;
-- gift certificates: WebView для plastic, правила electronic delivery, custom nominal, schedule send, cart/payment flow;
-- product home sliders: если API отдаёт несколько products, а client один — client-side issue;
-- preview media: если API имеет `medium`, а client выбирает `small`, это client-side issue.
+- раздел;
+- задача;
+- описание;
+- ответственный;
+- статус;
+- комментарий;
+- ссылка;
+- количество;
+- язык;
+- приоритет.
 
-Не считать историческую задачу автоматически открытой или внедрённой.
+Не добавлять столбцы «для красоты».
 
----
+Если пользователь просит объединить несколько источников в отчёт:
 
-# 19. Security / credentials
-
-Admin JWT можно увидеть в DevTools LocalStorage. В рабочих scripts он используется как локальный credential для собственных admin requests.
-
-Правила:
-
-- не хранить реальные tokens в GitHub;
-- не вшивать token в permanent scripts;
-- передавать локально через Postman variable/env;
-- не считать старый token гарантированно действующим.
-
-Репозиторий может содержать code/examples, но не secrets.
+- убрать дубликаты;
+- сохранить смысл статусов;
+- привести формулировки к одному уровню;
+- не делать отдельную сводку по статусам, если она не нужна;
+- форматировать компактно;
+- высота строк должна вместить текст без лишнего воздуха.
 
 ---
 
-# 20. Когда обновлять этот context
+# 28. Notion
 
-Обновлять после:
+Известный рабочий сценарий:
 
-- изменения структуры repo;
-- нового постоянного extension;
-- изменения parser architecture;
-- нового важного cross-system workflow;
-- подтверждённых internal endpoints;
-- существенного изменения Bitrix/Strapi migration;
-- новых правил локализации/translation;
-- крупных устойчивых решений.
+- Notion Plus;
+- 1 основной администратор;
+- внешние пользователи — guests;
+- при необходимости guests получают Full Access.
 
-Не обязательно обновлять после каждого patch, если snapshot не становится вводящим в заблуждение.
+Relations / rollups / formulas использовать, только если они реально уменьшают ручную работу.
 
-Если меняется структура/назначение repo — одновременно актуализировать README.
-
-`promts/project-instructions.md` менять только когда меняются operational rules, а не ради добавления каждого нового технического факта.
+Не строить сложную database architecture, если простой tracker решает задачу.
 
 ---
 
-# 21. Что считать source of truth
+# 29. n8n / Make / automation
+
+Приоритет автоматизации:
+
+1. API query;
+2. browser JS;
+3. Postman script;
+4. parser;
+5. GitHub extension, если функция постоянная;
+6. n8n/Make, если workflow действительно повторяемый/межсистемный;
+7. backend changes — когда client-side/workaround недостаточен.
+
+Автоматизация должна уменьшать число ручных действий, а не добавлять инфраструктуру.
+
+---
+
+# 30. Vimium
+
+Vimium использовался для keyboard navigation в Strapi.
+
+Исторические команды:
+
+- `enterVisualLineMode`;
+- `enterVisualMode` (`g` в обсуждении).
+
+Проблема: readonly barcode field было неудобно выделять/копировать keyboard-only.
+
+Практическое решение в текущем repo — `barcode-extractor.js` с `Ctrl+B`, поэтому для barcode предпочтителен extension, а не сложный Vimium flow.
+
+---
+
+# 31. Security context
+
+JWT из Strapi Admin LocalStorage технически можно увидеть через DevTools. Это само по себе не означает автоматически критическую уязвимость: риск зависит от XSS, доступности устройства/session, срока жизни token и серверных controls.
+
+В рабочих инструкциях token используется только как локальный credential для повторения собственных admin requests.
+
+Не публиковать реальные tokens в GitHub, документации, screenshots или shared snippets.
+
+Репозиторий `mbtema/strapi` на момент ревью публичный. Реальные секреты в repo не хранятся; Postman secret variables имеют пустые values. Вопрос приватизации repo и выдачи read-only GitHub token Tampermonkey обсуждался, но пока сознательно отложен, чтобы не усложнять loader/workflow.
+
+---
+
+# 32. Приоритеты диагностики
+
+## API/data problem
+
+Проверять в порядке:
+
+1. Strapi record;
+2. locale;
+3. relation заполнен;
+4. Public API query;
+5. fields/populate;
+6. API response;
+7. client behavior.
+
+## Internal request problem
+
+Проверять:
+
+1. реальный Network request;
+2. endpoint/UID;
+3. method;
+4. payload;
+5. locale;
+6. `documentId`;
+7. Authorization/session.
+
+## UI extension problem
+
+Проверять:
+
+1. воспроизводится ли after hard reload;
+2. воспроизводится ли after SPA navigation;
+3. существует ли target;
+4. selector stable?;
+5. DOM node был пересоздан?;
+6. marker/idempotency;
+7. duplicate listeners/styles;
+8. observer fires?;
+9. layout assumption;
+10. manifest version/cache.
+
+## Parser problem
+
+Проверять:
+
+1. endpoint;
+2. pagination;
+3. pageCount;
+4. API response shape;
+5. filtering condition;
+6. counters;
+7. empty/error responses;
+8. CSV/declared output creation;
+9. auto-download/copy;
+10. parser manifest entry.
+
+---
+
+# 33. Что не делать
+
+Без необходимости не:
+
+- давать длинные лекции;
+- повторять вопрос;
+- строить корпоративное ТЗ;
+- добавлять acceptance criteria;
+- предлагать backend change до проверки API/client;
+- предлагать «попросить admin rights» как универсальный ответ;
+- заставлять вручную чистить JSON;
+- угадывать internal endpoint вместо Network;
+- держать постоянный Tampermonkey script отдельно от loader architecture;
+- забывать bump extension version;
+- делать parser только на page 1;
+- оставлять parser result только в Console, если его можно скачать/скопировать;
+- завязывать UI extension на `sc-*`;
+- копировать штатный Strapi React element, если его можно переместить;
+- оптимизировать MutationObserver ценой нестабильности;
+- считать historical task автоматически актуальным;
+- считать deeplink рабочим только по его внешнему виду;
+- плодить отдельные sidebar scripts, если поведение относится к централизованному `ui-ux/sidebar.js`.
+
+---
+
+# 34. Promts и регулярное обновление контекста
+
+Папка:
+
+`promts/`
+
+не участвует в runtime Strapi и существует как централизованное хранилище контекста, с которым работают пользователь и ChatGPT.
+
+## `promts/project-context.md`
+
+Knowledge layer — вся важная информация сразу:
+
+- архитектура;
+- repo structure;
+- endpoints;
+- Strapi/API patterns;
+- ограничения;
+- локализация;
+- parser/extension architecture;
+- известные UI решения;
+- historical task context;
+- предметный e-commerce/content context;
+- ранее принятые решения.
+
+Файл должен развиваться вместе с проектом, а не оставаться snapshot старой архитектуры.
+
+## `promts/project-instructions.md`
+
+Operational layer — правила того, как работать с этим контекстом:
+
+- стиль ответа;
+- приоритеты;
+- формат технических решений;
+- правила code review;
+- правила работы с Strapi/API/GitHub/parsers/ТЗ.
+
+Не нужно переносить в него всю историю; подробности живут в `project-context.md`.
+
+## Когда обновлять
+
+Главное правило: `project-context.md` — накопительный knowledge layer. Не оптимизировать его ценой потери полезной истории. При обновлении:
+
+```text
+текущий полный context
+→ точечно обновить устаревший snapshot/fact
+→ добавить новый устойчивый workflow/решение
+→ старую полезную деталь оставить или пометить historical
+→ удалить только ошибочное, реально бесполезное или полностью дублирующее
+```
+
+После существенных изменений:
+
+- структуры repo;
+- loader/manifest architecture;
+- постоянных extensions;
+- parser workflow;
+- важных endpoints/ограничений;
+- правил совместной работы;
+- крупных новых предметных блоков.
+
+Если изменилось только конкретное значение/версия extension, достаточно убедиться, что snapshot/context не вводит в заблуждение; не требуется переписывать весь файл после каждого patch.
+
+Если меняется структура или способ использования repo — одновременно актуализировать README.
+
+Пользователь периодически копирует свежие `project-context.md` и `project-instructions.md` из GitHub в Project ChatGPT, чтобы расширенный контекст проекта не расходился с repo.
+
+---
+
+# 35. Как использовать этот файл и связь с Project Instructions
+
+Project Instructions — operational layer: как отвечать и какие принципы применять всегда.
+
+`project-context.md` — knowledge layer: что известно о проекте, архитектуре, инструментах, исторических задачах и рабочих паттернах.
+
+Использовать их вместе:
+
+```text
+текущее требование пользователя
+        ↓
+Project Instructions
+        ↓
+выбирают подход/формат
+        ↓
+актуальный GitHub / API / Network / UI
+        ↓
+подтверждают текущее состояние
+        ↓
+project-context.md
+        ↓
+даёт подробный предметный и исторический контекст
+```
+
+Когда задача простая — не нужно вытаскивать весь контекст.
+
+Когда задача касается:
+
+- Strapi API;
+- repo/extensions;
+- parser architecture;
+- known fields/endpoints;
+- localization;
+- mobile CMS;
+- Bitrix;
+- previous task patterns;
+
+использовать соответствующий section этого файла.
+
+Если вопрос про текущую версию extension, manifest, parser list или GitHub state — **проверять GitHub заново**, даже если snapshot есть здесь.
+
+Если вопрос про текущий API shape — **смотреть актуальный response/Network**, а не опираться на старый пример.
+
+Если пользователь прислал новый контекст, который меняет правило, свежий контекст выше этого файла.
+
+Приоритет:
 
 ```text
 текущая инструкция пользователя
 → Project Instructions
-→ актуальный GitHub / API / Network / UI
+→ актуальные данные/репозиторий/API/Network
 → project-context.md
-→ история чатов / старые snapshots
+→ исторические примеры
 ```
-
-Для текущей версии extension/parser всегда читать GitHub заново.
-
-Для текущего API shape всегда смотреть реальный response/Network.
-
-Для Bitrix internal behavior всегда опираться на реально снятый Network/DOM, а не угадывать endpoint/property.
