@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         parser-launcher
-// @version      1.3.1
+// @version      1.4.0
 // @description  Запускает парсеры из GitHub по Alt+P
 // ==/StrapiExtension==
 
@@ -13,6 +13,42 @@
   const MANIFEST_FILE = 'manifest.json';
   const OVERLAY_ID = 'tm-parser-launcher-overlay';
   const PARSER_FILE_RE = /^[a-z0-9-]+\.js$/;
+
+  const PARSER_GROUPS = [
+    {
+      id: 'products',
+      title: 'Товары',
+      files: [
+        'products-without-attributes.js',
+        'missing-brand.js',
+        'missing-categories.js',
+        'products-without-price.js'
+      ]
+    },
+    {
+      id: 'offers',
+      title: 'Предложения',
+      files: [
+        'price-checker.js',
+        'zero-prices.js',
+        'orphan-attributes.js'
+      ]
+    },
+    {
+      id: 'attributes',
+      title: 'Shade / Volume',
+      files: [
+        'missing-shades.js',
+        'shade-and-volume.js',
+        'sort-volume.js',
+        'volume-checker.js'
+      ]
+    }
+  ];
+
+  const SERVICE_FILES = new Set([
+    'dom-stealer.js'
+  ]);
 
   async function loadText(file) {
     const response = await fetch(`${RAW_BASE}${file}?t=${Date.now()}`, {
@@ -68,7 +104,7 @@
     try {
       const code = await loadText(parser.file);
       executeParser(code, parser.file);
-      console.log(`[Parser Launcher] Запущен: ${parser.name}`);
+      console.log(`[Parser Launcher] Запущен: ${parser.file}`);
       closeLauncher();
     } catch (error) {
       console.error('[Parser Launcher]', error);
@@ -84,7 +120,8 @@
   function createButton(parser, status) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = parser.name;
+    button.textContent = parser.file;
+    button.title = parser.name;
 
     Object.assign(button.style, {
       width: '100%',
@@ -93,14 +130,91 @@
       borderRadius: '4px',
       background: '#212134',
       color: '#ffffff',
-      fontFamily: 'inherit',
-      fontSize: '14px',
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+      fontSize: '13px',
+      lineHeight: '1.35',
       textAlign: 'left',
-      cursor: 'pointer'
+      overflowWrap: 'anywhere',
+      cursor: 'pointer',
+      transition: 'background 120ms ease, border-color 120ms ease'
+    });
+
+    button.addEventListener('mouseenter', () => {
+      button.style.background = '#2b2b45';
+      button.style.borderColor = '#666687';
+    });
+
+    button.addEventListener('mouseleave', () => {
+      button.style.background = '#212134';
+      button.style.borderColor = '#49495f';
     });
 
     button.addEventListener('click', () => runParser(parser, status));
     return button;
+  }
+
+  function createSection(titleText, parsers, status) {
+    const section = document.createElement('section');
+
+    Object.assign(section.style, {
+      minWidth: '0',
+      padding: '14px',
+      border: '1px solid #32324d',
+      borderRadius: '6px',
+      background: '#1e1e2f'
+    });
+
+    const title = document.createElement('div');
+    title.textContent = titleText;
+
+    Object.assign(title.style, {
+      marginBottom: '10px',
+      color: '#c7c7d4',
+      fontSize: '12px',
+      fontWeight: '600',
+      letterSpacing: '0.02em'
+    });
+
+    const list = document.createElement('div');
+    Object.assign(list.style, {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px'
+    });
+
+    for (const parser of parsers) {
+      list.appendChild(createButton(parser, status));
+    }
+
+    section.append(title, list);
+    return section;
+  }
+
+  function splitParsers(parsers) {
+    const byFile = new Map(parsers.map(parser => [parser.file, parser]));
+    const grouped = PARSER_GROUPS.map(group => ({
+      ...group,
+      parsers: group.files
+        .map(file => byFile.get(file))
+        .filter(Boolean)
+    }));
+
+    const knownFiles = new Set(
+      PARSER_GROUPS.flatMap(group => group.files)
+    );
+
+    const service = [];
+
+    for (const parser of parsers) {
+      if (knownFiles.has(parser.file)) continue;
+      if (SERVICE_FILES.has(parser.file)) {
+        service.push(parser);
+        continue;
+      }
+      service.push(parser);
+    }
+
+    return { grouped, service };
   }
 
   async function openLauncher() {
@@ -126,7 +240,9 @@
     const panel = document.createElement('div');
 
     Object.assign(panel.style, {
-      width: 'min(440px, 100%)',
+      width: 'min(1180px, 100%)',
+      maxHeight: 'calc(100vh - 48px)',
+      overflowY: 'auto',
       padding: '20px',
       boxSizing: 'border-box',
       background: '#181826',
@@ -170,12 +286,16 @@
     close.addEventListener('click', closeLauncher);
     header.append(title, close);
 
-    const list = document.createElement('div');
-    Object.assign(list.style, {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '10px'
+    const grid = document.createElement('div');
+    Object.assign(grid.style, {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+      gap: '14px',
+      alignItems: 'start'
     });
+
+    const serviceWrap = document.createElement('div');
+    serviceWrap.style.marginTop = '14px';
 
     const status = document.createElement('div');
     status.textContent = 'Загрузка списка парсеров...';
@@ -186,7 +306,7 @@
       fontSize: '12px'
     });
 
-    panel.append(header, list, status);
+    panel.append(header, grid, serviceWrap, status);
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
 
@@ -200,8 +320,17 @@
       if (!document.body.contains(overlay)) return;
       if (!parsers.length) throw new Error('В manifest.json нет парсеров');
 
-      for (const parser of parsers) {
-        list.appendChild(createButton(parser, status));
+      const { grouped, service } = splitParsers(parsers);
+
+      for (const group of grouped) {
+        if (!group.parsers.length) continue;
+        grid.appendChild(createSection(group.title, group.parsers, status));
+      }
+
+      if (service.length) {
+        serviceWrap.appendChild(
+          createSection('Сервис', service, status)
+        );
       }
 
       status.textContent = 'Alt+P — открыть / закрыть';
