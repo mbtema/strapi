@@ -76,7 +76,7 @@ Loader при открытии Strapi:
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-brand.js` — активные товары без `brand`.
 - `products-without-categories.js` — активные товары без `categories`.
-- `products-with-zero-price.js` — активные товары с предложениями, но без цены `> 0`.
+- `products-with-zero-price.js` — активные товары, у которых хотя бы одно предложение имеет `price = 0`, пустой `price` или дробный `price`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `manifest.json` — список парсеров для Parser Launcher.
 
