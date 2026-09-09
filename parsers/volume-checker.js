@@ -1,6 +1,6 @@
 // ==ConsoleParser==
 // @name         volume-checker
-// @version      1.2
+// @version      1.2.1
 // @description  Выявляет товары с неоднородными единицами измерения volume в торговых предложениях
 // @output       CSV
 // ==/ConsoleParser==
@@ -8,59 +8,29 @@
 (async () => {
   const BASE_URL = '/api/products';
   const PAGE_SIZE = 100;
+  const HEADERS = ['documentId', 'volumes', 'units'];
+  const problematic = new Map();
 
-  function getUnit(name) {
-    if (!name) return '';
+  const getUnit = name => name
+    ? String(name).trim().toUpperCase().replace(/\s+/g, '').replace(/[0-9.,]+/g, '')
+    : '';
 
-    return String(name)
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, '')
-      .replace(/[0-9.,]+/g, '');
-  }
+  const timestamp = () => {
+    const d = new Date();
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+  };
 
-  function getTimestamp() {
-    const now = new Date();
-    const pad = value => String(value).padStart(2, '0');
-
-    return [
-      `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
-      `${pad(now.getHours())}${pad(now.getMinutes())}`
-    ].join('_');
-  }
-
-  function downloadCSV(rows, filename) {
-    const headers = ['documentId', 'volumes', 'units'];
-
-    const escapeValue = value =>
-      `"${String(value ?? '').replace(/"/g, '""')}"`;
-
-    const csv = [
-      headers.join(';'),
-      ...rows.map(row =>
-        headers
-          .map(header => escapeValue(row[header]))
-          .join(';')
-      )
-    ].join('\n');
-
-    const blob = new Blob(
-      ['\uFEFF' + csv],
-      { type: 'text/csv;charset=utf-8;' }
-    );
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-
-    link.href = url;
-    link.download = filename;
-
+  const downloadCSV = (items, filename) => {
+    const q = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const csv = [HEADERS.join(';'), ...items.map(row => HEADERS.map(key => q(row[key])).join(';'))].join('\n');
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }));
+    const link = Object.assign(document.createElement('a'), { href: url, download: filename });
     document.body.appendChild(link);
     link.click();
     link.remove();
-
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
+  };
 
   const params = new URLSearchParams({
     'pagination[pageSize]': String(PAGE_SIZE),
@@ -73,95 +43,47 @@
 
   let page = 1;
   let pageCount = 1;
-  let apiTotal = 0;
-  let totalScanned = 0;
-  let productsWithMultipleVolumes = 0;
-
-  const problematic = new Map();
+  let total = 0;
+  let scanned = 0;
+  let multiVolume = 0;
 
   while (page <= pageCount) {
     params.set('pagination[page]', String(page));
+    const response = await fetch(`${BASE_URL}?${params}`);
+    if (!response.ok) throw new Error(`Ошибка страницы ${page}: ${response.status}`);
 
-    const response = await fetch(
-      `${BASE_URL}?${params.toString()}`
-    );
+    const { data, meta } = await response.json();
+    pageCount = meta.pagination.pageCount;
+    total = meta.pagination.total;
 
-    if (!response.ok) {
-      throw new Error(
-        `Ошибка страницы ${page}: ${response.status}`
-      );
-    }
-
-    const json = await response.json();
-
-    pageCount = json.meta.pagination.pageCount;
-    apiTotal = json.meta.pagination.total;
-
-    for (const product of json.data) {
-      totalScanned++;
-
-      const volumeNames = [];
-
-      for (const attribute of product.attributes ?? []) {
-        const name = attribute?.volume?.name;
-
-        if (
-          name === null ||
-          name === undefined ||
-          String(name).trim() === ''
-        ) {
-          continue;
-        }
-
-        volumeNames.push(name);
-      }
+    for (const product of data) {
+      scanned++;
+      const volumeNames = (product.attributes ?? [])
+        .map(attribute => attribute?.volume?.name)
+        .filter(name => name != null && String(name).trim() !== '');
 
       if (volumeNames.length < 2) continue;
+      multiVolume++;
 
-      productsWithMultipleVolumes++;
+      const units = [...new Set(volumeNames.map(getUnit))];
+      if (units.length < 2) continue;
 
-      const uniqueUnits = [
-        ...new Set(volumeNames.map(getUnit))
-      ];
-
-      if (uniqueUnits.length > 1) {
-        problematic.set(product.documentId, {
-          documentId: product.documentId,
-          volumes: volumeNames.join(' | '),
-          units: uniqueUnits
-            .map(unit => unit || '[БЕЗ ЕДИНИЦЫ]')
-            .join(' | ')
-        });
-      }
+      problematic.set(product.documentId, {
+        documentId: product.documentId,
+        volumes: volumeNames.join(' | '),
+        units: units.map(unit => unit || '[БЕЗ ЕДИНИЦЫ]').join(' | ')
+      });
     }
 
-    if (
-      page === 1 ||
-      page % 25 === 0 ||
-      page === pageCount
-    ) {
-      console.log(
-        `Страница ${page}/${pageCount} | ` +
-        `Проверено: ${totalScanned}/${apiTotal}`
-      );
+    if (page === 1 || page % 25 === 0 || page === pageCount) {
+      console.log(`Страница ${page}/${pageCount} | Проверено: ${scanned}/${total}`);
     }
-
     page++;
   }
 
   const results = [...problematic.values()];
-
   console.table(results);
-  console.log(
-    `Готово: проверено ${totalScanned}, ` +
-    `с 2+ volume ${productsWithMultipleVolumes}, ` +
-    `проблемных ${results.length}`
-  );
-
+  console.log(`Готово: проверено ${scanned}, с 2+ volume ${multiVolume}, проблемных ${results.length}`);
   window.volumeCheckResults = results;
-
-  downloadCSV(
-    results,
-    `products_inconsistent_volume_units_${getTimestamp()}.csv`
-  );
+  downloadCSV(results, `products_inconsistent_volume_units_${timestamp()}.csv`);
 })();
