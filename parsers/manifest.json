@@ -43,7 +43,7 @@
     },
     {
       "name": "Товары с некорректной ценой",
-      "file": "products-with-zero-price.js"
+      "file": "products-with-wrong-prices.js"
     },
     {
       "name": "Копировать DOM страницы",
