@@ -1,7 +1,7 @@
 // ==ConsoleParser==
 // @name         attributes-without-detail-picture
-// @version      1.0.1
-// @description  Ищет предложения активных товаров без detail_picture и приоритизирует их по isInStock
+// @version      1.0.2
+// @description  Ищет предложения активных товаров в наличии без detail_picture
 // @output       CSV
 // ==/ConsoleParser==
 
@@ -16,7 +16,6 @@
     'barcode',
     'name',
     'price',
-    'isInStock',
     'productDocumentId',
     'productName'
   ];
@@ -33,8 +32,6 @@
     : Array.isArray(relation?.data)
       ? relation.data[0] ?? null
       : relation?.data ?? relation ?? null;
-
-  const stockRank = value => value === true ? 0 : value === false ? 1 : 2;
 
   const downloadCSV = (items, filename) => {
     const q = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -62,10 +59,10 @@
     'sort[0]': 'id:asc',
     'filters[product][active][$eq]': 'true',
     'filters[detail_picture][$null]': 'true',
+    'filters[isInStock][$eq]': 'true',
     'fields[0]': 'barcode',
     'fields[1]': 'name',
     'fields[2]': 'price',
-    'fields[3]': 'isInStock',
     'populate[product][fields][0]': 'documentId',
     'populate[product][fields][1]': 'name'
   });
@@ -94,37 +91,20 @@
         barcode: item.barcode ?? '',
         name: item.name ?? '',
         price: item.price ?? '',
-        isInStock: item.isInStock ?? '',
         productDocumentId: product?.documentId ?? '',
         productName: product?.name ?? ''
       };
     }));
 
     if (page === 1 || page % 25 === 0 || page === pageCount) {
-      console.log(`Страница ${page}/${pageCount} | Найдено без detail_picture: ${rows.length}/${total}`);
+      console.log(`Страница ${page}/${pageCount} | Найдено: ${rows.length}/${total}`);
     }
 
     page++;
   }
 
-  rows.sort((a, b) => {
-    const byStock = stockRank(a.isInStock) - stockRank(b.isInStock);
-    if (byStock) return byStock;
-    return String(a.barcode).localeCompare(String(b.barcode));
-  });
-
-  const inStockCount = rows.filter(row => row.isInStock === true).length;
-  const outOfStockCount = rows.filter(row => row.isInStock === false).length;
-  const unknownStockCount = rows.length - inStockCount - outOfStockCount;
-
   console.table(rows);
-  console.log(
-    `Готово: без detail_picture — ${rows.length} | ` +
-    `isInStock=true: ${inStockCount} | ` +
-    `isInStock=false: ${outOfStockCount} | ` +
-    `isInStock не заполнен: ${unknownStockCount}`
-  );
-
+  console.log(`Готово: найдено предложений активных товаров в наличии без detail_picture: ${rows.length}`);
   window.attributesWithoutDetailPicture = rows;
   downloadCSV(rows, `attributes_without_detail_picture_${timestamp()}.csv`);
 })();
