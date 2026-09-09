@@ -19,7 +19,7 @@
     },
     {
       "name": "Предложения без товара",
-      "file": "orphan-attributes.js"
+      "file": "attributes-without-product.js"
     },
     {
       "name": "Товары без предложений",
