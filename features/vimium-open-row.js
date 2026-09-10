@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         vimium-open-row
-// @version      1.1.1
+// @version      1.1.2
 // @description  Делает строки таблиц доступными для Vimium
 // ==/StrapiExtension==
 
@@ -8,7 +8,7 @@
     'use strict';
 
     const ROW_SELECTOR = 'tbody tr';
-    const ADDED_ATTR = 'data-vimium-link-added';
+    const LINK_ATTR = 'data-tm-vimium-row-link';
 
     let scheduled = false;
     const pendingRoots = new Set();
@@ -16,16 +16,15 @@
     function addLink(row) {
         if (!(row instanceof Element)) return;
         if (!row.matches(ROW_SELECTOR)) return;
-        if (row.hasAttribute(ADDED_ATTR)) return;
 
-        const cells = row.querySelectorAll('td');
-        if (!cells.length) return;
-
-        row.setAttribute(ADDED_ATTR, 'true');
+        const firstCell = row.querySelector(':scope > td:first-child');
+        if (!firstCell) return;
+        if (firstCell.querySelector(`a[${LINK_ATTR}]`)) return;
 
         const link = document.createElement('a');
         link.href = '#';
         link.textContent = '↗';
+        link.setAttribute(LINK_ATTR, '');
 
         link.style.cssText = `
             display: inline-flex;
@@ -45,17 +44,16 @@
             row.click();
         });
 
-        cells[0].prepend(link);
+        firstCell.prepend(link);
     }
 
     function processRoot(root) {
         if (!(root instanceof Element)) return;
 
-        addLink(root);
+        const parentRow = root.closest(ROW_SELECTOR);
+        if (parentRow) addLink(parentRow);
 
-        root
-            .querySelectorAll(`${ROW_SELECTOR}:not([${ADDED_ATTR}])`)
-            .forEach(addLink);
+        root.querySelectorAll(ROW_SELECTOR).forEach(addLink);
     }
 
     function flush() {
@@ -96,9 +94,7 @@
             subtree: true
         });
 
-        document
-            .querySelectorAll(`${ROW_SELECTOR}:not([${ADDED_ATTR}])`)
-            .forEach(addLink);
+        document.querySelectorAll(ROW_SELECTOR).forEach(addLink);
     }
 
     start();
