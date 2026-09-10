@@ -1,0 +1,17 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Node/local runtime
+node_modules/
+*.tmp
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Bitrix/Strapi migration artifacts
+**/bitrix_detail_picture_audit_*.csv
+**/*.migration-state.json
+**/*.migration-result_*.csv
