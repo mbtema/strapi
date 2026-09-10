@@ -3,55 +3,68 @@
   "parsers": [
     {
       "name": "Проверка сортировки объемов",
-      "file": "sort-volume.js"
+      "file": "sort-volume.js",
+      "group": "attributes"
     },
     {
       "name": "Проверка единиц объемов",
-      "file": "volume-checker.js"
+      "file": "volume-checker.js",
+      "group": "attributes"
     },
     {
       "name": "Отсутствующие оттенки",
-      "file": "missing-shades.js"
+      "file": "missing-shades.js",
+      "group": "attributes"
     },
     {
       "name": "Предложения с оттенком и объемом",
-      "file": "shade-and-volume.js"
+      "file": "shade-and-volume.js",
+      "group": "attributes"
     },
     {
       "name": "Предложения без товара",
-      "file": "attributes-without-product.js"
+      "file": "attributes-without-product.js",
+      "group": "offers"
     },
     {
       "name": "Предложения без detail_picture",
-      "file": "attributes-without-detail-picture.js"
+      "file": "attributes-without-detail-picture.js",
+      "group": "offers"
     },
     {
       "name": "Товары без предложений",
-      "file": "products-without-attributes.js"
+      "file": "products-without-attributes.js",
+      "group": "products"
     },
     {
       "name": "Товары без бренда",
-      "file": "products-without-brand.js"
+      "file": "products-without-brand.js",
+      "group": "products"
     },
     {
       "name": "Товары без категорий",
-      "file": "products-without-categories.js"
+      "file": "products-without-categories.js",
+      "group": "products"
     },
     {
       "name": "Товары с некорректной ценой",
-      "file": "products-with-wrong-prices.js"
+      "file": "products-with-wrong-prices.js",
+      "group": "products"
     },
     {
       "name": "Товары с незаполненным контентом",
-      "file": "products-with-missing-content.js"
+      "file": "products-with-missing-content.js",
+      "group": "products"
     },
     {
       "name": "Товары с некорректными вариантами предложений",
-      "file": "products-with-wrong-variants.js"
+      "file": "products-with-wrong-variants.js",
+      "group": "products"
     },
     {
       "name": "Копировать DOM страницы",
-      "file": "dom-stealer.js"
+      "file": "dom-stealer.js",
+      "group": "service"
     }
   ]
 }
