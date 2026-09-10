@@ -47,7 +47,7 @@ Loader при открытии Strapi:
 - `barcode-extractor.js` — `Ctrl+B`, копирует barcode из карточки товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Ctrl+Enter`, публикует текущую запись.
 - `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`.
-- `vimium-open-row.js` — делает строки таблиц доступными для Vimium.
+- `vimium-open-row.js` — делает строки таблиц доступными для Vimium; собственная ссылка помечается через `data-tm-*` и восстанавливается после React re-render.
 
 ## UI/UX
 
@@ -81,18 +81,32 @@ Loader при открытии Strapi:
 - `products-with-missing-content.js` — активные товары без одного или нескольких критичных контентных полей: `name1`, `name2`, `detail_picture`, `detail_text`.
 - `products-with-wrong-variants.js` — активные товары с несколькими предложениями, у которых нет единого типа выбора по `shade` или `volume`: отсутствующие relations, смешанный тип или одновременные `shade + volume`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
-- `manifest.json` — список парсеров для Parser Launcher.
+- `manifest.json` — единый список парсеров и их групп для Parser Launcher.
 
-Для нового регулярного парсера достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`.
+Для нового регулярного парсера достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`. Группа задаётся там же через `group`; дублировать список файлов внутри `parser-launcher.js` больше не нужно.
 
-## Bitrix
+Пример:
 
-- `detail-picture-audit.js` — запускается в Bitrix Admin, принимает CSV от `attributes-without-detail-picture`, по barcode находит родительский товар и торговое предложение, проверяет `DETAIL_PICTURE` и автоматически скачивает mapping CSV для последующей миграции в Strapi.
-- `detail-picture-migrator.js` — локальный Node.js migrator: читает audit CSV, берёт только `status=ok`, проверяет exact barcode/documentId, скачивает изображение, загружает его в Strapi, привязывает `detail_picture`, публикует `ru` и проверяет результат через Public API.
-- Migrator сохраняет checkpoint рядом с audit CSV после каждого этапа и продолжает с последней безопасной стадии; неопределённый результат `POST /upload` не повторяется автоматически, чтобы не создавать дубликаты media.
+```json
+{
+  "name": "Товары без категорий",
+  "file": "products-without-categories.js",
+  "group": "products"
+}
+```
+
+Рабочие группы: `products`, `offers`, `attributes`, `service`.
+
+## Bitrix / Migrator
+
+- `migrator/detail-picture-audit.js` — запускается в Bitrix Admin, принимает CSV от `attributes-without-detail-picture`, по barcode находит родительский товар и торговое предложение, проверяет `DETAIL_PICTURE` и автоматически скачивает mapping CSV для последующей миграции в Strapi.
+- `migrator/detail-picture-migrator.js` — локальный Node.js migrator: читает audit CSV, берёт только `status=ok`, находит Strapi attribute сначала по точному `documentId`, затем сверяет barcode, скачивает изображение, загружает его в Strapi, привязывает `detail_picture`, публикует `ru` и проверяет результат через Public API.
+- Migrator сохраняет checkpoint рядом с audit CSV после каждого этапа и продолжает с последней безопасной стадии; неопределённый результат `POST /upload` не повторяется автоматически, чтобы не создавать дубликаты media, а исходная ошибка сохраняется в checkpoint.
 - Audit группирует строки по `productDocumentId`, чтобы не искать один и тот же родительский товар повторно, сохраняет checkpoint в LocalStorage и при повторном запуске с тем же CSV продолжает незавершённый аудит.
 - Статусы audit: `ok`, `no_detail_picture`, `product_not_found`, `offer_not_found`, `duplicate_barcode_in_source`, `missing_barcode`, `error`.
 - Bitrix browser-утилиты не входят в Parser Launcher Strapi и запускаются только на домене Bitrix Admin, где доступна авторизованная сессия. Node migrator запускается локально через Node.js.
+
+Локальные audit/result/checkpoint-файлы и `.env` исключены через `.gitignore`, чтобы временные данные и секреты не попадали в публичный репозиторий случайным `git add`.
 
 ## Postman
 
@@ -138,6 +152,7 @@ GitHub-версии файлов в `promts/` считаются централ�
 
 ```text
 .
+├── .gitignore
 ├── extension/
 │   ├── loader.js
 │   └── manifest.json
