@@ -88,9 +88,11 @@ Loader при открытии Strapi:
 ## Bitrix
 
 - `detail-picture-audit.js` — запускается в Bitrix Admin, принимает CSV от `attributes-without-detail-picture`, по barcode находит родительский товар и торговое предложение, проверяет `DETAIL_PICTURE` и автоматически скачивает mapping CSV для последующей миграции в Strapi.
-- Скрипт группирует строки по `productDocumentId`, чтобы не искать один и тот же родительский товар повторно, сохраняет checkpoint в LocalStorage и при повторном запуске с тем же CSV продолжает незавершённый аудит.
-- Статусы результата: `ok`, `no_detail_picture`, `product_not_found`, `offer_not_found`, `duplicate_barcode_in_source`, `missing_barcode`, `error`.
-- Bitrix-утилиты не входят в Parser Launcher Strapi и запускаются только на домене Bitrix Admin, где доступна авторизованная сессия.
+- `detail-picture-migrator.js` — локальный Node.js migrator: читает audit CSV, берёт только `status=ok`, проверяет exact barcode/documentId, скачивает изображение, загружает его в Strapi, привязывает `detail_picture`, публикует `ru` и проверяет результат через Public API.
+- Migrator сохраняет checkpoint рядом с audit CSV после каждого этапа и продолжает с последней безопасной стадии; неопределённый результат `POST /upload` не повторяется автоматически, чтобы не создавать дубликаты media.
+- Audit группирует строки по `productDocumentId`, чтобы не искать один и тот же родительский товар повторно, сохраняет checkpoint в LocalStorage и при повторном запуске с тем же CSV продолжает незавершённый аудит.
+- Статусы audit: `ok`, `no_detail_picture`, `product_not_found`, `offer_not_found`, `duplicate_barcode_in_source`, `missing_barcode`, `error`.
+- Bitrix browser-утилиты не входят в Parser Launcher Strapi и запускаются только на домене Bitrix Admin, где доступна авторизованная сессия. Node migrator запускается локально через Node.js.
 
 ## Postman
 
@@ -165,7 +167,8 @@ GitHub-версии файлов в `promts/` считаются централ�
 │   ├── sort-volume.js
 │   └── volume-checker.js
 ├── bitrix/
-│   └── detail-picture-audit.js
+│   ├── detail-picture-audit.js
+│   └── detail-picture-migrator.js
 ├── postman/
 │   └── admin-api.json
 ├── promts/
