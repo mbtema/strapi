@@ -12,7 +12,7 @@
 >
 > Политика обновления накопительная: не переписывать этот файл «с нуля» ради сокращения. Точечно обновлять устаревшие факты, добавлять новый устойчивый контекст, а старое удалять только если оно ошибочно, реально бесполезно или полностью дублируется. Полезную устаревшую деталь лучше пометить как historical, чем стирать.
 
-**Последняя сборка контекста:** 2026-09-09  
+**Последняя сборка контекста:** 2026-09-10  
 **Основной репозиторий:** `mbtema/strapi`  
 **Основной Strapi backend:** `http://10.10.3.80:1337`
 
@@ -362,6 +362,7 @@ categoryDebugToken
 
 ```text
 .
+├── .gitignore
 ├── README.md
 ├── extension/
 │   ├── loader.js
@@ -391,8 +392,9 @@ categoryDebugToken
 │   ├── products-without-categories.js
 │   ├── sort-volume.js
 │   └── volume-checker.js
-├── bitrix/
-│   └── detail-picture-audit.js
+├── migrator/
+│   ├── detail-picture-audit.js
+│   └── detail-picture-migrator.js
 ├── postman/
 │   └── admin-api.json
 └── promts/
@@ -406,7 +408,7 @@ categoryDebugToken
 - `features/` — независимые функции/хоткеи;
 - `ui-ux/` — постоянные UI/UX-кастомы Strapi;
 - `parsers/` — массовые проверки и вспомогательные browser parsers;
-- `bitrix/` — утилиты для аудита/миграции данных из Bitrix; не входят в Strapi Parser Launcher;
+- `migrator/` — утилиты для аудита/миграции данных из Bitrix; не входят в Strapi Parser Launcher;
 - `postman/` — API variables/collection;
 - `promts/` — живое централизованное хранилище полного project context и рабочих инструкций.
 
@@ -482,7 +484,7 @@ Loader менять только когда меняется сама инфра
 
 # 11. Актуальный extensions manifest
 
-Snapshot 2026-09-09 (перед изменением всё равно читать актуальный `extension/manifest.json`):
+Snapshot 2026-09-10 (перед изменением всё равно читать актуальный `extension/manifest.json`):
 
 | id | path | version | enabled |
 |---|---|---:|---|
@@ -492,8 +494,8 @@ Snapshot 2026-09-09 (перед изменением всё равно чита�
 | `entry-relocate` | `ui-ux/entry-relocate.js` | `1.4.5` | yes |
 | `barcode-extractor` | `features/barcode-extractor.js` | `1.4.1` | yes |
 | `ctrl-enter-publisher` | `features/ctrl-enter-publisher.js` | `1.1.1` | yes |
-| `parser-launcher` | `features/parser-launcher.js` | `1.4.7` | yes |
-| `vimium-open-row` | `features/vimium-open-row.js` | `1.1.1` | yes |
+| `parser-launcher` | `features/parser-launcher.js` | `1.4.8` | yes |
+| `vimium-open-row` | `features/vimium-open-row.js` | `1.1.2` | yes |
 
 Перед изменением extension:
 
@@ -587,12 +589,14 @@ Snapshot 2026-09-09 (перед изменением всё равно чита�
 
 - `Alt+P`;
 - открывает список parsers из `parsers/manifest.json`;
+- группа parser (`products` / `offers` / `attributes` / `service`) задаётся только в manifest через `group`;
 - загружает parser с GitHub и выполняет его в странице Strapi.
 
 ## `vimium-open-row.js`
 
 - делает строки таблицы доступными/удобными для Vimium navigation;
-- добавляет минимальную ссылку в первую cell;
+- добавляет минимальную ссылку в первую cell с marker `data-tm-vimium-row-link`;
+- наличие проверяется по самой ссылке, а не по marker на `tr`, поэтому React re-render первой cell не блокирует восстановление;
 - работает через MutationObserver + requestAnimationFrame batching.
 
 ## `record-list-scrollbars.js`
@@ -738,23 +742,23 @@ Meta header должен содержать минимум:
 
 ## Parser Launcher manifest — snapshot
 
-Snapshot 2026-09-09:
+Snapshot 2026-09-10:
 
-| Название | Файл | Output |
-|---|---|---|
-| Проверка сортировки объемов | `sort-volume.js` | CSV |
-| Проверка единиц объемов | `volume-checker.js` | CSV |
-| Отсутствующие оттенки | `missing-shades.js` | CSV |
-| Предложения с оттенком и объемом | `shade-and-volume.js` | CSV |
-| Предложения без товара | `attributes-without-product.js` | CSV |
-| Предложения без detail_picture | `attributes-without-detail-picture.js` | CSV |
-| Товары без предложений | `products-without-attributes.js` | CSV |
-| Товары без бренда | `products-without-brand.js` | CSV |
-| Товары без категорий | `products-without-categories.js` | CSV |
-| Товары с некорректной ценой | `products-with-wrong-prices.js` | CSV |
-| Товары с незаполненным контентом | `products-with-missing-content.js` | CSV |
-| Товары с некорректными вариантами предложений | `products-with-wrong-variants.js` | CSV |
-| Копировать DOM страницы | `dom-stealer.js` | Clipboard |
+| Название | Файл | Group | Output |
+|---|---|---|---|
+| Проверка сортировки объемов | `sort-volume.js` | `attributes` | CSV |
+| Проверка единиц объемов | `volume-checker.js` | `attributes` | CSV |
+| Отсутствующие оттенки | `missing-shades.js` | `attributes` | CSV |
+| Предложения с оттенком и объемом | `shade-and-volume.js` | `attributes` | CSV |
+| Предложения без товара | `attributes-without-product.js` | `offers` | CSV |
+| Предложения без detail_picture | `attributes-without-detail-picture.js` | `offers` | CSV |
+| Товары без предложений | `products-without-attributes.js` | `products` | CSV |
+| Товары без бренда | `products-without-brand.js` | `products` | CSV |
+| Товары без категорий | `products-without-categories.js` | `products` | CSV |
+| Товары с некорректной ценой | `products-with-wrong-prices.js` | `products` | CSV |
+| Товары с незаполненным контентом | `products-with-missing-content.js` | `products` | CSV |
+| Товары с некорректными вариантами предложений | `products-with-wrong-variants.js` | `products` | CSV |
+| Копировать DOM страницы | `dom-stealer.js` | `service` | Clipboard |
 
 Назначения и текущие условия:
 
@@ -783,6 +787,8 @@ products-with-wrong-variants
 products-with-missing-content
 ```
 
+`products-without-categories` использовать как контрольный список. Автоматическое назначение `categories` из Bitrix не считать безопасным default workflow: распределение содержит существенную бизнес-логику и исключения, поэтому текущий предпочтительный путь — ручная корректировка в Strapi с повторным запуском parser для контроля остатка.
+
 Текущий offer/attribute health layer:
 
 ```text
@@ -799,7 +805,7 @@ volume-checker
 Для нового регулярного parser:
 
 1. добавить `.js` в `parsers/`;
-2. добавить запись в `parsers/manifest.json`, если он должен появиться в `Alt+P`;
+2. добавить запись в `parsers/manifest.json`, если он должен появиться в `Alt+P`, и там же задать `group`;
 3. убедиться, что parser проходит все API pages;
 4. добавить auto-download CSV;
 5. дать понятное имя CSV;
@@ -1076,12 +1082,12 @@ input[name="SUB_ID[]"]
 
 В строке offer доступны Bitrix offer ID, barcode и, если заполнено, `DETAIL_PICTURE` с `/upload/iblock/...`. Matching конкретного offer выполняется по точному barcode, а не по первому offer родителя.
 
-## 21.2. `bitrix/detail-picture-audit.js`
+## 21.2. `migrator/detail-picture-audit.js`
 
 Repo path:
 
 ```text
-bitrix/detail-picture-audit.js
+migrator/detail-picture-audit.js
 ```
 
 Текущая версия: `1.0.0`. Запускается только в Bitrix Admin, не через Strapi Parser Launcher.
@@ -1123,7 +1129,7 @@ error
 
 ## 21.3. Доказанный `detail_picture` migration pipeline
 
-Связующий ключ текущей миграции — точный `barcode`.
+Cross-system ключ Bitrix ↔ Strapi в этой миграции — точный `barcode`, но внутри Strapi запись определяется по `documentId`, а barcode используется как дополнительная проверка.
 
 Архитектура намеренно двухэтапная:
 
@@ -1146,8 +1152,8 @@ imageUrl → download → Strapi upload → detail_picture → publish ru → ve
 
 Для каждого `status=ok`:
 
-1. Public API находит attribute по точному `barcode`;
-2. требуется ровно один match;
+1. Public API находит attribute по точному `documentId` из audit CSV;
+2. требуется ровно один match, после чего сверяется `barcode`;
 3. если `detail_picture` уже заполнен — skip;
 4. Node скачивает Bitrix image;
 5. upload:
@@ -1197,7 +1203,19 @@ FAILED: 0
 
 7 source images попали в правильные Strapi attributes и были опубликованы; 3 корректно пропущены, потому что `DETAIL_PICTURE` отсутствовал уже в Bitrix.
 
-На момент сборки 2026-09-09 полный Bitrix audit запущен, но финальный mapping/result ещё не зафиксирован в context. Массовый production Node migrator для всего mapping ещё не считается финализированным; в repo зафиксирован audit tool, а Node batch пока доказан тестами.
+Полный Bitrix audit завершён 2026-09-09. Итоговый mapping содержит 3231 строку: `ok=3151`, `no_detail_picture=59`, `product_not_found=11`, `offer_not_found=10`; дублей `barcode` и `documentId` среди результата нет, у всех `status=ok` заполнен `imageUrl`.
+
+Production migration завершена 2026-09-10: из 3151 `status=ok` автоматически обработано `success=3139`, ещё `already_filled=7`; 5 строк остановились из-за бизнес-специфичных дублей barcode в Strapi и сознательно оставлены на ручную точечную корректировку. Массовых/системных ошибок pipeline не выявлено.
+
+В repo добавлен production migrator:
+
+```text
+migrator/detail-picture-migrator.js
+```
+
+Текущая версия: `1.0.1`. Он читает audit CSV, обрабатывает только `status=ok`, находит Strapi attribute documentId-first, сверяет barcode и наличие `detail_picture`, затем выполняет download → upload → partial PUT → publish `ru` → verify.
+
+Migrator хранит рядом с audit CSV checkpoint `*.migration-state.json` и итоговый `*.migration-result_*.csv`. Checkpoint фиксируется после каждого side effect, включая полный media object сразу после upload, чтобы при падении между upload и PUT/publish повторный запуск продолжал с последней безопасной стадии и не создавал дубликат media. Неопределённый результат upload (network/5xx после POST) переводится в `upload_uncertain`, не повторяется автоматически и сохраняет исходную ошибку. Эти локальные audit/result/checkpoint-файлы исключены через `.gitignore`.
 
 ## 21.4. Node.js / PowerShell в этом workflow
 
