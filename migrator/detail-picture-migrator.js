@@ -1,6 +1,6 @@
 // ==NodeMigrator==
 // @name         bitrix-detail-picture-migrator
-// @version      1.0.0
+// @version      1.0.1
 // @description  Переносит DETAIL_PICTURE из Bitrix audit CSV в Strapi attributes
 // @input        bitrix_detail_picture_audit_*.csv
 // @output       checkpoint JSON + migration result CSV
@@ -14,7 +14,7 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const BASE_URL = (process.env.STRAPI_BASE_URL || 'http://10.10.3.80:1337').replace(/\/$/, '');
 const LOCALE = process.env.STRAPI_LOCALE || 'ru';
 const JWT = process.env.STRAPI_JWT || '';
@@ -205,9 +205,9 @@ async function fetchSafe(url, options = {}, { retries = 2, label = 'request' } =
   throw lastError;
 }
 
-async function findAttributeByBarcode(barcode) {
+async function findAttributeByDocumentId(row) {
   const params = new URLSearchParams({
-    'filters[barcode][$eq]': barcode,
+    'filters[documentId][$eq]': row.documentId,
     'pagination[pageSize]': '2',
     'fields[0]': 'documentId',
     'fields[1]': 'barcode',
@@ -218,15 +218,23 @@ async function findAttributeByBarcode(barcode) {
   const response = await fetchSafe(
     `${BASE_URL}/api/attributes?${params}`,
     { headers: { Accept: 'application/json' } },
-    { retries: 3, label: `attribute ${barcode}` }
+    { retries: 3, label: `attribute ${row.documentId}` }
   );
   const { json } = await readBody(response);
   const data = Array.isArray(json?.data) ? json.data.map(unwrapItem) : [];
 
   if (data.length !== 1) {
-    throw new Error(`barcode ${barcode}: ожидался 1 attribute, найдено ${data.length}`);
+    throw new Error(`documentId ${row.documentId}: ожидался 1 attribute, найдено ${data.length}`);
   }
-  return data[0];
+
+  const item = data[0];
+  if (String(item.barcode || '') !== row.barcode) {
+    throw new Error(
+      `documentId ${row.documentId}: barcode Strapi ${item.barcode || '[empty]'} != audit ${row.barcode}`
+    );
+  }
+
+  return item;
 }
 
 function extensionFromContentType(contentType) {
@@ -363,7 +371,7 @@ async function verifyPublished(row) {
   let lastError = '';
   for (let attempt = 1; attempt <= VERIFY_ATTEMPTS; attempt++) {
     try {
-      const item = await findAttributeByBarcode(row.barcode);
+      const item = await findAttributeByDocumentId(row);
       if (String(item.documentId || '') !== row.documentId) {
         throw new Error(`verify ${row.barcode}: documentId ${item.documentId} != audit ${row.documentId}`);
       }
@@ -495,19 +503,22 @@ function writeResultCsv(auditHeaders, rows, state, outputPath) {
 }
 
 async function processRow(row, itemState, statePath, state) {
+  if (itemState.stage === 'upload_uncertain') {
+    const reason = itemState.error ? ` Причина: ${itemState.error}` : '';
+    throw new Error(
+      `предыдущий upload имеет неопределённый результат; строка заблокирована от автоматического повтора.${reason}`
+    );
+  }
+
+  if (itemState.stage === 'success' || itemState.stage === 'already_filled') return itemState.stage;
+
   itemState.attempts = (itemState.attempts || 0) + 1;
   itemState.error = '';
   itemState.updatedAt = new Date().toISOString();
   saveState(statePath, state);
 
-  if (itemState.stage === 'upload_uncertain') {
-    throw new Error('предыдущий upload имеет неопределённый результат; строка заблокирована от автоматического повтора');
-  }
-
-  if (itemState.stage === 'success' || itemState.stage === 'already_filled') return itemState.stage;
-
   if (itemState.stage === 'pending') {
-    const current = await findAttributeByBarcode(row.barcode);
+    const current = await findAttributeByDocumentId(row);
     if (String(current.documentId || '') !== row.documentId) {
       throw new Error(`barcode ${row.barcode}: Strapi documentId ${current.documentId} != audit ${row.documentId}`);
     }
