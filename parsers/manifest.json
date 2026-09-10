@@ -47,6 +47,11 @@
       "group": "products"
     },
     {
+      "name": "Товары с одинаковым bitrix_id",
+      "file": "products-with-duplicate-bitrix-id.js",
+      "group": "products"
+    },
+    {
       "name": "Товары с некорректной ценой",
       "file": "products-with-wrong-prices.js",
       "group": "products"
