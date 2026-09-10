@@ -8,7 +8,7 @@
 | [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
-| [`bitrix/`](./bitrix) | Утилиты для аудита и миграции данных из Bitrix |
+| [`migrator/`](./migrator) | Утилиты для аудита и миграции данных из Bitrix |
 | [`postman/`](./postman) | Postman collection с общими variables и API paths |
 | [`promts/`](./promts) | Централизованное хранилище Project Instructions и полного project context |
 
@@ -166,7 +166,7 @@ GitHub-версии файлов в `promts/` считаются централ�
 │   ├── products-with-wrong-prices.js
 │   ├── sort-volume.js
 │   └── volume-checker.js
-├── bitrix/
+├── migrator/
 │   ├── detail-picture-audit.js
 │   └── detail-picture-migrator.js
 ├── postman/
