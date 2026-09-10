@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         parser-launcher
-// @version      1.4.7
+// @version      1.4.8
 // @description  Запускает парсеры из GitHub по Alt+P
 // ==/StrapiExtension==
 
@@ -15,41 +15,12 @@
   const PARSER_FILE_RE = /^[a-z0-9-]+\.js$/;
 
   const PARSER_GROUPS = [
-    {
-      id: 'products',
-      title: 'Товары',
-      files: [
-        'products-without-attributes.js',
-        'products-without-brand.js',
-        'products-without-categories.js',
-        'products-with-wrong-prices.js',
-        'products-with-missing-content.js',
-        'products-with-wrong-variants.js'
-      ]
-    },
-    {
-      id: 'offers',
-      title: 'Предложения',
-      files: [
-        'attributes-without-product.js',
-        'attributes-without-detail-picture.js'
-      ]
-    },
-    {
-      id: 'attributes',
-      title: 'Shade / Volume',
-      files: [
-        'missing-shades.js',
-        'shade-and-volume.js',
-        'sort-volume.js',
-        'volume-checker.js'
-      ]
-    }
+    { id: 'products', title: 'Товары' },
+    { id: 'offers', title: 'Предложения' },
+    { id: 'attributes', title: 'Shade / Volume' }
   ];
 
-  const SERVICE_FILES = new Set([
-    'dom-stealer.js'
-  ]);
+  const KNOWN_GROUP_IDS = new Set(PARSER_GROUPS.map(group => group.id));
 
   async function loadText(file) {
     const response = await fetch(`${RAW_BASE}${file}?t=${Date.now()}`, {
@@ -83,7 +54,8 @@
       )
       .map(parser => ({
         name: parser.name.trim(),
-        file: parser.file.trim()
+        file: parser.file.trim(),
+        group: String(parser.group || 'service').trim().toLowerCase()
       }))
       .filter(parser =>
         parser.name.length > 0 &&
@@ -192,28 +164,14 @@
   }
 
   function splitParsers(parsers) {
-    const byFile = new Map(parsers.map(parser => [parser.file, parser]));
     const grouped = PARSER_GROUPS.map(group => ({
       ...group,
-      parsers: group.files
-        .map(file => byFile.get(file))
-        .filter(Boolean)
+      parsers: parsers.filter(parser => parser.group === group.id)
     }));
 
-    const knownFiles = new Set(
-      PARSER_GROUPS.flatMap(group => group.files)
+    const service = parsers.filter(parser =>
+      parser.group === 'service' || !KNOWN_GROUP_IDS.has(parser.group)
     );
-
-    const service = [];
-
-    for (const parser of parsers) {
-      if (knownFiles.has(parser.file)) continue;
-      if (SERVICE_FILES.has(parser.file)) {
-        service.push(parser);
-        continue;
-      }
-      service.push(parser);
-    }
 
     return { grouped, service };
   }
