@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         sidebar
-// @version      2.2.1
+// @version      2.2.2
 // @description  Единый UI/UX sidebar: навигация, Alt+S, поиск, группы, иконки и future-safe fallback
 // ==/StrapiExtension==
 
@@ -179,7 +179,7 @@
         GROUPS.map(group => [group.id, group.collapsed])
     );
 
-    let hidden = true;
+    let hidden = false;
     let sidebar = null;
     let collectionList = null;
     let singleSourceList = null;
