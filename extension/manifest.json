@@ -26,6 +26,12 @@
       "enabled": true
     },
     {
+      "id": "product-attributes-navigator",
+      "path": "ui-ux/product-attributes-navigator.js",
+      "version": "1.0.0",
+      "enabled": true
+    },
+    {
       "id": "barcode-extractor",
       "path": "features/barcode-extractor.js",
       "version": "1.4.1",
