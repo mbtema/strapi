@@ -1,4 +1,4 @@
-Набор рабочих инструментов для админки Strapi и миграции контента: постоянные extensions, UI/UX-кастомы, парсеры, Bitrix-утилиты, Postman и централизованный контекст проекта.
+Набор рабочих инструментов для админки Strapi и миграции контента: постоянные extensions, UI/UX-кастомы, парсеры, Bitrix-утилиты, Postman и backup/sync snapshot Project Instructions и project context.
 
 ## Структура
 
@@ -10,7 +10,7 @@
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
 | [`migrator/`](./migrator) | Утилиты для аудита и миграции данных из Bitrix |
 | [`postman/`](./postman) | Postman collection с общими variables и API paths |
-| [`promts/`](./promts) | Централизованное хранилище Project Instructions и полного project context |
+| [`promts/`](./promts) | Backup/sync snapshot Project Instructions и project context; не используется как рабочий source of truth проекта |
 
 ## Extension loader
 
@@ -35,7 +35,7 @@ Loader при открытии Strapi:
 {
   "id": "sidebar",
   "path": "ui-ux/sidebar.js",
-  "version": "2.2.1",
+  "version": "2.2.3",
   "enabled": true
 }
 ```
@@ -51,10 +51,11 @@ Loader при открытии Strapi:
 
 ## UI/UX
 
-- `sidebar.js` — единый sidebar-модуль: скрытие/показ по `Alt+S`, поиск, быстрый доступ, группы Collection Types/Single Types, active state, минималистичные иконки, future-safe fallback для новых коллекций и очистка глобальной левой навигации.
-- `record-list-scrollbars.js` — визуально скрывает scrollbar в списке записей Content Manager, сохраняя прокрутку.
+- `sidebar.js` — единый sidebar-модуль: sidebar видим по умолчанию, `Alt+S` плавно скрывает/показывает его; поиск, быстрый доступ, группы Collection Types/Single Types, active state, минималистичные иконки, future-safe fallback для новых коллекций и очистка глобальной левой навигации.
+- `record-list-scrollbars.js` — визуально скрывает scrollbar/overflow decoration в списке записей Content Manager, сохраняя прокрутку.
 - `list-view.js` — доработки list view Content Manager.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
+- `product-attributes-navigator.js` — навигация по торговым предложениям в карточке товара: автоматически загружает все relation `attributes`, даёт поиск по `name_web`/barcode, пагинацию по 10 записей и прямой переход в карточку предложения. Режим «Управление связями» раскрывает штатный Strapi relation list, автоматически догружает весь список через `Load More` и увеличивает его viewport до 540 px для reorder/remove.
 
 ## Версионирование
 
@@ -77,6 +78,7 @@ Loader при открытии Strapi:
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-brand.js` — активные товары без `brand`.
 - `products-without-categories.js` — активные товары без `categories`.
+- `products-with-duplicate-bitrix-id.js` — товары с одинаковым `bitrix_id` для контроля дублей после миграции.
 - `products-with-wrong-prices.js` — активные товары, у которых хотя бы одно предложение имеет `price = 0`, пустой `price` или дробный `price`.
 - `products-with-missing-content.js` — активные товары без одного или нескольких критичных контентных полей: `name1`, `name2`, `detail_picture`, `detail_text`.
 - `products-with-wrong-variants.js` — активные товары с несколькими предложениями, у которых нет единого типа выбора по `shade` или `volume`: отсутствующие relations, смешанный тип или одновременные `shade + volume`.
@@ -139,14 +141,14 @@ Loader при открытии Strapi:
 
 ## Promts / project context
 
-`promts/` — живое централизованное хранилище контекста, а не архив.
+`promts/` не участвует в runtime и не является рабочим source of truth для ChatGPT Project. Это backup/sync snapshot двух файлов, которые пользователь хранит и использует непосредственно в Project ChatGPT.
 
-- `promts/project-context.md` — полный рабочий контекст: архитектура, endpoints, ограничения, принятые решения, структура repo, исторические кейсы и рабочие паттерны.
-- `promts/project-instructions.md` — правила совместной работы: формат ответов, приоритеты, подход к Strapi/API/GitHub/парсерам/ТЗ.
+- `promts/project-context.md` — snapshot текущего knowledge layer: архитектура, endpoints, ограничения, принятые решения, структура repo, исторические кейсы и рабочие паттерны.
+- `promts/project-instructions.md` — snapshot operational layer: формат ответов, приоритеты и правила работы со Strapi/API/GitHub/парсерами/ТЗ.
 
-После существенных изменений архитектуры, workflow или накопления нового важного контекста эти файлы нужно синхронизировать. При изменении структуры/назначения репозитория одновременно обновляется README.
+Обычная работа ведётся из Project Instructions и `project-context.md`, загруженных в Project. К `promts/*` обращаются только для синхронизации/сравнения по прямой задаче. Сначала обновляется рабочая модель Project, затем её копия сохраняется в `promts/`.
 
-GitHub-версии файлов в `promts/` считаются централизованным source of truth; пользователь периодически копирует их в Project ChatGPT, чтобы контекст проекта оставался свежим.
+При изменении структуры/назначения репозитория одновременно актуализируется README.
 
 ## Дерево
 
@@ -165,6 +167,7 @@ GitHub-версии файлов в `promts/` считаются централ�
 │   ├── sidebar.js
 │   ├── entry-relocate.js
 │   ├── list-view.js
+│   ├── product-attributes-navigator.js
 │   └── record-list-scrollbars.js
 ├── parsers/
 │   ├── manifest.json
@@ -173,6 +176,7 @@ GitHub-версии файлов в `promts/` считаются централ�
 │   ├── dom-stealer.js
 │   ├── missing-shades.js
 │   ├── shade-and-volume.js
+│   ├── products-with-duplicate-bitrix-id.js
 │   ├── products-with-missing-content.js
 │   ├── products-with-wrong-variants.js
 │   ├── products-without-attributes.js
