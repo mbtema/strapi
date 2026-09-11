@@ -10,7 +10,7 @@
     {
       "id": "record-list-scrollbars",
       "path": "ui-ux/record-list-scrollbars.js",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "enabled": true
     },
     {
