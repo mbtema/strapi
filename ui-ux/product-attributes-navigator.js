@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         product-attributes-navigator
-// @version      1.0.0
+// @version      1.0.1
 // @description  Навигация по торговым предложениям в карточке товара: все relations, поиск, пагинация и прямой переход
 // ==/StrapiExtension==
 
@@ -18,9 +18,11 @@
     const FIELD_SELECTOR = 'input[type="relation"][name="attributes"]';
     const API_PAGE_SIZE = 100;
     const UI_PAGE_SIZE = 10;
+    const RELOAD_DELAY = 500;
 
     let state = null;
     let frameScheduled = false;
+    let reloadTimer = null;
 
     function ensureStyle() {
         if (document.getElementById(STYLE_ID)) return;
@@ -32,8 +34,13 @@
                 display: flex;
                 flex-direction: column;
                 gap: 10px;
+                align-self: flex-start;
+                width: 100%;
+                min-height: 0 !important;
+                height: fit-content !important;
+                box-sizing: border-box;
                 margin-top: 10px;
-                padding: 12px;
+                padding: 12px 12px 8px;
                 border: 1px solid #3f3f5f;
                 border-radius: 8px;
                 background: #181826;
@@ -50,11 +57,13 @@
 
             [${ROOT_ATTR}] .tm-pan-footer {
                 justify-content: space-between;
+                min-height: 32px;
+                margin: 0;
+                padding: 0;
             }
 
             [${ROOT_ATTR}] .tm-pan-search {
-                flex: 1 1 280px;
-                min-width: 180px;
+                width: 100%;
                 height: 36px;
                 box-sizing: border-box;
                 padding: 8px 10px;
@@ -68,6 +77,7 @@
             }
 
             [${ROOT_ATTR}] .tm-pan-search::placeholder { color: #8e8ea9; }
+
             [${ROOT_ATTR}] .tm-pan-search:focus {
                 border-color: #7b79ff;
                 box-shadow: 0 0 0 2px rgba(123, 121, 255, .18);
@@ -172,6 +182,11 @@
 
             [${ROOT_ATTR}] .tm-pan-error { color: #ee5e52; }
 
+            [${ROOT_ATTR}] .tm-pan-manage {
+                align-self: flex-start;
+                margin-top: 2px;
+            }
+
             [${ROOT_ATTR}]:not([${MANAGE_ATTR}]) [${NATIVE_ATTR}] {
                 display: none !important;
             }
@@ -188,6 +203,7 @@
         const match = location.pathname.match(
             /\/admin\/content-manager\/collection-types\/api::product\.product\/([^/?#]+)/
         );
+
         if (!match) return null;
 
         const params = new URLSearchParams(location.search);
@@ -204,7 +220,12 @@
     function getToken() {
         const raw = localStorage.getItem('jwtToken');
         if (!raw) return '';
-        try { return JSON.parse(raw); } catch { return raw; }
+
+        try {
+            return JSON.parse(raw);
+        } catch {
+            return raw;
+        }
     }
 
     function findRoot(input) {
@@ -212,6 +233,7 @@
 
         while (node?.parentElement) {
             node = node.parentElement;
+
             if (node.querySelector?.(FIELD_SELECTOR) !== input) continue;
 
             const label = input.id
@@ -236,6 +258,7 @@
 
         const loadMore = [...root.querySelectorAll('button')]
             .find(button => /load more/i.test(button.textContent || ''));
+
         const listContainer = nativeListContainer(root);
 
         if (loadMore) loadMore.setAttribute(NATIVE_ATTR, '');
@@ -244,8 +267,10 @@
 
     function el(tag, className, text) {
         const node = document.createElement(tag);
+
         if (className) node.className = className;
         if (text != null) node.textContent = text;
+
         return node;
     }
 
@@ -253,19 +278,10 @@
         const panel = el('div');
         panel.setAttribute(PANEL_ATTR, '');
 
-        const toolbar = el('div', 'tm-pan-toolbar');
         const search = el('input', 'tm-pan-search');
         search.type = 'search';
-        search.placeholder = 'Поиск по barcode / name_web…';
+        search.placeholder = 'Поиск';
         search.autocomplete = 'off';
-
-        const refresh = el('button', 'tm-pan-button', 'Обновить');
-        refresh.type = 'button';
-
-        const manage = el('button', 'tm-pan-button', 'Управление связями');
-        manage.type = 'button';
-
-        toolbar.append(search, refresh, manage);
 
         const meta = el('div', 'tm-pan-meta');
         const list = el('div', 'tm-pan-list');
@@ -273,10 +289,22 @@
         const range = el('div', 'tm-pan-meta');
         const pages = el('div', 'tm-pan-pages');
 
-        footer.append(range, pages);
-        panel.append(toolbar, meta, list, footer);
+        const manage = el('button', 'tm-pan-button tm-pan-manage', 'Управление связями');
+        manage.type = 'button';
 
-        return { panel, search, refresh, manage, meta, list, footer, range, pages };
+        footer.append(range, pages);
+        panel.append(search, meta, list, footer, manage);
+
+        return {
+            panel,
+            search,
+            manage,
+            meta,
+            list,
+            footer,
+            range,
+            pages
+        };
     }
 
     function filteredItems(current) {
@@ -294,10 +322,13 @@
     }
 
     function visiblePages(page, count) {
-        if (count <= 7) return Array.from({ length: count }, (_, i) => i + 1);
+        if (count <= 7) {
+            return Array.from({ length: count }, (_, index) => index + 1);
+        }
 
-        const set = new Set([1, count, page - 1, page, page + 1]);
-        return [...set]
+        const pages = new Set([1, count, page - 1, page, page + 1]);
+
+        return [...pages]
             .filter(value => value >= 1 && value <= count)
             .sort((a, b) => a - b);
     }
@@ -306,11 +337,15 @@
         const params = new URLSearchParams();
         params.set('plugins[i18n][locale]', item.locale || locale);
 
-        return `/admin/content-manager/collection-types/${ATTRIBUTE_UID}/${encodeURIComponent(item.documentId)}?${params}`;
+        return (
+            `/admin/content-manager/collection-types/${ATTRIBUTE_UID}/` +
+            `${encodeURIComponent(item.documentId)}?${params}`
+        );
     }
 
     function renderPagination(current, total) {
         const count = pageCount(total);
+
         current.page = Math.min(Math.max(1, current.page), count);
         current.ui.pages.replaceChildren();
 
@@ -319,12 +354,14 @@
         previous.disabled = current.page <= 1;
         previous.title = 'Предыдущая страница';
         previous.addEventListener('click', () => {
-            current.page--;
+            current.page -= 1;
             render(current);
         });
+
         current.ui.pages.appendChild(previous);
 
         let last = 0;
+
         for (const page of visiblePages(current.page, count)) {
             if (last && page - last > 1) {
                 current.ui.pages.appendChild(el('span', 'tm-pan-meta', '…'));
@@ -333,10 +370,12 @@
             const button = el('button', 'tm-pan-page', String(page));
             button.type = 'button';
             button.dataset.active = String(page === current.page);
+
             button.addEventListener('click', () => {
                 current.page = page;
                 render(current);
             });
+
             current.ui.pages.appendChild(button);
             last = page;
         }
@@ -346,9 +385,10 @@
         next.disabled = current.page >= count;
         next.title = 'Следующая страница';
         next.addEventListener('click', () => {
-            current.page++;
+            current.page += 1;
             render(current);
         });
+
         current.ui.pages.appendChild(next);
     }
 
@@ -356,25 +396,29 @@
         if (!current || current !== state) return;
 
         const { ui } = current;
-        ui.refresh.disabled = current.loading;
         ui.search.disabled = current.loading && !current.items.length;
 
         if (current.loading && !current.items.length) {
             ui.meta.textContent = 'Загружаю все торговые предложения…';
-            ui.list.replaceChildren(el('div', 'tm-pan-loading', 'Загрузка…'));
+            ui.list.replaceChildren(
+                el('div', 'tm-pan-loading', 'Загрузка…')
+            );
             ui.footer.hidden = true;
             return;
         }
 
         if (current.error) {
             ui.meta.textContent = '';
-            ui.list.replaceChildren(el('div', 'tm-pan-error', current.error));
+            ui.list.replaceChildren(
+                el('div', 'tm-pan-error', current.error)
+            );
             ui.footer.hidden = true;
             return;
         }
 
         const filtered = filteredItems(current);
         const count = pageCount(filtered.length);
+
         current.page = Math.min(Math.max(1, current.page), count);
 
         const start = (current.page - 1) * UI_PAGE_SIZE;
@@ -387,13 +431,17 @@
         ui.list.replaceChildren();
 
         if (!pageItems.length) {
-            ui.list.appendChild(el('div', 'tm-pan-empty', 'Ничего не найдено'));
+            ui.list.appendChild(
+                el('div', 'tm-pan-empty', 'Ничего не найдено')
+            );
         } else {
             for (const item of pageItems) {
                 const row = el('div', 'tm-pan-row');
-                const link = el('a', 'tm-pan-link', item.name_web || item.documentId);
+                const label = item.name_web || item.documentId;
+                const link = el('a', 'tm-pan-link', label);
+
                 link.href = attributeUrl(item, current.context.locale);
-                link.title = item.name_web || item.documentId;
+                link.title = label;
 
                 const status = el(
                     'span',
@@ -408,6 +456,7 @@
 
         const from = filtered.length ? start + 1 : 0;
         const to = Math.min(start + UI_PAGE_SIZE, filtered.length);
+
         ui.range.textContent = `Показано ${from}–${to} из ${filtered.length}`;
         renderPagination(current, filtered.length);
         ui.footer.hidden = false;
@@ -422,10 +471,14 @@
 
         const headers = { Accept: 'application/json' };
         const token = getToken();
-        if (token) headers.Authorization = `Bearer ${token}`;
+
+        if (token) {
+            headers.Authorization = `Bearer ${token}`;
+        }
 
         const response = await fetch(
-            `/content-manager/relations/${PRODUCT_UID}/${encodeURIComponent(context.productDocumentId)}/attributes?${params}`,
+            `/content-manager/relations/${PRODUCT_UID}/` +
+            `${encodeURIComponent(context.productDocumentId)}/attributes?${params}`,
             {
                 method: 'GET',
                 headers,
@@ -435,7 +488,9 @@
         );
 
         if (!response.ok) {
-            throw new Error(`Relations API: ${response.status} ${response.statusText}`);
+            throw new Error(
+                `Relations API: ${response.status} ${response.statusText}`
+            );
         }
 
         return response.json();
@@ -451,13 +506,28 @@
         render(current);
 
         try {
-            const first = await fetchRelations(current.context, 1, current.abortController.signal);
-            let items = Array.isArray(first.results) ? [...first.results] : [];
+            const first = await fetchRelations(
+                current.context,
+                1,
+                current.abortController.signal
+            );
+
+            let items = Array.isArray(first.results)
+                ? [...first.results]
+                : [];
+
             const count = Number(first.pagination?.pageCount || 1);
 
-            for (let page = 2; page <= count; page++) {
-                const next = await fetchRelations(current.context, page, current.abortController.signal);
-                if (Array.isArray(next.results)) items.push(...next.results);
+            for (let page = 2; page <= count; page += 1) {
+                const next = await fetchRelations(
+                    current.context,
+                    page,
+                    current.abortController.signal
+                );
+
+                if (Array.isArray(next.results)) {
+                    items.push(...next.results);
+                }
             }
 
             if (current !== state) return;
@@ -466,7 +536,11 @@
             current.page = 1;
         } catch (error) {
             if (error?.name === 'AbortError' || current !== state) return;
-            current.error = error?.message || 'Не удалось загрузить relations';
+
+            current.error =
+                error?.message ||
+                'Не удалось загрузить торговые предложения';
+
             console.warn('[product-attributes-navigator]', error);
         } finally {
             if (current === state) {
@@ -476,6 +550,18 @@
         }
     }
 
+    function scheduleReload(current) {
+        if (!current || current !== state) return;
+
+        clearTimeout(reloadTimer);
+
+        reloadTimer = setTimeout(() => {
+            if (current === state) {
+                loadAll(current);
+            }
+        }, RELOAD_DELAY);
+    }
+
     function bind(current) {
         current.ui.search.addEventListener('input', () => {
             current.query = current.ui.search.value;
@@ -483,34 +569,42 @@
             render(current);
         });
 
-        current.ui.refresh.addEventListener('click', () => loadAll(current));
-
         current.ui.manage.addEventListener('click', () => {
             const open = current.root.hasAttribute(MANAGE_ATTR);
+
             current.root.toggleAttribute(MANAGE_ATTR, !open);
-            current.ui.manage.textContent = open ? 'Управление связями' : 'Скрыть управление';
+            current.ui.manage.textContent = open
+                ? 'Управление связями'
+                : 'Скрыть управление';
         });
     }
 
     function destroy() {
+        clearTimeout(reloadTimer);
+        reloadTimer = null;
+
         if (!state) return;
 
         state.abortController?.abort();
         state.root?.removeAttribute(ROOT_ATTR);
         state.root?.removeAttribute(MANAGE_ATTR);
+
         state.root?.querySelectorAll(`[${NATIVE_ATTR}]`).forEach(element => {
             element.removeAttribute(NATIVE_ATTR);
         });
+
         state.ui?.panel?.remove();
         state = null;
     }
 
     function createState(context, input, root) {
         const ui = createPanel();
+
         root.setAttribute(ROOT_ATTR, '');
         markNative(root);
 
         const listContainer = nativeListContainer(root);
+
         if (listContainer?.parentElement) {
             listContainer.insertAdjacentElement('beforebegin', ui.panel);
         } else {
@@ -538,6 +632,7 @@
         ensureStyle();
 
         const context = getContext();
+
         if (!context) {
             destroy();
             return;
@@ -547,8 +642,11 @@
         if (!input) return;
 
         const root = findRoot(input);
+
         if (!root) {
-            console.warn('[product-attributes-navigator] attributes relation root not found');
+            console.warn(
+                '[product-attributes-navigator] attributes relation root not found'
+            );
             return;
         }
 
@@ -570,6 +668,7 @@
 
     function scheduleApply() {
         if (frameScheduled) return;
+
         frameScheduled = true;
 
         requestAnimationFrame(() => {
@@ -584,14 +683,49 @@
         if (!state) {
             return [...mutation.addedNodes].some(node =>
                 node instanceof Element &&
-                (node.matches?.(FIELD_SELECTOR) || node.querySelector?.(FIELD_SELECTOR))
+                (
+                    node.matches?.(FIELD_SELECTOR) ||
+                    node.querySelector?.(FIELD_SELECTOR)
+                )
             );
         }
 
-        if (!document.contains(state.input) || !document.contains(state.root)) return true;
-        if (state.ui?.panel?.contains(mutation.target)) return false;
+        if (
+            !document.contains(state.input) ||
+            !document.contains(state.root)
+        ) {
+            return true;
+        }
 
-        return mutation.target === state.root || state.root.contains(mutation.target);
+        if (state.ui?.panel?.contains(mutation.target)) {
+            return false;
+        }
+
+        const native = nativeListContainer(state.root);
+
+        if (
+            state.root.hasAttribute(MANAGE_ATTR) &&
+            native &&
+            (
+                mutation.target === native ||
+                native.contains(mutation.target) ||
+                [...mutation.addedNodes].some(node =>
+                    node instanceof Element &&
+                    (
+                        node === native ||
+                        native.contains(node) ||
+                        node.contains?.(native)
+                    )
+                )
+            )
+        ) {
+            scheduleReload(state);
+        }
+
+        return (
+            mutation.target === state.root ||
+            state.root.contains(mutation.target)
+        );
     }
 
     function start() {
@@ -603,7 +737,9 @@
         ensureStyle();
 
         const observer = new MutationObserver(mutations => {
-            if (mutations.some(relevantMutation)) scheduleApply();
+            if (mutations.some(relevantMutation)) {
+                scheduleApply();
+            }
         });
 
         observer.observe(document.documentElement, {
