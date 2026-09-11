@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         sidebar
-// @version      2.2.2
+// @version      2.2.3
 // @description  Единый UI/UX sidebar: навигация, Alt+S, поиск, группы, иконки и future-safe fallback
 // ==/StrapiExtension==
 
@@ -26,6 +26,8 @@
     const GROUP_ITEM_ATTR = 'data-tm-sidebar-group-item';
     const QUICK_ATTR = 'data-tm-sidebar-quick';
     const ICON_ATTR = 'data-tm-sidebar-icon';
+    const COLLAPSED_ATTR = 'data-tm-sidebar-collapsed';
+    const LAYOUT_ATTR = 'data-tm-sidebar-layout';
 
     const SIDEBAR_SELECTOR = 'nav[aria-label="Content Manager"]';
     const COLLECTION_LINK_SELECTOR = 'a[href*="/admin/content-manager/collection-types/"]';
@@ -249,10 +251,40 @@
                 display: none !important;
             }
 
+            [${LAYOUT_ATTR}] {
+                transition: grid-template-columns 180ms cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+            }
+
             [${CLEANUP_ATTR}] {
                 width: 320px !important;
                 min-width: 320px !important;
                 max-width: 320px !important;
+                opacity: 1;
+                transform: translateX(0);
+                transition:
+                    width 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                    min-width 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                    max-width 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                    opacity 140ms ease,
+                    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+                will-change: width, opacity, transform;
+            }
+
+            [${CLEANUP_ATTR}][${COLLAPSED_ATTR}] {
+                width: 0 !important;
+                min-width: 0 !important;
+                max-width: 0 !important;
+                opacity: 0 !important;
+                transform: translateX(-12px);
+                overflow: hidden !important;
+                pointer-events: none !important;
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+                [${LAYOUT_ATTR}],
+                [${CLEANUP_ATTR}] {
+                    transition: none !important;
+                }
             }
 
             [${CLEANUP_ATTR}] [${LIST_ATTR}] {
@@ -607,6 +639,7 @@
 
         layout = nextLayout;
         main = nextMain;
+        layout.setAttribute(LAYOUT_ATTR, '');
         originalLayout = {
             sidebarDisplay: currentSidebar.style.getPropertyValue('display'),
             sidebarDisplayPriority: currentSidebar.style.getPropertyPriority('display'),
@@ -992,11 +1025,12 @@
     function hideSidebar() {
         if (!sidebar || !layout || !main) return;
 
-        sidebar.style.setProperty('display', 'none', 'important');
-        layout.style.setProperty('grid-template-columns', 'minmax(0, 1fr)', 'important');
-        main.style.setProperty('grid-column', '1 / -1', 'important');
-        main.style.setProperty('width', '100%', 'important');
-        main.style.setProperty('max-width', 'none', 'important');
+        sidebar.setAttribute(COLLAPSED_ATTR, '');
+        sidebar.inert = true;
+        layout.style.setProperty('grid-template-columns', '0px minmax(0, 1fr)', 'important');
+        restoreStyle(main, 'grid-column', originalLayout?.mainGridColumn, originalLayout?.mainGridColumnPriority);
+        restoreStyle(main, 'width', originalLayout?.mainWidth, originalLayout?.mainWidthPriority);
+        restoreStyle(main, 'max-width', originalLayout?.mainMaxWidth, originalLayout?.mainMaxWidthPriority);
     }
 
     function restoreStyle(element, property, value, priority) {
@@ -1008,8 +1042,10 @@
     function showSidebar() {
         if (!sidebar || !layout || !main || !originalLayout) return;
 
+        sidebar.removeAttribute(COLLAPSED_ATTR);
+        sidebar.inert = false;
         restoreStyle(sidebar, 'display', originalLayout.sidebarDisplay, originalLayout.sidebarDisplayPriority);
-        restoreStyle(layout, 'grid-template-columns', originalLayout.gridTemplateColumns, originalLayout.gridTemplatePriority);
+        layout.style.setProperty('grid-template-columns', '320px minmax(0, 1fr)', 'important');
         restoreStyle(main, 'grid-column', originalLayout.mainGridColumn, originalLayout.mainGridColumnPriority);
         restoreStyle(main, 'width', originalLayout.mainWidth, originalLayout.mainWidthPriority);
         restoreStyle(main, 'max-width', originalLayout.mainMaxWidth, originalLayout.mainMaxWidthPriority);
