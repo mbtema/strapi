@@ -4,12 +4,14 @@
 
 | Папка | Назначение |
 |---|---|
+| [`.github/`](./.github) | GitHub Actions для автоматических проверок репозитория |
 | [`extension/`](./extension) | Единый Tampermonkey loader и manifest постоянных расширений Strapi |
 | [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
 | [`migrator/`](./migrator) | Утилиты для аудита и миграции данных из Bitrix |
 | [`postman/`](./postman) | Postman collection с общими variables и API paths |
+| [`scripts/`](./scripts) | Служебные проверки репозитория для CI и локального запуска |
 | [`promts/`](./promts) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
 
 ## Extension loader
@@ -31,11 +33,15 @@ Loader при открытии Strapi:
 
 `extension/manifest.json` определяет, какие extensions включены. При изменении extension обязательно увеличивать его `version` в manifest. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
 
+Loader строго валидирует включённые entries manifest: `id`, `path`, semver `version`, соответствие имени файла и отсутствие дублей. При некорректном manifest новый кеш не записывается, а при наличии старого loader продолжает использовать его.
+
+GitHub Actions запускает `scripts/check-extension-versions.mjs`: проверяет совпадение `@version` в extension с manifest и требует version bump, если зарегистрированный файл в `features/` или `ui-ux/` изменился относительно base commit.
+
 ## Features
 
-- `barcode-extractor.js` — `Ctrl+B`, копирует barcode из карточки товара и показывает toast.
+- `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Ctrl+Enter`, публикует текущую запись.
-- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`.
+- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`; повторный параллельный запуск уже работающего async parser блокируется до его завершения.
 - `vimium-open-row.js` — делает строки таблиц доступными для Vimium; собственная ссылка помечается через `data-tm-*` и восстанавливается после React re-render.
 
 ## UI/UX
@@ -54,6 +60,12 @@ Loader при открытии Strapi:
 - major (`2.0`) — крупная переработка.
 
 Версия extension независима от версии loader.
+
+Локально проверить manifest и версии можно командой:
+
+`node scripts/check-extension-versions.mjs <base-ref>`
+
+Без `<base-ref>` скрипт проверяет структуру manifest и совпадение текущих `@version`.
 
 ## Parsers
 
@@ -111,6 +123,9 @@ README обновляется, когда меняются структура, �
 
 ```text
 .
+├── .github/
+│   └── workflows/
+│       └── extension-version-check.yml
 ├── .gitignore
 ├── extension/
 │   ├── loader.js
@@ -148,6 +163,8 @@ README обновляется, когда меняются структура, �
 │   └── detail-picture-migrator.js
 ├── postman/
 │   └── admin-api.json
+├── scripts/
+│   └── check-extension-versions.mjs
 ├── promts/
 │   ├── project-context.md
 │   └── project-instructions.md
