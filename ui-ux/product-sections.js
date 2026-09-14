@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         product-sections
-// @version      1.0.4
+// @version      1.0.5
 // @description  Разделяет карточку товара на смысловые вкладки; поля определяются по API name
 // ==/StrapiExtension==
 
@@ -67,11 +67,42 @@
         const style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent = `
-            ${ROOT_SELECTOR} { display:flex; align-items:center; gap:6px; width:100%; margin:0 0 20px; padding:0 0 10px; border-bottom:1px solid #3f3f5f; }
-            ${ROOT_SELECTOR} [data-tm-product-section-tab] { min-height:34px; padding:7px 12px; border:1px solid transparent; border-radius:6px; background:transparent; color:#a5a5ba; font:inherit; font-size:13px; font-weight:500; line-height:18px; cursor:pointer; }
-            ${ROOT_SELECTOR} [data-tm-product-section-tab]:hover { background:#212134; color:#dcdce4; }
-            ${ROOT_SELECTOR} [data-tm-product-section-tab][aria-selected="true"] { border-color:#5b5b80; background:#302c6f; color:#fff; font-weight:600; }
-            [data-tm-product-section-hidden="true"] { display:none !important; }
+            ${ROOT_SELECTOR} {
+                display:flex;
+                align-items:center;
+                gap:6px;
+                width:100%;
+                margin:0 0 12px;
+                padding:0;
+                border:0;
+            }
+            ${ROOT_SELECTOR} [data-tm-product-section-tab] {
+                min-height:34px;
+                padding:7px 12px;
+                border:1px solid transparent;
+                border-radius:6px;
+                background:transparent;
+                color:#a5a5ba;
+                font:inherit;
+                font-size:13px;
+                font-weight:500;
+                line-height:18px;
+                cursor:pointer;
+            }
+            ${ROOT_SELECTOR} [data-tm-product-section-tab]:hover {
+                background:#212134;
+                color:#dcdce4;
+            }
+            ${ROOT_SELECTOR} [data-tm-product-section-tab][aria-selected="true"] {
+                border-color:#5b5b80;
+                background:#302c6f;
+                color:#fff;
+                font-weight:600;
+            }
+            [data-tm-product-section-hidden="true"],
+            [data-tm-product-section-empty="true"] {
+                display:none !important;
+            }
         `;
 
         document.head.appendChild(style);
@@ -168,10 +199,56 @@
 
     function clearManagedVisibility() {
         document
-            .querySelectorAll('[data-tm-product-section-hidden]')
+            .querySelectorAll('[data-tm-product-section-hidden], [data-tm-product-section-empty]')
             .forEach(element => {
                 delete element.dataset.tmProductSectionHidden;
+                delete element.dataset.tmProductSectionEmpty;
             });
+    }
+
+    function collapseEmptyLayout(containers) {
+        const fieldContainers = [...containers.keys()];
+        const candidates = new Set();
+
+        for (const container of fieldContainers) {
+            let node = container.parentElement;
+
+            while (node && node !== currentPanel) {
+                candidates.add(node);
+                node = node.parentElement;
+            }
+        }
+
+        const ordered = [...candidates].sort((a, b) => {
+            const depth = element => {
+                let value = 0;
+                let node = element;
+                while (node && node !== currentPanel) {
+                    value += 1;
+                    node = node.parentElement;
+                }
+                return value;
+            };
+
+            return depth(b) - depth(a);
+        });
+
+        for (const candidate of ordered) {
+            const fieldsInside = fieldContainers.filter(container =>
+                candidate.contains(container)
+            );
+
+            if (!fieldsInside.length) continue;
+
+            const hasVisibleField = fieldsInside.some(container =>
+                container.dataset.tmProductSectionHidden !== 'true' &&
+                container.dataset.tmProductSectionEmpty !== 'true'
+            );
+
+            if (!hasVisibleField) {
+                candidate.dataset.tmProductSectionEmpty = 'true';
+            }
+        }
     }
 
     function applyVisibility() {
@@ -193,6 +270,8 @@
                 container.dataset.tmProductSectionHidden = 'true';
             }
         }
+
+        collapseEmptyLayout(containers);
     }
 
     function setActiveTab(tab) {
