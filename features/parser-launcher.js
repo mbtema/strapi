@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         parser-launcher
-// @version      1.4.8
+// @version      1.4.9
 // @description  Запускает парсеры из GitHub по Alt+P
 // ==/StrapiExtension==
 
@@ -13,6 +13,7 @@
   const MANIFEST_FILE = 'manifest.json';
   const OVERLAY_ID = 'tm-parser-launcher-overlay';
   const PARSER_FILE_RE = /^[a-z0-9-]+\.js$/;
+  const ACTIVE_RUNS_KEY = '__tmParserLauncherActiveRuns';
 
   const PARSER_GROUPS = [
     { id: 'products', title: 'Товары' },
@@ -21,6 +22,11 @@
   ];
 
   const KNOWN_GROUP_IDS = new Set(PARSER_GROUPS.map(group => group.id));
+  const activeRuns = window[ACTIVE_RUNS_KEY] instanceof Set
+    ? window[ACTIVE_RUNS_KEY]
+    : new Set();
+
+  window[ACTIVE_RUNS_KEY] = activeRuns;
 
   async function loadText(file) {
     const response = await fetch(`${RAW_BASE}${file}?t=${Date.now()}`, {
@@ -63,23 +69,57 @@
       );
   }
 
+  function managedParserCode(code, file) {
+    const startToken = '(async () => {';
+    const endToken = '})();';
+    const start = code.indexOf(startToken);
+    const end = code.lastIndexOf(endToken);
+
+    if (start < 0 || end <= start) return null;
+
+    const prefix = code.slice(0, start);
+    const body = code.slice(start + startToken.length, end);
+    const suffix = code.slice(end + endToken.length);
+    const fileLiteral = JSON.stringify(file);
+
+    return `${prefix}(async () => {\n  try {${body}\n  } finally {\n    window.${ACTIVE_RUNS_KEY}?.delete(${fileLiteral});\n  }\n})();${suffix}`;
+  }
+
   function executeParser(code, file) {
+    const managed = managedParserCode(code, file);
     const script = document.createElement('script');
-    script.textContent = `${code}\n//# sourceURL=parser-launcher/${file}`;
+    script.textContent = `${managed || code}\n//# sourceURL=parser-launcher/${file}`;
     (document.head || document.documentElement).appendChild(script);
     script.remove();
+    return Boolean(managed);
   }
 
   async function runParser(parser, status) {
+    if (activeRuns.has(parser.file)) {
+      status.textContent = `Уже запущен: ${parser.file}`;
+      status.style.color = '#d9822b';
+      return;
+    }
+
+    activeRuns.add(parser.file);
     status.textContent = `Загрузка: ${parser.file}`;
     status.style.color = '#c7c7d4';
 
     try {
       const code = await loadText(parser.file);
-      executeParser(code, parser.file);
+      const managed = executeParser(code, parser.file);
+
+      if (!managed) {
+        activeRuns.delete(parser.file);
+        console.warn(
+          `[Parser Launcher] ${parser.file}: async IIFE не найден, lock снят сразу после запуска`
+        );
+      }
+
       console.log(`[Parser Launcher] Запущен: ${parser.file}`);
       closeLauncher();
     } catch (error) {
+      activeRuns.delete(parser.file);
       console.error('[Parser Launcher]', error);
       status.textContent = `Ошибка: ${error.message}`;
       status.style.color = '#d02b20';
@@ -93,8 +133,11 @@
   function createButton(parser, status) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = parser.file;
+    button.textContent = activeRuns.has(parser.file)
+      ? `${parser.file} · запущен`
+      : parser.file;
     button.title = parser.name;
+    button.disabled = activeRuns.has(parser.file);
 
     Object.assign(button.style, {
       width: '100%',
@@ -108,11 +151,13 @@
       lineHeight: '1.35',
       textAlign: 'left',
       overflowWrap: 'anywhere',
-      cursor: 'pointer',
+      cursor: button.disabled ? 'default' : 'pointer',
+      opacity: button.disabled ? '0.55' : '1',
       transition: 'background 120ms ease, border-color 120ms ease'
     });
 
     button.addEventListener('mouseenter', () => {
+      if (button.disabled) return;
       button.style.background = '#2b2b45';
       button.style.borderColor = '#666687';
     });
