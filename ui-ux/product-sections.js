@@ -1,7 +1,7 @@
 // ==StrapiExtension==
 // @name         product-sections
-// @version      1.0.6
-// @description  Разделяет карточку товара на смысловые вкладки; поля определяются по API name
+// @version      1.1.0
+// @description  Разделяет карточку товара на вкладки Контент, Фильтры и Системное
 // ==/StrapiExtension==
 
 (function () {
@@ -30,6 +30,19 @@
         'finish',
         'coverage',
         'product_features'
+    ]);
+
+    const SYSTEM_FIELDS = new Set([
+        'relatedProductsSlider',
+        'seo_description',
+        'seo_name',
+        'key',
+        'code_1c',
+        'bitrix_id',
+        'xml_id',
+        'code',
+        'sort',
+        'shareUrl'
     ]);
 
     const CONTENT_HINT_FIELDS = new Set([
@@ -127,7 +140,7 @@
             .filter(({ name }) => name && !IGNORED_NAMES.has(name));
     }
 
-    function getContentOnlyMarkers(panel, namedMarkers) {
+    function getSupplementalMarkers(panel, namedMarkers) {
         const namedNames = new Set(namedMarkers.map(({ name }) => name));
         const result = [];
 
@@ -160,7 +173,7 @@
         const namedMarkers = getNamedFieldMarkers(panel);
         return [
             ...namedMarkers,
-            ...getContentOnlyMarkers(panel, namedMarkers)
+            ...getSupplementalMarkers(panel, namedMarkers)
         ];
     }
 
@@ -215,9 +228,14 @@
             });
     }
 
+    function getSection(names) {
+        if ([...names].some(name => SYSTEM_FIELDS.has(name))) return 'system';
+        if ([...names].some(name => FILTER_FIELDS.has(name))) return 'filters';
+        return 'content';
+    }
+
     function shouldShow(names) {
-        const hasFilterField = [...names].some(name => FILTER_FIELDS.has(name));
-        return activeTab === 'filters' ? hasFilterField : !hasFilterField;
+        return getSection(names) === activeTab;
     }
 
     function applyVisibility() {
@@ -293,7 +311,8 @@
 
         for (const [key, label] of [
             ['content', 'Контент'],
-            ['filters', 'Фильтры']
+            ['filters', 'Фильтры'],
+            ['system', 'Системное']
         ]) {
             const button = document.createElement('button');
             button.type = 'button';
