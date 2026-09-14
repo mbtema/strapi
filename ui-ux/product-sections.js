@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         product-sections
-// @version      1.0.0
+// @version      1.0.1
 // @description  Разделяет карточку товара на смысловые вкладки; первая версия выносит поля фильтров
 // ==/StrapiExtension==
 
@@ -12,6 +12,7 @@
     const STYLE_ID = 'tm-product-sections-style';
 
     const FILTER_FIELDS = new Set([
+        'is_hypoallergenic',
         'effect',
         'fragrance_group',
         'fragrance_concentration',
@@ -31,7 +32,7 @@
         'product_features'
     ]);
 
-    const IGNORED_NAMED_CONTROLS = new Set([
+    const IGNORED_NAMES = new Set([
         'Bold',
         'Italic',
         'Underline',
@@ -102,63 +103,89 @@
         document.head.appendChild(style);
     }
 
-    function getNamedControls(root = document) {
-        return [...root.querySelectorAll('input[name], textarea[name], select[name]')]
-            .filter(control => {
-                const name = control.getAttribute('name');
-                return name && !IGNORED_NAMED_CONTROLS.has(name);
-            });
+    function normalizeHint(text) {
+        return String(text || '').trim();
     }
 
-    function findFieldContainer(control) {
-        if (!control?.isConnected) return null;
+    function getFieldName(marker) {
+        const explicitName = marker.getAttribute?.('name');
 
-        let node = control;
+        if (explicitName && !IGNORED_NAMES.has(explicitName)) {
+            return explicitName;
+        }
 
-        while (node?.parentElement) {
-            const parent = node.parentElement;
+        if (marker.matches?.('p[id$="-hint"]')) {
+            const hint = normalizeHint(marker.textContent);
 
-            if (
-                parent.matches('form') ||
-                parent.matches('[role="tabpanel"]') ||
-                parent === document.body
-            ) {
-                break;
+            for (const field of FILTER_FIELDS) {
+                if (hint === field || hint.endsWith(` ${field}`)) return field;
             }
 
-            const siblingsWithFields = [...parent.children]
-                .filter(child => child !== node)
-                .some(child => getNamedControls(child).length > 0);
+            return hint || null;
+        }
 
-            if (siblingsWithFields) {
+        if (marker.matches?.('label')) {
+            const text = normalizeHint(marker.textContent);
+            if (text.includes('relatedProductsSlider')) return 'relatedProductsSlider';
+        }
+
+        return null;
+    }
+
+    function getFieldMarkers(panel) {
+        const markers = [
+            ...panel.querySelectorAll('[name], p[id$="-hint"], label')
+        ];
+
+        return markers.filter(marker => {
+            const fieldName = getFieldName(marker);
+            return fieldName && !IGNORED_NAMES.has(fieldName);
+        });
+    }
+
+    function hasOtherFieldMarker(element, sourceMarker, panel) {
+        return getFieldMarkers(panel).some(marker =>
+            marker !== sourceMarker &&
+            element.contains(marker)
+        );
+    }
+
+    function findFieldContainer(marker, panel) {
+        if (!marker?.isConnected) return null;
+
+        let node = marker;
+
+        while (node?.parentElement && node.parentElement !== panel) {
+            const parent = node.parentElement;
+
+            if (hasOtherFieldMarker(parent, marker, panel)) {
                 return node;
             }
 
             node = parent;
         }
 
-        return control.parentElement;
+        return marker.parentElement;
     }
 
-    function getFieldContainers() {
-        const controls = getNamedControls();
-        const byContainer = new Map();
+    function getFieldContainers(panel) {
+        const result = new Map();
 
-        for (const control of controls) {
-            const name = control.getAttribute('name');
-            if (!name) continue;
+        for (const marker of getFieldMarkers(panel)) {
+            const fieldName = getFieldName(marker);
+            if (!fieldName) continue;
 
-            const container = findFieldContainer(control);
+            const container = findFieldContainer(marker, panel);
             if (!container || !container.isConnected) continue;
 
-            if (!byContainer.has(container)) {
-                byContainer.set(container, new Set());
+            if (!result.has(container)) {
+                result.set(container, new Set());
             }
 
-            byContainer.get(container).add(name);
+            result.get(container).add(fieldName);
         }
 
-        return byContainer;
+        return result;
     }
 
     function clearManagedVisibility() {
@@ -172,20 +199,19 @@
     function applyVisibility() {
         clearManagedVisibility();
 
-        if (!isProductEntry()) return;
+        if (!isProductEntry() || !currentPanel) return;
 
-        const containers = getFieldContainers();
+        const containers = getFieldContainers(currentPanel);
 
         for (const [container, names] of containers) {
             const hasFilterField = [...names].some(name => FILTER_FIELDS.has(name));
-            const hasContentField = [...names].some(name => !FILTER_FIELDS.has(name));
 
             if (activeTab === 'filters' && !hasFilterField) {
                 container.dataset.tmProductSectionHidden = 'true';
                 continue;
             }
 
-            if (activeTab === 'content' && hasFilterField && !hasContentField) {
+            if (activeTab === 'content' && hasFilterField) {
                 container.dataset.tmProductSectionHidden = 'true';
             }
         }
@@ -235,14 +261,11 @@
     }
 
     function findFieldsPanel() {
-        const filterControl = [...FILTER_FIELDS]
-            .map(name => document.querySelector(`[name="${CSS.escape(name)}"]`))
-            .find(Boolean);
+        const marker = document.querySelector(
+            '[name="effect"], [name="is_hypoallergenic"], p[id$="-hint"]'
+        );
 
-        const anyControl = filterControl || getNamedControls()[0];
-        if (!anyControl) return null;
-
-        return anyControl.closest('[role="tabpanel"]');
+        return marker?.closest('[role="tabpanel"]') || null;
     }
 
     function cleanup() {
