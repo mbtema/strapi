@@ -81,6 +81,14 @@ for (const item of currentItems) {
     continue;
   }
 
+  try {
+    execFileSync(process.execPath, ['--check', item.path], {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+  } catch {
+    fail(`${item.id}: JavaScript syntax check failed for ${item.path}`);
+  }
+
   const match = code.match(/^\s*\/\/\s*@version\s+(\S+)\s*$/m);
   if (!match) {
     fail(`${item.id}: @version header not found in ${item.path}`);
