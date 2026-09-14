@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         product-sections
-// @version      1.0.5
+// @version      1.0.6
 // @description  Разделяет карточку товара на смысловые вкладки; поля определяются по API name
 // ==/StrapiExtension==
 
@@ -62,19 +62,32 @@
     }
 
     function ensureStyle() {
-        if (document.getElementById(STYLE_ID)) return;
+        let style = document.getElementById(STYLE_ID);
 
-        const style = document.createElement('style');
-        style.id = STYLE_ID;
+        if (!style) {
+            style = document.createElement('style');
+            style.id = STYLE_ID;
+            document.head.appendChild(style);
+        }
+
         style.textContent = `
             ${ROOT_SELECTOR} {
-                display:flex;
-                align-items:center;
-                gap:6px;
-                width:100%;
-                margin:0 0 12px;
-                padding:0;
-                border:0;
+                display:flex !important;
+                align-items:center !important;
+                gap:6px !important;
+                width:100% !important;
+                margin:0 0 12px !important;
+                padding:0 !important;
+                border:0 !important;
+                border-bottom:0 !important;
+                box-shadow:none !important;
+            }
+            ${ROOT_SELECTOR}::before,
+            ${ROOT_SELECTOR}::after {
+                content:none !important;
+                display:none !important;
+                border:0 !important;
+                box-shadow:none !important;
             }
             ${ROOT_SELECTOR} [data-tm-product-section-tab] {
                 min-height:34px;
@@ -99,13 +112,10 @@
                 color:#fff;
                 font-weight:600;
             }
-            [data-tm-product-section-hidden="true"],
-            [data-tm-product-section-empty="true"] {
+            [data-tm-product-section-hidden="true"] {
                 display:none !important;
             }
         `;
-
-        document.head.appendChild(style);
     }
 
     function getNamedFieldMarkers(panel) {
@@ -154,101 +164,60 @@
         ];
     }
 
-    function containsAnotherMarker(element, sourceElement, markers) {
-        return markers.some(({ element: marker }) =>
-            marker !== sourceElement &&
-            element.contains(marker)
-        );
-    }
+    function getAncestors(element, stopAt) {
+        const result = [];
+        let node = element;
 
-    function findFieldContainer(marker, panel, markers) {
-        if (!marker?.isConnected) return null;
-
-        let node = marker;
-
-        while (node?.parentElement && node.parentElement !== panel) {
-            const parent = node.parentElement;
-
-            if (containsAnotherMarker(parent, marker, markers)) {
-                return node;
-            }
-
-            node = parent;
+        while (node && node !== stopAt) {
+            result.push(node);
+            node = node.parentElement;
         }
 
-        return node || marker.parentElement;
-    }
-
-    function getFieldContainers(panel) {
-        const markers = getCanonicalMarkers(panel);
-        const result = new Map();
-
-        for (const { element, name } of markers) {
-            const container = findFieldContainer(element, panel, markers);
-            if (!container || !container.isConnected) continue;
-
-            if (!result.has(container)) {
-                result.set(container, new Set());
-            }
-
-            result.get(container).add(name);
-        }
-
+        if (stopAt) result.push(stopAt);
         return result;
+    }
+
+    function findFieldStack(panel, markers) {
+        if (!markers.length) return null;
+
+        const ancestorSets = markers.map(({ element }) =>
+            new Set(getAncestors(element, panel))
+        );
+
+        for (const candidate of getAncestors(markers[0].element, panel)) {
+            if (candidate === panel) break;
+
+            if (ancestorSets.every(set => set.has(candidate))) {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    function directChildUnder(element, ancestor) {
+        if (!element || !ancestor || !ancestor.contains(element)) return null;
+
+        let node = element;
+
+        while (node?.parentElement && node.parentElement !== ancestor) {
+            node = node.parentElement;
+        }
+
+        return node?.parentElement === ancestor ? node : null;
     }
 
     function clearManagedVisibility() {
         document
-            .querySelectorAll('[data-tm-product-section-hidden], [data-tm-product-section-empty]')
+            .querySelectorAll('[data-tm-product-section-hidden]')
             .forEach(element => {
                 delete element.dataset.tmProductSectionHidden;
-                delete element.dataset.tmProductSectionEmpty;
             });
     }
 
-    function collapseEmptyLayout(containers) {
-        const fieldContainers = [...containers.keys()];
-        const candidates = new Set();
-
-        for (const container of fieldContainers) {
-            let node = container.parentElement;
-
-            while (node && node !== currentPanel) {
-                candidates.add(node);
-                node = node.parentElement;
-            }
-        }
-
-        const ordered = [...candidates].sort((a, b) => {
-            const depth = element => {
-                let value = 0;
-                let node = element;
-                while (node && node !== currentPanel) {
-                    value += 1;
-                    node = node.parentElement;
-                }
-                return value;
-            };
-
-            return depth(b) - depth(a);
-        });
-
-        for (const candidate of ordered) {
-            const fieldsInside = fieldContainers.filter(container =>
-                candidate.contains(container)
-            );
-
-            if (!fieldsInside.length) continue;
-
-            const hasVisibleField = fieldsInside.some(container =>
-                container.dataset.tmProductSectionHidden !== 'true' &&
-                container.dataset.tmProductSectionEmpty !== 'true'
-            );
-
-            if (!hasVisibleField) {
-                candidate.dataset.tmProductSectionEmpty = 'true';
-            }
-        }
+    function shouldShow(names) {
+        const hasFilterField = [...names].some(name => FILTER_FIELDS.has(name));
+        return activeTab === 'filters' ? hasFilterField : !hasFilterField;
     }
 
     function applyVisibility() {
@@ -256,22 +225,47 @@
 
         if (!isProductEntry() || !currentPanel) return;
 
-        const containers = getFieldContainers(currentPanel);
+        const markers = getCanonicalMarkers(currentPanel);
+        const stack = findFieldStack(currentPanel, markers);
 
-        for (const [container, names] of containers) {
-            const hasFilterField = [...names].some(name => FILTER_FIELDS.has(name));
-
-            if (activeTab === 'filters' && !hasFilterField) {
-                container.dataset.tmProductSectionHidden = 'true';
-                continue;
-            }
-
-            if (activeTab === 'content' && hasFilterField) {
-                container.dataset.tmProductSectionHidden = 'true';
-            }
+        if (!stack) {
+            console.warn('[product-sections] Не найден контейнер строк карточки товара');
+            return;
         }
 
-        collapseEmptyLayout(containers);
+        const rows = new Map();
+
+        for (const marker of markers) {
+            const row = directChildUnder(marker.element, stack);
+            if (!row) continue;
+
+            if (!rows.has(row)) rows.set(row, []);
+            rows.get(row).push(marker);
+        }
+
+        for (const [row, rowMarkers] of rows) {
+            const branches = new Map();
+
+            for (const marker of rowMarkers) {
+                const branch = directChildUnder(marker.element, row) || row;
+                if (!branches.has(branch)) branches.set(branch, new Set());
+                branches.get(branch).add(marker.name);
+            }
+
+            let visibleBranches = 0;
+
+            for (const [branch, names] of branches) {
+                if (shouldShow(names)) {
+                    visibleBranches += 1;
+                } else {
+                    branch.dataset.tmProductSectionHidden = 'true';
+                }
+            }
+
+            if (visibleBranches === 0) {
+                row.dataset.tmProductSectionHidden = 'true';
+            }
+        }
     }
 
     function setActiveTab(tab) {
