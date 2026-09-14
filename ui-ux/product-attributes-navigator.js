@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         product-attributes-navigator
-// @version      1.0.2
+// @version      1.0.3
 // @description  Навигация по торговым предложениям в карточке товара: поиск, пагинация, прямой переход и удобное управление relations
 // ==/StrapiExtension==
 
@@ -21,6 +21,7 @@
     const UI_PAGE_SIZE = 10;
     const RELOAD_DELAY = 500;
     const NATIVE_HEIGHT = 540;
+    const NATIVE_WAIT_TIMEOUT = 5000;
 
     let state = null;
     let frameScheduled = false;
@@ -181,10 +182,31 @@
         );
     }
 
+    async function waitForNativeReady(current, initialButton) {
+        const started = performance.now();
+        let button = initialButton;
+
+        while (
+            current === state &&
+            current.root.hasAttribute(MANAGE) &&
+            button &&
+            isBusy(button)
+        ) {
+            if (performance.now() - started >= NATIVE_WAIT_TIMEOUT) {
+                return { button, timedOut: true };
+            }
+
+            await wait(100);
+            button = findLoadMore(current.root);
+        }
+
+        return { button, timedOut: false };
+    }
+
     async function waitForNativeAdvance(root, beforeCount, previousButton) {
         const started = performance.now();
 
-        while (performance.now() - started < 5000) {
+        while (performance.now() - started < NATIVE_WAIT_TIMEOUT) {
             await wait(100);
             const nextButton = findLoadMore(root);
             const nextCount = nativeItemCount(root);
@@ -214,15 +236,14 @@
                 let button = findLoadMore(current.root);
                 if (!button) break;
 
-                while (
-                    current === state &&
-                    current.root.hasAttribute(MANAGE) &&
-                    button &&
-                    isBusy(button)
-                ) {
-                    await wait(100);
-                    button = findLoadMore(current.root);
+                const ready = await waitForNativeReady(current, button);
+
+                if (ready.timedOut) {
+                    console.warn('[product-attributes-navigator] Load More stayed busy too long');
+                    break;
                 }
+
+                button = ready.button;
                 if (!button) break;
 
                 const beforeCount = nativeItemCount(current.root);
