@@ -28,7 +28,7 @@
     {
       "id": "product-attributes-navigator",
       "path": "ui-ux/product-attributes-navigator.js",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "enabled": true
     },
     {
@@ -40,7 +40,7 @@
     {
       "id": "barcode-extractor",
       "path": "features/barcode-extractor.js",
-      "version": "1.4.1",
+      "version": "1.4.2",
       "enabled": true
     },
     {
@@ -52,7 +52,7 @@
     {
       "id": "parser-launcher",
       "path": "features/parser-launcher.js",
-      "version": "1.4.8",
+      "version": "1.4.9",
       "enabled": true
     },
     {
