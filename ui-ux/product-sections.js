@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         product-sections
-// @version      1.0.1
+// @version      1.0.2
 // @description  Разделяет карточку товара на смысловые вкладки; первая версия выносит поля фильтров
 // ==/StrapiExtension==
 
@@ -30,19 +30,6 @@
         'finish',
         'coverage',
         'product_features'
-    ]);
-
-    const IGNORED_NAMES = new Set([
-        'Bold',
-        'Italic',
-        'Underline',
-        'Strikethrough',
-        'Bulleted list',
-        'Numbered list',
-        'Code',
-        'Quote',
-        'Link',
-        'Image'
     ]);
 
     let activeTab = 'content';
@@ -103,54 +90,39 @@
         document.head.appendChild(style);
     }
 
-    function normalizeHint(text) {
-        return String(text || '').trim();
+    function normalizeFieldName(value) {
+        return String(value || '').trim();
     }
 
-    function getFieldName(marker) {
-        const explicitName = marker.getAttribute?.('name');
+    function getCanonicalMarkers(panel) {
+        const markers = [...panel.querySelectorAll('p[id$="-hint"]')]
+            .map(element => ({
+                element,
+                name: normalizeFieldName(element.textContent)
+            }))
+            .filter(item => item.name);
 
-        if (explicitName && !IGNORED_NAMES.has(explicitName)) {
-            return explicitName;
+        const sliderLabel = [...panel.querySelectorAll('label')]
+            .find(label => (label.textContent || '').includes('relatedProductsSlider'));
+
+        if (sliderLabel) {
+            markers.push({
+                element: sliderLabel,
+                name: 'relatedProductsSlider'
+            });
         }
 
-        if (marker.matches?.('p[id$="-hint"]')) {
-            const hint = normalizeHint(marker.textContent);
-
-            for (const field of FILTER_FIELDS) {
-                if (hint === field || hint.endsWith(` ${field}`)) return field;
-            }
-
-            return hint || null;
-        }
-
-        if (marker.matches?.('label')) {
-            const text = normalizeHint(marker.textContent);
-            if (text.includes('relatedProductsSlider')) return 'relatedProductsSlider';
-        }
-
-        return null;
+        return markers;
     }
 
-    function getFieldMarkers(panel) {
-        const markers = [
-            ...panel.querySelectorAll('[name], p[id$="-hint"], label')
-        ];
-
-        return markers.filter(marker => {
-            const fieldName = getFieldName(marker);
-            return fieldName && !IGNORED_NAMES.has(fieldName);
-        });
-    }
-
-    function hasOtherFieldMarker(element, sourceMarker, panel) {
-        return getFieldMarkers(panel).some(marker =>
-            marker !== sourceMarker &&
+    function containsAnotherMarker(element, sourceElement, markers) {
+        return markers.some(({ element: marker }) =>
+            marker !== sourceElement &&
             element.contains(marker)
         );
     }
 
-    function findFieldContainer(marker, panel) {
+    function findFieldContainer(marker, panel, markers) {
         if (!marker?.isConnected) return null;
 
         let node = marker;
@@ -158,31 +130,29 @@
         while (node?.parentElement && node.parentElement !== panel) {
             const parent = node.parentElement;
 
-            if (hasOtherFieldMarker(parent, marker, panel)) {
+            if (containsAnotherMarker(parent, marker, markers)) {
                 return node;
             }
 
             node = parent;
         }
 
-        return marker.parentElement;
+        return node || marker.parentElement;
     }
 
     function getFieldContainers(panel) {
+        const markers = getCanonicalMarkers(panel);
         const result = new Map();
 
-        for (const marker of getFieldMarkers(panel)) {
-            const fieldName = getFieldName(marker);
-            if (!fieldName) continue;
-
-            const container = findFieldContainer(marker, panel);
+        for (const { element, name } of markers) {
+            const container = findFieldContainer(element, panel, markers);
             if (!container || !container.isConnected) continue;
 
             if (!result.has(container)) {
                 result.set(container, new Set());
             }
 
-            result.get(container).add(fieldName);
+            result.get(container).add(name);
         }
 
         return result;
@@ -261,10 +231,7 @@
     }
 
     function findFieldsPanel() {
-        const marker = document.querySelector(
-            '[name="effect"], [name="is_hypoallergenic"], p[id$="-hint"]'
-        );
-
+        const marker = document.querySelector('p[id$="-hint"]');
         return marker?.closest('[role="tabpanel"]') || null;
     }
 
