@@ -1,4 +1,4 @@
-Набор рабочих инструментов для админки Strapi и миграции контента: постоянные extensions, UI/UX-кастомы, парсеры, Bitrix-утилиты, Postman и backup/sync snapshot Project Instructions и project context.
+Набор рабочих инструментов для админки Strapi и миграции контента: постоянные extensions, UI/UX-кастомы, парсеры, Bitrix-утилиты, Postman и backup/sync snapshot Project Instructions и Project Context.
 
 ## Структура
 
@@ -10,7 +10,7 @@
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
 | [`migrator/`](./migrator) | Утилиты для аудита и миграции данных из Bitrix |
 | [`postman/`](./postman) | Postman collection с общими variables и API paths |
-| [`promts/`](./promts) | Backup/sync snapshot Project Instructions и project context; не используется как рабочий source of truth проекта |
+| [`promts/`](./promts) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
 
 ## Extension loader
 
@@ -29,18 +29,7 @@ Loader при открытии Strapi:
 
 ### Manifest
 
-`extension/manifest.json` определяет, какие extensions включены:
-
-```json
-{
-  "id": "sidebar",
-  "path": "ui-ux/sidebar.js",
-  "version": "2.2.3",
-  "enabled": true
-}
-```
-
-При изменении extension обязательно увеличивать его `version` в manifest. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
+`extension/manifest.json` определяет, какие extensions включены. При изменении extension обязательно увеличивать его `version` в manifest. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
 
 ## Features
 
@@ -51,13 +40,14 @@ Loader при открытии Strapi:
 
 ## UI/UX
 
-- `sidebar.js` — единый sidebar-модуль: sidebar видим по умолчанию, `Alt+S` плавно скрывает/показывает его; поиск, быстрый доступ, группы Collection Types/Single Types, active state, минималистичные иконки, future-safe fallback для новых коллекций и очистка глобальной левой навигации.
-- `record-list-scrollbars.js` — визуально скрывает scrollbar/overflow decoration в списке записей Content Manager, сохраняя прокрутку.
+- `sidebar.js` — единый sidebar-модуль: `Alt+S`, поиск, быстрый доступ, группы Collection Types/Single Types, active state и очистка глобальной левой навигации.
+- `record-list-scrollbars.js` — визуально скрывает scrollbar/overflow decoration в списках Content Manager, сохраняя прокрутку.
 - `list-view.js` — доработки list view Content Manager.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
-- `product-attributes-navigator.js` — навигация по торговым предложениям в карточке товара: автоматически загружает все relation `attributes`, даёт поиск по `name_web`/barcode, пагинацию по 10 записей и прямой переход в карточку предложения. Режим «Управление связями» раскрывает штатный Strapi relation list, автоматически догружает весь список через `Load More` и увеличивает его viewport до 540 px для reorder/remove.
+- `product-attributes-navigator.js` — навигация по торговым предложениям в карточке товара: загрузка всех relation `attributes`, поиск, пагинация и прямые ссылки; режим «Управление связями» раскрывает штатный Strapi relation list.
+- `product-sections.js` — разделяет карточку Product на вкладки `Контент`, `Фильтры`, `Системное`, распределяя существующие Strapi-поля по API name без их копирования.
 
-## Версионирование
+## Версионирование extensions
 
 - patch (`1.3.1`) — небольшой фикс, доработка или оптимизация существующего поведения;
 - minor (`1.4`) — заметное новое поведение;
@@ -67,48 +57,36 @@ Loader при открытии Strapi:
 
 ## Parsers
 
-Парсеры запускаются через `Alt+P`. Проверочные парсеры проходят API постранично, выводят прогресс в Console и автоматически скачивают CSV. Вспомогательные parsers могут иметь другой output, если это указано в meta header.
+Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. Вспомогательные parsers могут иметь другой output, если это указано в meta header.
 
 - `sort-volume.js` — неправильный порядок volume.
 - `volume-checker.js` — разные единицы измерения volume.
 - `missing-shades.js` — активные предложения с `color_variant1C`, но без `shade`.
-- `shade-and-volume.js` — все предложения, у которых одновременно заполнены `shade` и `volume`.
-- `attributes-without-product.js` — все предложения без `product`.
+- `shade-and-volume.js` — предложения, у которых одновременно заполнены `shade` и `volume`.
+- `attributes-without-product.js` — предложения без `product`.
 - `attributes-without-detail-picture.js` — предложения активных товаров без `detail_picture`.
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-brand.js` — активные товары без `brand`.
 - `products-without-categories.js` — активные товары без `categories`.
-- `products-with-duplicate-bitrix-id.js` — товары с одинаковым `bitrix_id` для контроля дублей после миграции.
-- `products-with-wrong-prices.js` — активные товары, у которых хотя бы одно предложение имеет `price = 0`, пустой `price` или дробный `price`.
-- `products-with-missing-content.js` — активные товары без одного или нескольких критичных контентных полей: `name1`, `name2`, `detail_picture`, `detail_text`.
-- `products-with-wrong-variants.js` — активные товары с несколькими предложениями, у которых нет единого типа выбора по `shade` или `volume`: отсутствующие relations, смешанный тип или одновременные `shade + volume`.
+- `products-with-duplicate-fields.js` — дубли технических идентификаторов `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`.
+- `products-with-wrong-prices.js` — активные товары с нулевой/пустой/некорректной ценой предложения.
+- `products-with-missing-content.js` — активные товары без критичных контентных полей.
+- `products-with-wrong-variants.js` — товары с неконсистентным выбором вариантов по `shade`/`volume`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `manifest.json` — единый список парсеров и их групп для Parser Launcher.
 
-Для нового регулярного парсера достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`. Группа задаётся там же через `group`; дублировать список файлов внутри `parser-launcher.js` больше не нужно.
-
-Пример:
-
-```json
-{
-  "name": "Товары без категорий",
-  "file": "products-without-categories.js",
-  "group": "products"
-}
-```
+Для нового регулярного parser достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`. Группа задаётся там же через `group`; дублировать список файлов внутри `parser-launcher.js` не нужно.
 
 Рабочие группы: `products`, `offers`, `attributes`, `service`.
 
 ## Bitrix / Migrator
 
-- `migrator/detail-picture-audit.js` — запускается в Bitrix Admin, принимает CSV от `attributes-without-detail-picture`, по barcode находит родительский товар и торговое предложение, проверяет `DETAIL_PICTURE` и автоматически скачивает mapping CSV для последующей миграции в Strapi.
-- `migrator/detail-picture-migrator.js` — локальный Node.js migrator: читает audit CSV, берёт только `status=ok`, находит Strapi attribute сначала по точному `documentId`, затем сверяет barcode, скачивает изображение, загружает его в Strapi, привязывает `detail_picture`, публикует `ru` и проверяет результат через Public API.
-- Migrator сохраняет checkpoint рядом с audit CSV после каждого этапа и продолжает с последней безопасной стадии; неопределённый результат `POST /upload` не повторяется автоматически, чтобы не создавать дубликаты media, а исходная ошибка сохраняется в checkpoint.
-- Audit группирует строки по `productDocumentId`, чтобы не искать один и тот же родительский товар повторно, сохраняет checkpoint в LocalStorage и при повторном запуске с тем же CSV продолжает незавершённый аудит.
-- Статусы audit: `ok`, `no_detail_picture`, `product_not_found`, `offer_not_found`, `duplicate_barcode_in_source`, `missing_barcode`, `error`.
-- Bitrix browser-утилиты не входят в Parser Launcher Strapi и запускаются только на домене Bitrix Admin, где доступна авторизованная сессия. Node migrator запускается локально через Node.js.
+- `migrator/detail-picture-audit.js` — browser-аудит Bitrix по barcode с формированием mapping CSV.
+- `migrator/detail-picture-migrator.js` — локальный Node.js migrator: находит Strapi attribute, скачивает изображение, загружает его в Strapi, привязывает `detail_picture`, публикует `ru` и проверяет результат.
+- Migrator сохраняет checkpoint и не повторяет неопределённый `POST /upload`, чтобы не создавать duplicate media.
+- Bitrix browser-утилиты запускаются только на домене Bitrix Admin, где доступна авторизованная сессия.
 
-Локальные audit/result/checkpoint-файлы и `.env` исключены через `.gitignore`, чтобы временные данные и секреты не попадали в публичный репозиторий случайным `git add`.
+Локальные audit/result/checkpoint-файлы и `.env` исключены через `.gitignore`.
 
 ## Postman
 
@@ -116,39 +94,18 @@ Loader при открытии Strapi:
 
 `postman/admin-api.json`
 
-Коллекция намеренно не содержит большого набора готовых запросов. Повторяющиеся значения вынесены в collection variables.
+Коллекция хранит общие URL, API paths, pagination/locale/id variables. Секреты (`jwtToken`, `bearerToken`, `categoryDebugToken`) в GitHub не заполняются и задаются только локально.
 
-Пример:
+## Promts / Project context
 
-```text
-{{baseUrl}}{{products}}
-{{baseUrl}}{{attributes}}
-{{baseUrl}}{{brands}}
-{{baseUrl}}{{categories}}
-```
+`promts/` не участвует в runtime и не является рабочим source of truth ChatGPT Project.
 
-Основные variables:
+- `promts/project-context.md` — snapshot knowledge layer: архитектура, endpoints, ограничения, принятые решения, структура repo, исторические кейсы и рабочие workflows.
+- `promts/project-instructions.md` — snapshot operational layer: приоритеты, формат ответов и правила работы.
 
-- URL: `baseUrl`, `contentManagerUrl`, `bffUrl`;
-- API paths: `products`, `attributes`, `promotions`, `brands`, `categories` и другие endpoints;
-- пагинация: `page`, `pageSize`, `sort`;
-- локали: `locale`, `altLocale`;
-- идентификаторы: `documentId`, `productDocumentId`, `attributeDocumentId`, `brandDocumentId`, `categoryDocumentId`;
-- рабочие значения: `barcode`, `productKey`, `brandName`, `categoryCode`, `slug`;
-- секреты: `jwtToken`, `bearerToken`, `categoryDebugToken`.
+Рабочие версии находятся непосредственно в ChatGPT Project. При появлении подтверждённой устойчивой информации сначала обновляется соответствующий слой Project, затем синхронизируется его копия в `promts/`.
 
-Секреты в GitHub не хранятся и заполняются только локально в Postman.
-
-## Promts / project context
-
-`promts/` не участвует в runtime и не является рабочим source of truth для ChatGPT Project. Это backup/sync snapshot двух файлов, которые пользователь хранит и использует непосредственно в Project ChatGPT.
-
-- `promts/project-context.md` — snapshot текущего knowledge layer: архитектура, endpoints, ограничения, принятые решения, структура repo, исторические кейсы и рабочие паттерны.
-- `promts/project-instructions.md` — snapshot operational layer: формат ответов, приоритеты и правила работы со Strapi/API/GitHub/парсерами/ТЗ.
-
-Обычная работа ведётся из Project Instructions и `project-context.md`, загруженных в Project. К `promts/*` обращаются только для синхронизации/сравнения по прямой задаче. Сначала обновляется рабочая модель Project, затем её копия сохраняется в `promts/`.
-
-При изменении структуры/назначения репозитория одновременно актуализируется README.
+README обновляется, когда меняются структура, назначение, установка, использование или перечень основных инструментов репозитория.
 
 ## Дерево
 
@@ -168,6 +125,7 @@ Loader при открытии Strapi:
 │   ├── entry-relocate.js
 │   ├── list-view.js
 │   ├── product-attributes-navigator.js
+│   ├── product-sections.js
 │   └── record-list-scrollbars.js
 ├── parsers/
 │   ├── manifest.json
@@ -176,7 +134,7 @@ Loader при открытии Strapi:
 │   ├── dom-stealer.js
 │   ├── missing-shades.js
 │   ├── shade-and-volume.js
-│   ├── products-with-duplicate-bitrix-id.js
+│   ├── products-with-duplicate-fields.js
 │   ├── products-with-missing-content.js
 │   ├── products-with-wrong-variants.js
 │   ├── products-without-attributes.js
