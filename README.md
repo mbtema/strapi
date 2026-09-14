@@ -98,8 +98,6 @@ GitHub Actions запускает `scripts/check-extension-versions.mjs`: про
 - Migrator сохраняет checkpoint и не повторяет неопределённый `POST /upload`, чтобы не создавать duplicate media.
 - Bitrix browser-утилиты запускаются только на домене Bitrix Admin, где доступна авторизованная сессия.
 
-Локальные audit/result/checkpoint-файлы и `.env` исключены через `.gitignore`.
-
 ## Postman
 
 Основной файл:
@@ -125,8 +123,7 @@ README обновляется, когда меняются структура, �
 .
 ├── .github/
 │   └── workflows/
-│       └── extension-version-check.yml
-├── .gitignore
+│       └── extension-check.yml
 ├── extension/
 │   ├── loader.js
 │   └── manifest.json
