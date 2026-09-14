@@ -47,8 +47,8 @@
       "group": "products"
     },
     {
-      "name": "Товары с одинаковым bitrix_id",
-      "file": "products-with-duplicate-bitrix-id.js",
+      "name": "Товары с дублирующимися идентификаторами",
+      "file": "products-with-duplicate-fields.js",
       "group": "products"
     },
     {
