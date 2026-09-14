@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.1.1
+// @version      1.1.2
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifest
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extension/loader.js
@@ -19,6 +19,9 @@
   const MANIFEST_URL = `${RAW_ROOT}extension/manifest.json`;
   const CACHE_KEY = 'tm-strapi-extensions-cache-v1';
   const LOADER_ATTR = 'data-tm-strapi-extensions-loader';
+  const EXTENSION_ID_RE = /^[a-z0-9-]+$/i;
+  const EXTENSION_PATH_RE = /^(features|ui-ux)\/[a-z0-9-]+\.js$/i;
+  const VERSION_RE = /^\d+\.\d+\.\d+$/;
   const executedIds = new Set();
 
   if (document.documentElement?.hasAttribute(LOADER_ATTR)) return;
@@ -69,18 +72,43 @@
       throw new Error('Invalid extensions manifest');
     }
 
-    return manifest.extensions
-      .filter(item => item?.enabled === true)
-      .map(item => ({
-        id: String(item.id || '').trim(),
-        path: String(item.path || '').trim(),
-        version: String(item.version || '').trim()
-      }))
-      .filter(item =>
-        item.id &&
-        item.version &&
-        /^(features|ui-ux)\/[a-z0-9-]+\.js$/i.test(item.path)
-      );
+    const items = [];
+    const ids = new Set();
+    const paths = new Set();
+
+    manifest.extensions.forEach((item, index) => {
+      if (item?.enabled !== true) return;
+
+      const id = String(item.id || '').trim();
+      const path = String(item.path || '').trim();
+      const version = String(item.version || '').trim();
+      const label = `extensions[${index}]`;
+
+      if (!EXTENSION_ID_RE.test(id)) {
+        throw new Error(`${label}: invalid id`);
+      }
+      if (!VERSION_RE.test(version)) {
+        throw new Error(`${label}: invalid version for ${id}`);
+      }
+      if (!EXTENSION_PATH_RE.test(path)) {
+        throw new Error(`${label}: invalid path for ${id}`);
+      }
+      if (path.split('/').pop() !== `${id}.js`) {
+        throw new Error(`${label}: path does not match id ${id}`);
+      }
+      if (ids.has(id)) {
+        throw new Error(`${label}: duplicate id ${id}`);
+      }
+      if (paths.has(path)) {
+        throw new Error(`${label}: duplicate path ${path}`);
+      }
+
+      ids.add(id);
+      paths.add(path);
+      items.push({ id, path, version });
+    });
+
+    return items;
   }
 
   function getSignature(items) {
@@ -211,7 +239,7 @@
 
   refreshCache(cache).catch(error => {
     if (cache?.extensions?.some(isRunnableItem)) {
-      console.warn('[Extensions] GitHub unavailable, using cache', error);
+      console.warn('[Extensions] GitHub unavailable or manifest invalid, using cache', error);
       return;
     }
 
