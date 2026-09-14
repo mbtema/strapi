@@ -1,7 +1,7 @@
 // ==StrapiExtension==
 // @name         barcode-extractor
-// @version      1.4.1
-// @description  Копирует barcode с карточки товара по Ctrl+B
+// @version      1.4.2
+// @description  Копирует barcode с карточки товара по Alt+B
 // ==/StrapiExtension==
 
 (() => {
@@ -144,20 +144,22 @@
   }
 
   document.addEventListener('keydown', async event => {
-    if (!event.ctrlKey || event.code !== 'KeyB' || event.repeat) return;
+    if (
+      !event.altKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.metaKey ||
+      event.code !== 'KeyB' ||
+      event.repeat
+    ) {
+      return;
+    }
+
+    const input = document.querySelector('input[name="barcode"]');
+    if (!input) return;
 
     event.preventDefault();
     event.stopPropagation();
-
-    const input =
-      document.querySelector('input[name="barcode"]') ||
-      document.querySelector('input[id*="barcode"]');
-
-    if (!input) {
-      console.warn('[Barcode] Field not found');
-      showToast('error', 'Error: Barcode field not found');
-      return;
-    }
 
     const value = input.value?.trim();
 
