@@ -1,0 +1,39 @@
+name: Extension version check
+
+on:
+  pull_request:
+    paths:
+      - 'features/**'
+      - 'ui-ux/**'
+      - 'extension/manifest.json'
+      - 'scripts/check-extension-versions.mjs'
+      - '.github/workflows/extension-version-check.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'features/**'
+      - 'ui-ux/**'
+      - 'extension/manifest.json'
+      - 'scripts/check-extension-versions.mjs'
+      - '.github/workflows/extension-version-check.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate extension versions
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/check-extension-versions.mjs "$BASE_REF"
