@@ -32,6 +32,12 @@
       "enabled": true
     },
     {
+      "id": "product-sections",
+      "path": "ui-ux/product-sections.js",
+      "version": "1.0.0",
+      "enabled": true
+    },
+    {
       "id": "barcode-extractor",
       "path": "features/barcode-extractor.js",
       "version": "1.4.1",
