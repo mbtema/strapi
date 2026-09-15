@@ -41,7 +41,7 @@ GitHub Actions запускает `scripts/check-extension-versions.mjs`: про
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Ctrl+Enter`, публикует текущую запись.
-- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`; повторный параллельный запуск уже работающего async parser блокируется до его завершения.
+- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`, включая отдельную группу `Drafts` для тестовых проверок; повторный параллельный запуск уже работающего async parser блокируется до его завершения.
 - `vimium-open-row.js` — делает строки таблиц доступными для Vimium; собственная ссылка помечается через `data-tm-*` и восстанавливается после React re-render.
 
 ## UI/UX
@@ -84,12 +84,13 @@ GitHub Actions запускает `scripts/check-extension-versions.mjs`: про
 - `products-with-wrong-prices.js` — активные товары с нулевой/пустой/некорректной ценой предложения.
 - `products-with-missing-content.js` — активные товары без критичных контентных полей.
 - `products-with-wrong-variants.js` — товары с неконсистентным выбором вариантов по `shade`/`volume`.
+- `attributes-with-barcode-issues.js` — draft-аудит опубликованных предложений без `barcode` и с повторяющимися `barcode`; без фильтра по `active`/`isInStock`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `manifest.json` — единый список парсеров и их групп для Parser Launcher.
 
 Для нового регулярного parser достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`. Группа задаётся там же через `group`; дублировать список файлов внутри `parser-launcher.js` не нужно.
 
-Рабочие группы: `products`, `offers`, `attributes`, `service`.
+Рабочие группы: `products`, `offers`, `attributes`, `drafts`, `service`.
 
 ## Bitrix / Migrator
 
@@ -141,6 +142,7 @@ README обновляется, когда меняются структура, �
 │   └── record-list-scrollbars.js
 ├── parsers/
 │   ├── manifest.json
+│   ├── attributes-with-barcode-issues.js
 │   ├── attributes-without-detail-picture.js
 │   ├── attributes-without-product.js
 │   ├── dom-stealer.js
