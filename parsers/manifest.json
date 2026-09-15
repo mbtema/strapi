@@ -67,6 +67,11 @@
       "group": "products"
     },
     {
+      "name": "Аудит barcode предложений (draft)",
+      "file": "attributes-with-barcode-issues.js",
+      "group": "drafts"
+    },
+    {
       "name": "Копировать DOM страницы",
       "file": "dom-stealer.js",
       "group": "service"
