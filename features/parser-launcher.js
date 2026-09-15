@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         parser-launcher
-// @version      1.4.9
+// @version      1.5.0
 // @description  Запускает парсеры из GitHub по Alt+P
 // ==/StrapiExtension==
 
@@ -18,7 +18,8 @@
   const PARSER_GROUPS = [
     { id: 'products', title: 'Товары' },
     { id: 'offers', title: 'Предложения' },
-    { id: 'attributes', title: 'Shade / Volume' }
+    { id: 'attributes', title: 'Shade / Volume' },
+    { id: 'drafts', title: 'Drafts' }
   ];
 
   const KNOWN_GROUP_IDS = new Set(PARSER_GROUPS.map(group => group.id));
@@ -293,7 +294,7 @@
     const grid = document.createElement('div');
     Object.assign(grid.style, {
       display: 'grid',
-      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+      gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
       gap: '14px',
       alignItems: 'start'
     });
