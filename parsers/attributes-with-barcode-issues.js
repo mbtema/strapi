@@ -146,13 +146,13 @@
     });
   }
 
-  for (const [barcode, itemsByDocumentId] of duplicateGroups) {
+  for (const itemsByDocumentId of duplicateGroups.values()) {
     const items = [...itemsByDocumentId.values()];
 
     for (const attribute of items) {
       rows.push({
         issue: 'duplicate_barcode',
-        barcode,
+        barcode: attribute.barcode,
         duplicateCount: items.length,
         attributeId: attribute.id,
         attributeDocumentId: attribute.documentId,
