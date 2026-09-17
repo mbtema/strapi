@@ -1,7 +1,7 @@
 // ==ConsoleParser==
 // @name         shade-and-volume
-// @version      1.0.1
-// @description  Ищет все торговые предложения, у которых одновременно заполнены shade и volume
+// @version      1.0.2
+// @description  Ищет опубликованные торговые предложения, у которых одновременно заполнены shade и volume
 // @output       CSV
 // ==/ConsoleParser==
 
@@ -87,7 +87,7 @@
   }
 
   console.table(matches);
-  console.log(`Готово: найдено предложений одновременно с shade и volume: ${matches.length}`);
+  console.log(`Готово: найдено опубликованных предложений одновременно с shade и volume: ${matches.length}`);
   window.attributesWithShadeAndVolume = matches;
   downloadCSV(matches, `attributes_with_shade_and_volume_${timestamp()}.csv`);
 })();
