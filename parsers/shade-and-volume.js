@@ -1,10 +1,3 @@
-// ==ConsoleParser==
-// @name         shade-and-volume
-// @version      1.0.2
-// @description  Ищет опубликованные торговые предложения, у которых одновременно заполнены shade и volume
-// @output       CSV
-// ==/ConsoleParser==
-
 (async () => {
   const BASE_URL = '/api/attributes';
   const PAGE_SIZE = 100;
