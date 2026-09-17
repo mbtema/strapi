@@ -1,10 +1,3 @@
-// ==ConsoleParser==
-// @name         sort-volume
-// @version      1.3.1
-// @description  Выявляет товары с неправильной сортировкой volume с учетом единиц измерения
-// @output       CSV
-// ==/ConsoleParser==
-
 (async () => {
   const BASE_URL = '/api/products';
   const PAGE_SIZE = 100;
