@@ -1,9 +1,3 @@
-// ==StrapiExtension==
-// @name         sidebar
-// @version      2.2.4
-// @description  Единый UI/UX sidebar: навигация, Alt+S, поиск, группы, иконки и future-safe fallback
-// ==/StrapiExtension==
-
 (function () {
     'use strict';
 
