@@ -4,14 +4,12 @@
 
 | Папка | Назначение |
 |---|---|
-| [`.github/`](./.github) | GitHub Actions для автоматических проверок репозитория |
 | [`extension/`](./extension) | Единый Tampermonkey loader и manifest постоянных расширений Strapi |
 | [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
 | [`migrator/`](./migrator) | Утилиты для аудита и миграции данных из Bitrix |
 | [`postman/`](./postman) | Postman collection с общими variables и API paths |
-| [`scripts/`](./scripts) | Служебные проверки репозитория для CI и локального запуска |
 | [`promts/`](./promts) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
 
 ## Extension loader
@@ -35,8 +33,6 @@ Loader при открытии Strapi:
 
 Loader строго валидирует включённые entries manifest: `id`, `path`, semver `version`, соответствие имени файла и отсутствие дублей. При некорректном manifest новый кеш не записывается, а при наличии старого loader продолжает использовать его.
 
-GitHub Actions запускает `scripts/check-extension-versions.mjs`: проверяет совпадение `@version` в extension с manifest и требует version bump, если зарегистрированный файл в `features/` или `ui-ux/` изменился относительно base commit.
-
 ## Features
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
@@ -46,7 +42,7 @@ GitHub Actions запускает `scripts/check-extension-versions.mjs`: про
 
 ## UI/UX
 
-- `sidebar.js` — единый sidebar-модуль: `Alt+S`, поиск, быстрый доступ, группы Collection Types/Single Types, active state и очистка глобальной левой навигации.
+- `sidebar.js` — единый sidebar-модуль: `Alt+S`, поиск, быстрый доступ, группы Collection Types/Single Types, active state и очистка глобальной левой навигации; последнее состояние скрыт/показан сохраняется на время текущей вкладки браузера и переживает обычный reload.
 - `record-list-scrollbars.js` — визуально скрывает scrollbar/overflow decoration в списках Content Manager, сохраняя прокрутку.
 - `list-view.js` — доработки list view Content Manager.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
@@ -59,13 +55,7 @@ GitHub Actions запускает `scripts/check-extension-versions.mjs`: про
 - minor (`1.4`) — заметное новое поведение;
 - major (`2.0`) — крупная переработка.
 
-Версия extension независима от версии loader.
-
-Локально проверить manifest и версии можно командой:
-
-`node scripts/check-extension-versions.mjs <base-ref>`
-
-Без `<base-ref>` скрипт проверяет структуру manifest и совпадение текущих `@version`.
+Версия extension независима от версии loader. При каждом изменении extension версия в его `@version` и `extension/manifest.json` должна оставаться синхронной.
 
 ## Parsers
 
@@ -122,9 +112,6 @@ README обновляется, когда меняются структура, �
 
 ```text
 .
-├── .github/
-│   └── workflows/
-│       └── extension-check.yml
 ├── extension/
 │   ├── loader.js
 │   └── manifest.json
@@ -162,8 +149,6 @@ README обновляется, когда меняются структура, �
 │   └── detail-picture-migrator.js
 ├── postman/
 │   └── admin-api.json
-├── scripts/
-│   └── check-extension-versions.mjs
 ├── promts/
 │   ├── project-context.md
 │   └── project-instructions.md
