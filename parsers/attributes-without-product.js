@@ -1,7 +1,7 @@
 // ==ConsoleParser==
 // @name         attributes-without-product
-// @version      1.0.2
-// @description  Ищет все торговые предложения без связанного товара
+// @version      1.0.3
+// @description  Ищет опубликованные торговые предложения без связанного товара
 // @output       CSV
 // ==/ConsoleParser==
 
@@ -65,7 +65,7 @@
   }
 
   console.table(rows);
-  console.log(`Готово: найдено предложений без product: ${rows.length}`);
+  console.log(`Готово: найдено опубликованных предложений без product: ${rows.length}`);
   window.attributesWithoutProduct = rows;
   downloadCSV(rows, `attributes_without_product_${timestamp()}.csv`);
 })();
