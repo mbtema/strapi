@@ -1,9 +1,3 @@
-// ==StrapiExtension==
-// @name         ctrl-enter-publisher
-// @version      1.2.0
-// @description  Alt+Enter публикует текущую запись
-// ==/StrapiExtension==
-
 (function () {
     'use strict';
 
