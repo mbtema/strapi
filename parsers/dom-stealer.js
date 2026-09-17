@@ -1,10 +1,3 @@
-// ==ConsoleParser==
-// @name         dom-stealer
-// @version      1.0.1
-// @description  Копирует текущий DOM страницы целиком в буфер обмена
-// @output       Clipboard
-// ==/ConsoleParser==
-
 (async () => {
   'use strict';
 
