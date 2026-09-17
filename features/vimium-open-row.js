@@ -1,9 +1,3 @@
-// ==StrapiExtension==
-// @name         vimium-open-row
-// @version      1.1.2
-// @description  Делает строки таблиц доступными для Vimium
-// ==/StrapiExtension==
-
 (function () {
     'use strict';
 
