@@ -1,7 +1,7 @@
 // ==ConsoleParser==
 // @name         products-with-missing-content
-// @version      1.0.0
-// @description  Ищет активные товары без name1, name2, detail_picture или detail_text
+// @version      1.1.0
+// @description  Ищет активные товары без name1, name2, detail_picture или detail_text, исключая служебные категории
 // @output       CSV
 // ==/ConsoleParser==
 
@@ -10,6 +10,10 @@
 
   const BASE_URL = '/api/products';
   const PAGE_SIZE = 100;
+  const EXCLUDED_CATEGORY_IDS = new Set([
+    'kns3po2mz8hq9kezm3szbvjg',
+    'a4zy2gvb479ku9nd6py5uxzh'
+  ]);
   const HEADERS = [
     'id',
     'documentId',
@@ -38,6 +42,22 @@
       .trim()
       .length > 0;
   };
+
+  const relationItems = relation => {
+    if (!relation) return [];
+    const value = Object.prototype.hasOwnProperty.call(Object(relation), 'data')
+      ? relation.data
+      : relation;
+    if (!value) return [];
+    return Array.isArray(value) ? value : [value];
+  };
+
+  const relationDocumentId = item =>
+    item?.documentId ?? item?.attributes?.documentId ?? '';
+
+  const isExcludedCategoryProduct = item =>
+    relationItems(item.categories)
+      .some(category => EXCLUDED_CATEGORY_IDS.has(relationDocumentId(category)));
 
   const hasMedia = relation => {
     if (!relation) return false;
@@ -80,13 +100,15 @@
     'fields[2]': 'name1',
     'fields[3]': 'name2',
     'fields[4]': 'detail_text',
-    'populate[detail_picture][fields][0]': 'documentId'
+    'populate[detail_picture][fields][0]': 'documentId',
+    'populate[categories][fields][0]': 'documentId'
   });
 
   let page = 1;
   let pageCount = 1;
   let total = 0;
   let checked = 0;
+  let excludedByCategory = 0;
 
   while (page <= pageCount) {
     params.set('pagination[page]', String(page));
@@ -102,6 +124,11 @@
 
     for (const item of data) {
       checked++;
+
+      if (isExcludedCategoryProduct(item)) {
+        excludedByCategory++;
+        continue;
+      }
 
       const missing = [];
       if (!hasText(item.name1)) missing.push('name1');
@@ -129,7 +156,7 @@
 
     if (page === 1 || page % 25 === 0 || page === pageCount) {
       console.log(
-        `Страница ${page}/${pageCount} | Проверено: ${checked}/${total} | Найдено: ${rows.length}`
+        `Страница ${page}/${pageCount} | Проверено: ${checked}/${total} | Исключено по категории: ${excludedByCategory} | Найдено: ${rows.length}`
       );
     }
 
@@ -140,6 +167,7 @@
   console.log(
     `Готово: найдено активных товаров с незаполненным критичным контентом: ${rows.length}`
   );
+  console.log(`Исключено по служебным категориям: ${excludedByCategory}`);
 
   window.productsWithMissingContent = rows;
   downloadCSV(rows, `products_missing_content_${timestamp()}.csv`);
