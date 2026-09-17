@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         parser-launcher
-// @version      1.5.0
+// @version      1.6.0
 // @description  Запускает парсеры из GitHub по Alt+P
 // ==/StrapiExtension==
 
@@ -23,6 +23,7 @@
   ];
 
   const KNOWN_GROUP_IDS = new Set(PARSER_GROUPS.map(group => group.id));
+  const ALLOWED_GROUP_IDS = new Set([...KNOWN_GROUP_IDS, 'service']);
   const activeRuns = window[ACTIVE_RUNS_KEY] instanceof Set
     ? window[ACTIVE_RUNS_KEY]
     : new Set();
@@ -53,21 +54,48 @@
       throw new Error('Некорректный manifest.json');
     }
 
-    return manifest.parsers
-      .filter(parser =>
-        parser &&
-        typeof parser.name === 'string' &&
-        typeof parser.file === 'string'
-      )
-      .map(parser => ({
+    const files = new Set();
+
+    return manifest.parsers.map((parser, index) => {
+      const label = `parsers[${index}]`;
+
+      if (!parser || typeof parser !== 'object' || Array.isArray(parser)) {
+        throw new Error(`${label}: запись должна быть объектом`);
+      }
+
+      if (typeof parser.name !== 'string' || !parser.name.trim()) {
+        throw new Error(`${label}: name должен быть непустой строкой`);
+      }
+
+      if (typeof parser.file !== 'string' || !parser.file.trim()) {
+        throw new Error(`${label}: file должен быть непустой строкой`);
+      }
+
+      if (typeof parser.group !== 'string' || !parser.group.trim()) {
+        throw new Error(`${label}: group должен быть непустой строкой`);
+      }
+
+      const normalized = {
         name: parser.name.trim(),
         file: parser.file.trim(),
-        group: String(parser.group || 'service').trim().toLowerCase()
-      }))
-      .filter(parser =>
-        parser.name.length > 0 &&
-        PARSER_FILE_RE.test(parser.file)
-      );
+        group: parser.group.trim().toLowerCase()
+      };
+
+      if (!PARSER_FILE_RE.test(normalized.file)) {
+        throw new Error(`${label}: некорректное имя файла ${normalized.file}`);
+      }
+
+      if (!ALLOWED_GROUP_IDS.has(normalized.group)) {
+        throw new Error(`${label}: неизвестная группа ${normalized.group}`);
+      }
+
+      if (files.has(normalized.file)) {
+        throw new Error(`${label}: duplicate file ${normalized.file}`);
+      }
+
+      files.add(normalized.file);
+      return normalized;
+    });
   }
 
   function managedParserCode(code, file) {
@@ -83,7 +111,56 @@
     const suffix = code.slice(end + endToken.length);
     const fileLiteral = JSON.stringify(file);
 
-    return `${prefix}(async () => {\n  try {${body}\n  } finally {\n    window.${ACTIVE_RUNS_KEY}?.delete(${fileLiteral});\n  }\n})();${suffix}`;
+    const fetchWrapper = `
+  const __tmNativeFetch = window.fetch.bind(window);
+  const fetch = async (...args) => {
+    const options = args[1] || {};
+    const method = String(options.method || 'GET').toUpperCase();
+    const maxAttempts = method === 'GET' ? 3 : 1;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await __tmNativeFetch(...args);
+        const transient = response.status === 429 || response.status >= 500;
+
+        if (!transient || attempt === maxAttempts) return response;
+
+        const retryAfter = Number(response.headers.get('Retry-After'));
+        const delay = Number.isFinite(retryAfter) && retryAfter > 0
+          ? retryAfter * 1000
+          : 500 * attempt;
+
+        console.warn(
+          '[Parser Launcher] Временная ошибка ' + response.status +
+          ', повтор ' + (attempt + 1) + '/' + maxAttempts
+        );
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } catch (error) {
+        lastError = error;
+
+        if (attempt === maxAttempts) {
+          const url = String(args[0] || '');
+          throw new Error(
+            'Network error после ' + maxAttempts + ' попыток: ' + url +
+            ' — ' + (error?.message || error)
+          );
+        }
+
+        console.warn(
+          '[Parser Launcher] Network error, повтор ' +
+          (attempt + 1) + '/' + maxAttempts,
+          error
+        );
+        await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+      }
+    }
+
+    throw lastError || new Error('Parser request failed');
+  };
+`;
+
+    return `${prefix}(async () => {\n  try {${fetchWrapper}${body}\n  } finally {\n    window.${ACTIVE_RUNS_KEY}?.delete(${fileLiteral});\n  }\n})();${suffix}`;
   }
 
   function executeParser(code, file) {
@@ -215,9 +292,7 @@
       parsers: parsers.filter(parser => parser.group === group.id)
     }));
 
-    const service = parsers.filter(parser =>
-      parser.group === 'service' || !KNOWN_GROUP_IDS.has(parser.group)
-    );
+    const service = parsers.filter(parser => parser.group === 'service');
 
     return { grouped, service };
   }
