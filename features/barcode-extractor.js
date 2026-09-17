@@ -1,9 +1,3 @@
-// ==StrapiExtension==
-// @name         barcode-extractor
-// @version      1.4.2
-// @description  Копирует barcode с карточки товара по Alt+B
-// ==/StrapiExtension==
-
 (() => {
   'use strict';
 
