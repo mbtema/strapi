@@ -1,9 +1,3 @@
-// ==StrapiExtension==
-// @name         product-sections
-// @version      1.1.0
-// @description  Разделяет карточку товара на вкладки Контент, Фильтры и Системное
-// ==/StrapiExtension==
-
 (function () {
     'use strict';
 
