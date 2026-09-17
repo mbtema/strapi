@@ -7,6 +7,7 @@
   const MANIFEST_FILE = 'manifest.json';
   const OVERLAY_ID = 'tm-parser-launcher-overlay';
   const PARSER_FILE_RE = /^[a-z0-9-]+\.js$/;
+  const VERSION_RE = /^\d+\.\d+\.\d+$/;
   const ACTIVE_RUNS_KEY = '__tmParserLauncherActiveRuns';
 
   const PARSER_GROUPS = [
@@ -65,6 +66,10 @@
         throw new Error(`${label}: file должен быть непустой строкой`);
       }
 
+      if (typeof parser.version !== 'string' || !parser.version.trim()) {
+        throw new Error(`${label}: version должен быть непустой строкой`);
+      }
+
       if (typeof parser.group !== 'string' || !parser.group.trim()) {
         throw new Error(`${label}: group должен быть непустой строкой`);
       }
@@ -72,11 +77,16 @@
       const normalized = {
         name: parser.name.trim(),
         file: parser.file.trim(),
+        version: parser.version.trim(),
         group: parser.group.trim().toLowerCase()
       };
 
       if (!PARSER_FILE_RE.test(normalized.file)) {
         throw new Error(`${label}: некорректное имя файла ${normalized.file}`);
+      }
+
+      if (!VERSION_RE.test(normalized.version)) {
+        throw new Error(`${label}: некорректная version ${normalized.version}`);
       }
 
       if (!ALLOWED_GROUP_IDS.has(normalized.group)) {
