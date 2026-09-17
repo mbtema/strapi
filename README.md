@@ -37,7 +37,7 @@ Loader строго валидирует включённые entries manifest: 
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`, включая отдельную группу `Drafts` для тестовых проверок; повторный параллельный запуск уже работающего async parser блокируется до его завершения.
+- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`, строго валидирует `name` / `file` / `group` и дубли файлов, блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 - `vimium-open-row.js` — делает строки таблиц доступными для Vimium; собственная ссылка помечается через `data-tm-*` и восстанавливается после React re-render.
 
 ## UI/UX
@@ -59,13 +59,13 @@ Loader строго валидирует включённые entries manifest: 
 
 ## Parsers
 
-Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. Вспомогательные parsers могут иметь другой output, если это указано в meta header.
+Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Вспомогательные parsers могут иметь другой output, если это указано в meta header.
 
 - `sort-volume.js` — неправильный порядок volume.
 - `volume-checker.js` — разные единицы измерения volume.
 - `missing-shades.js` — активные предложения с `color_variant1C`, но без `shade`.
-- `shade-and-volume.js` — предложения, у которых одновременно заполнены `shade` и `volume`.
-- `attributes-without-product.js` — предложения без `product`.
+- `shade-and-volume.js` — опубликованные предложения, у которых одновременно заполнены `shade` и `volume`.
+- `attributes-without-product.js` — опубликованные предложения без `product`.
 - `attributes-without-detail-picture.js` — предложения активных товаров без `detail_picture`.
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-brand.js` — активные товары без `brand`.
@@ -84,7 +84,7 @@ Loader строго валидирует включённые entries manifest: 
 
 ## Bitrix / Migrator
 
-- `migrator/detail-picture-audit.js` — browser-аудит Bitrix по barcode с формированием mapping CSV.
+- `migrator/detail-picture-audit.js` — browser-аудит DETAIL_PICTURE: напрямую сканирует торговые предложения `IBLOCK_ID=2`, сопоставляет точный barcode и открывает карточку конкретного offer только когда изображение нельзя получить из строки списка; сохраняет checkpoint и CSV.
 - `migrator/detail-picture-migrator.js` — локальный Node.js migrator: находит Strapi attribute, скачивает изображение, загружает его в Strapi, привязывает `detail_picture`, публикует `ru` и проверяет результат.
 - Migrator сохраняет checkpoint и не повторяет неопределённый `POST /upload`, чтобы не создавать duplicate media.
 - Bitrix browser-утилиты запускаются только на домене Bitrix Admin, где доступна авторизованная сессия.
