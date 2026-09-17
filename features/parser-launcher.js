@@ -1,9 +1,3 @@
-// ==StrapiExtension==
-// @name         parser-launcher
-// @version      1.6.0
-// @description  Запускает парсеры из GitHub по Alt+P
-// ==/StrapiExtension==
-
 (() => {
   'use strict';
 
