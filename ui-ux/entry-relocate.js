@@ -1,9 +1,3 @@
-// ==StrapiExtension==
-// @name         entry-relocate
-// @version      1.4.5
-// @description  Переносит действия Entry в строку с Draft / Published
-// ==/StrapiExtension==
-
 (function () {
     'use strict';
 
