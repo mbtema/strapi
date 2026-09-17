@@ -37,7 +37,7 @@ Loader строго валидирует включённые entries manifest: 
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`, строго валидирует `name` / `file` / `group` и дубли файлов, блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
+- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`, строго валидирует `name` / `file` / semver `version` / `group` и дубли файлов, блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 - `vimium-open-row.js` — делает строки таблиц доступными для Vimium; собственная ссылка помечается через `data-tm-*` и восстанавливается после React re-render.
 
 ## UI/UX
@@ -59,7 +59,7 @@ Loader строго валидирует включённые entries manifest: 
 
 ## Parsers
 
-Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Вспомогательные parsers могут иметь другой output, если это указано в meta header.
+Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Метаданные parser'а хранятся только в `parsers/manifest.json`; metadata-блоков внутри `.js` нет.
 
 - `sort-volume.js` — неправильный порядок volume.
 - `volume-checker.js` — разные единицы измерения volume.
@@ -76,9 +76,9 @@ Loader строго валидирует включённые entries manifest: 
 - `products-with-wrong-variants.js` — товары с неконсистентным выбором вариантов по `shade`/`volume`.
 - `attributes-with-barcode-issues.js` — draft-аудит опубликованных предложений без `barcode` и с повторяющимися `barcode`; без фильтра по `active`/`isInStock`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
-- `manifest.json` — единый список парсеров и их групп для Parser Launcher.
+- `manifest.json` — единый источник `name`, `file`, semver `version` и `group` для Parser Launcher.
 
-Для нового регулярного parser достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`. Группа задаётся там же через `group`; дублировать список файлов внутри `parser-launcher.js` не нужно.
+Для нового регулярного parser достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`, указав `name`, `file`, `version` и `group`; дублировать metadata внутри parser-файла не нужно.
 
 Рабочие группы: `products`, `offers`, `attributes`, `drafts`, `service`.
 
