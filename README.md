@@ -72,7 +72,7 @@ Loader строго валидирует включённые entries manifest: 
 - `products-without-categories.js` — активные товары без `categories`.
 - `products-with-duplicate-fields.js` — дубли технических идентификаторов `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`.
 - `products-with-wrong-prices.js` — активные товары с нулевой/пустой/некорректной ценой предложения.
-- `products-with-missing-content.js` — активные товары без критичных контентных полей.
+- `products-with-missing-content.js` — активные товары без критичных контентных полей; товары из категорий `kns3po2mz8hq9kezm3szbvjg` и `a4zy2gvb479ku9nd6py5uxzh` исключаются из отчёта и считаются неактивными для этой проверки.
 - `products-with-wrong-variants.js` — товары с неконсистентным выбором вариантов по `shade`/`volume`.
 - `attributes-with-barcode-issues.js` — draft-аудит опубликованных предложений без `barcode` и с повторяющимися `barcode`; без фильтра по `active`/`isInStock`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
