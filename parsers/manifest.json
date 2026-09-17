@@ -17,12 +17,12 @@
       "group": "attributes"
     },
     {
-      "name": "Предложения с оттенком и объемом",
+      "name": "Опубликованные предложения с оттенком и объемом",
       "file": "shade-and-volume.js",
       "group": "attributes"
     },
     {
-      "name": "Предложения без товара",
+      "name": "Опубликованные предложения без товара",
       "file": "attributes-without-product.js",
       "group": "offers"
     },
