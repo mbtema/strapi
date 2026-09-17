@@ -1,10 +1,3 @@
-// ==ConsoleParser==
-// @name         attributes-without-detail-picture
-// @version      1.0.2
-// @description  Ищет предложения активных товаров в наличии без detail_picture
-// @output       CSV
-// ==/ConsoleParser==
-
 (async () => {
   'use strict';
 
