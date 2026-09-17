@@ -1,10 +1,3 @@
-// ==ConsoleParser==
-// @name         missing-shades
-// @version      1.0.1
-// @description  Ищет активные торговые предложения с color_variant1C, но без shade
-// @output       CSV
-// ==/ConsoleParser==
-
 (async () => {
   const BASE_URL = '/api/attributes';
   const PAGE_SIZE = 100;
