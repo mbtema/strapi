@@ -1,10 +1,3 @@
-// ==ConsoleParser==
-// @name         attributes-without-product
-// @version      1.0.3
-// @description  Ищет опубликованные торговые предложения без связанного товара
-// @output       CSV
-// ==/ConsoleParser==
-
 (async () => {
   const BASE_URL = '/api/attributes';
   const PAGE_SIZE = 100;
