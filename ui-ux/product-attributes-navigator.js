@@ -1,9 +1,3 @@
-// ==StrapiExtension==
-// @name         product-attributes-navigator
-// @version      1.0.3
-// @description  Навигация по торговым предложениям в карточке товара: поиск, пагинация, прямой переход и удобное управление relations
-// ==/StrapiExtension==
-
 (function () {
     'use strict';
 
