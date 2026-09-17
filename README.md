@@ -55,7 +55,7 @@ Loader строго валидирует включённые entries manifest: 
 - minor (`1.4`) — заметное новое поведение;
 - major (`2.0`) — крупная переработка.
 
-Версия extension независима от версии loader. При каждом изменении extension версия в его `@version` и `extension/manifest.json` должна оставаться синхронной.
+Версия extension независима от версии loader. Единственный источник версии для файлов из `features/` и `ui-ux/` — `extension/manifest.json`; отдельные metadata-блоки и `@version` внутри этих файлов не используются.
 
 ## Parsers
 
