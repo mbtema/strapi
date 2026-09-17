@@ -1,10 +1,3 @@
-// ==ConsoleParser==
-// @name         products-with-wrong-prices
-// @version      1.1.1
-// @description  Ищет активные товары с предложениями, где price = 0, отсутствует или является дробным
-// @output       CSV
-// ==/ConsoleParser==
-
 (async () => {
   const BASE_URL = '/api/attributes';
   const PAGE_SIZE = 100;
