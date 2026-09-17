@@ -58,10 +58,6 @@
         throw new Error(`${label}: запись должна быть объектом`);
       }
 
-      if (typeof parser.name !== 'string' || !parser.name.trim()) {
-        throw new Error(`${label}: name должен быть непустой строкой`);
-      }
-
       if (typeof parser.file !== 'string' || !parser.file.trim()) {
         throw new Error(`${label}: file должен быть непустой строкой`);
       }
@@ -75,7 +71,6 @@
       }
 
       const normalized = {
-        name: parser.name.trim(),
         file: parser.file.trim(),
         version: parser.version.trim(),
         group: parser.group.trim().toLowerCase()
@@ -218,7 +213,6 @@
     button.textContent = activeRuns.has(parser.file)
       ? `${parser.file} · запущен`
       : parser.file;
-    button.title = parser.name;
     button.disabled = activeRuns.has(parser.file);
 
     Object.assign(button.style, {
