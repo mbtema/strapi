@@ -1,10 +1,3 @@
-// ==ConsoleParser==
-// @name         products-with-wrong-variants
-// @version      1.0.3
-// @description  Ищет активные товары с несколькими предложениями, которые нельзя последовательно выбрать по shade или volume
-// @output       CSV
-// ==/ConsoleParser==
-
 (async () => {
   'use strict';
 
