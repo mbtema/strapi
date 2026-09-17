@@ -1,7 +1,7 @@
 // ==StrapiExtension==
 // @name         ctrl-enter-publisher
-// @version      1.1.1
-// @description  Ctrl+Enter публикует текущую запись
+// @version      1.2.0
+// @description  Alt+Enter публикует текущую запись
 // ==/StrapiExtension==
 
 (function () {
@@ -29,7 +29,16 @@
     }
 
     document.addEventListener('keydown', event => {
-        if (!event.ctrlKey || event.code !== 'Enter' || event.repeat) return;
+        if (
+            !event.altKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.metaKey ||
+            event.code !== 'Enter' ||
+            event.repeat
+        ) {
+            return;
+        }
 
         const publishButton = findPublishButton();
 
