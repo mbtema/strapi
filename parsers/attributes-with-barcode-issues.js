@@ -1,10 +1,3 @@
-// ==ConsoleParser==
-// @name         attributes-with-barcode-issues
-// @version      1.0.0
-// @description  Тестовый аудит опубликованных предложений без barcode и с дублирующимися barcode
-// @output       CSV
-// ==/ConsoleParser==
-
 (async () => {
   'use strict';
 
