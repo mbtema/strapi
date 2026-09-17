@@ -1,9 +1,3 @@
-// ==StrapiExtension==
-// @name         record-list-scrollbars
-// @version      1.0.4
-// @description  Скрывает scrollbar и overflow-подсветку в списке записей Content Manager, сохраняя прокрутку
-// ==/StrapiExtension==
-
 (function () {
     'use strict';
 
