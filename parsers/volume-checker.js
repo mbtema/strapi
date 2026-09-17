@@ -1,10 +1,3 @@
-// ==ConsoleParser==
-// @name         volume-checker
-// @version      1.2.1
-// @description  Выявляет товары с неоднородными единицами измерения volume в торговых предложениях
-// @output       CSV
-// ==/ConsoleParser==
-
 (async () => {
   const BASE_URL = '/api/products';
   const PAGE_SIZE = 100;
