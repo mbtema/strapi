@@ -4,61 +4,61 @@
     {
       "id": "sidebar",
       "path": "ui-ux/sidebar.js",
-      "version": "2.2.4",
+      "version": "2.2.5",
       "enabled": true
     },
     {
       "id": "record-list-scrollbars",
       "path": "ui-ux/record-list-scrollbars.js",
-      "version": "1.0.4",
+      "version": "1.0.5",
       "enabled": true
     },
     {
       "id": "list-view",
       "path": "ui-ux/list-view.js",
-      "version": "1.3.0",
+      "version": "1.3.1",
       "enabled": true
     },
     {
       "id": "entry-relocate",
       "path": "ui-ux/entry-relocate.js",
-      "version": "1.4.5",
+      "version": "1.4.6",
       "enabled": true
     },
     {
       "id": "product-attributes-navigator",
       "path": "ui-ux/product-attributes-navigator.js",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "enabled": true
     },
     {
       "id": "product-sections",
       "path": "ui-ux/product-sections.js",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "enabled": true
     },
     {
       "id": "barcode-extractor",
       "path": "features/barcode-extractor.js",
-      "version": "1.4.2",
+      "version": "1.4.3",
       "enabled": true
     },
     {
       "id": "ctrl-enter-publisher",
       "path": "features/ctrl-enter-publisher.js",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "enabled": true
     },
     {
       "id": "parser-launcher",
       "path": "features/parser-launcher.js",
-      "version": "1.6.0",
+      "version": "1.6.1",
       "enabled": true
     },
     {
       "id": "vimium-open-row",
       "path": "features/vimium-open-row.js",
-      "version": "1.1.2",
+      "version": "1.1.3",
       "enabled": true
     }
   ]
