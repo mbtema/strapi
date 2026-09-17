@@ -1,6 +1,6 @@
 // ==StrapiExtension==
 // @name         sidebar
-// @version      2.2.3
+// @version      2.2.4
 // @description  Единый UI/UX sidebar: навигация, Alt+S, поиск, группы, иконки и future-safe fallback
 // ==/StrapiExtension==
 
@@ -8,6 +8,7 @@
     'use strict';
 
     const STYLE_ID = 'tm-sidebar-style';
+    const SIDEBAR_STATE_KEY = 'tm-strapi-sidebar-hidden-v1';
 
     const GLOBAL_NAV_ATTR = 'data-tm-global-nav';
     const GLOBAL_LOGO_ATTR = 'data-tm-global-logo-hidden';
@@ -181,7 +182,24 @@
         GROUPS.map(group => [group.id, group.collapsed])
     );
 
-    let hidden = false;
+    function readSidebarHiddenState() {
+        try {
+            return sessionStorage.getItem(SIDEBAR_STATE_KEY) === 'hidden';
+        } catch (error) {
+            console.warn('[sidebar] Failed to read session state', error);
+            return false;
+        }
+    }
+
+    function writeSidebarHiddenState() {
+        try {
+            sessionStorage.setItem(SIDEBAR_STATE_KEY, hidden ? 'hidden' : 'visible');
+        } catch (error) {
+            console.warn('[sidebar] Failed to persist session state', error);
+        }
+    }
+
+    let hidden = readSidebarHiddenState();
     let sidebar = null;
     let collectionList = null;
     let singleSourceList = null;
@@ -1092,6 +1110,7 @@
         if (!sidebar) return;
 
         hidden = !hidden;
+        writeSidebarHiddenState();
         applySidebarState();
         console.log(`[sidebar] ${hidden ? 'Hidden' : 'Visible'}`);
     }
