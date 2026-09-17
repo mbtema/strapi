@@ -1,10 +1,3 @@
-// ==ConsoleParser==
-// @name         products-with-missing-content
-// @version      1.1.0
-// @description  Ищет активные товары без name1, name2, detail_picture или detail_text, исключая служебные категории
-// @output       CSV
-// ==/ConsoleParser==
-
 (async () => {
   'use strict';
 
