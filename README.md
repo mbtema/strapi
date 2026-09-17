@@ -36,7 +36,7 @@ Loader строго валидирует включённые entries manifest: 
 ## Features
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
-- `ctrl-enter-publisher.js` — `Ctrl+Enter`, публикует текущую запись.
+- `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
 - `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`, включая отдельную группу `Drafts` для тестовых проверок; повторный параллельный запуск уже работающего async parser блокируется до его завершения.
 - `vimium-open-row.js` — делает строки таблиц доступными для Vimium; собственная ссылка помечается через `data-tm-*` и восстанавливается после React re-render.
 
