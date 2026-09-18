@@ -42,6 +42,7 @@
 - Постоянные extensions загружаются через единый loader; loader без необходимости не менять.
 - Изменение extension требует bump version в manifest его папки: фикс/оптимизация → patch; новое заметное поведение → minor; крупная переработка → major.
 - После новой версии учитывать cache loader: при старом cache обычно нужен reload Strapi.
+- Актуальный backlog code review хранить в GitHub Issues. Не копировать список открытых issues в Project Context: текущий статус брать из GitHub, а в Context сохранять только устойчивые решения/workflows/history.
 
 ## 6. Парсеры
 - Стандарт регулярного parser: meta header (имя/version/назначение/output) → все страницы API → проверка → progress/counters → автоматический CSV.
