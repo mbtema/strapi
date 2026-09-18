@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 1,
   "manifests": [
     "ui-ux/manifest.json",
     "features/manifest.json"
