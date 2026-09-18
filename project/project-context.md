@@ -120,11 +120,13 @@ extension/
   loader.js
   manifest.json
 features/
+  manifest.json
   barcode-extractor.js
   ctrl-enter-publisher.js
   parser-launcher.js
   vimium-open-row.js
 ui-ux/
+  manifest.json
   sidebar.js
   entry-relocate.js
   list-view.js
@@ -146,29 +148,31 @@ project/
 
 `project/` — backup/sync snapshot Project Context/Instructions; в runtime и обычной работе не участвует.
 
-Tampermonkey использует один loader: `extension/loader.js` `1.1.1`.
+Tampermonkey использует один loader: `extension/loader.js` `1.2.0`.
 
 Loader:
 - стартует cached extensions;
-- читает `extension/manifest.json`;
-- обновляет изменившиеся extensions;
+- читает корневой `extension/manifest.json`;
+- по нему загружает manifests рабочих папок (`ui-ux/manifest.json`, `features/manifest.json`);
+- объединяет их в единый registry и валидирует глобальные дубли `id/path`;
+- обновляет только изменившиеся extensions;
 - cache: `tm-strapi-extensions-cache-v1`;
-- при недоступном GitHub может продолжить работу из cache.
+- если root/child manifest недоступен или некорректен, новый cache не записывается и при наличии старого loader продолжает работу из него.
 
-Актуальный manifest 2026-09-14:
+Актуальные manifests 2026-09-18:
 
 | id | version |
 |---|---:|
-| sidebar | 2.2.3 |
-| record-list-scrollbars | 1.0.4 |
-| list-view | 1.3.0 |
-| entry-relocate | 1.4.5 |
-| product-attributes-navigator | 1.0.2 |
-| product-sections | 1.1.0 |
-| barcode-extractor | 1.4.1 |
-| ctrl-enter-publisher | 1.1.1 |
-| parser-launcher | 1.4.8 |
-| vimium-open-row | 1.1.2 |
+| sidebar | 2.2.5 |
+| record-list-scrollbars | 1.0.5 |
+| list-view | 1.3.1 |
+| entry-relocate | 1.4.6 |
+| product-attributes-navigator | 1.0.4 |
+| product-sections | 1.1.1 |
+| barcode-extractor | 1.4.3 |
+| ctrl-enter-publisher | 1.2.1 |
+| parser-launcher | 1.6.3 |
+| vimium-open-row | 1.1.3 |
 
 Текущее поведение:
 - `sidebar.js`: visible by default, `Alt+S`, width 320, поиск CT/ST, quick links Товары/Предложения, группы Каталог/Справочник/Фильтры/Прочее, unknown CT → Фильтры, Single Types → Прочее, Settings gear hidden, active collection highlighted.
