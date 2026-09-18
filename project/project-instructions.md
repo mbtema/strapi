@@ -38,9 +38,9 @@
 
 ## 5. GitHub и изменения repo
 - Для code/repo-задачи читать только актуальные файлы, реально нужные для проверки/изменения; не сканировать весь repo без причины.
-- Перед изменением extension читать сам файл + `extension/manifest.json`; parser — файл + при необходимости `parsers/manifest.json`.
+- Перед изменением extension читать сам файл + `manifest.json` его папки (`features/manifest.json` или `ui-ux/manifest.json`); корневой `extension/manifest.json` нужен при добавлении/удалении дочернего manifest. Parser — файл + при необходимости `parsers/manifest.json`.
 - Постоянные extensions загружаются через единый loader; loader без необходимости не менять.
-- Изменение extension требует bump version в manifest: фикс/оптимизация → patch; новое заметное поведение → minor; крупная переработка → major.
+- Изменение extension требует bump version в manifest его папки: фикс/оптимизация → patch; новое заметное поведение → minor; крупная переработка → major.
 - После новой версии учитывать cache loader: при старом cache обычно нужен reload Strapi.
 
 ## 6. Парсеры
