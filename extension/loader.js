@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.2.0
+// @version      1.2.1
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifests
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extension/loader.js
@@ -180,11 +180,6 @@
   async function loadManifest() {
     const rootText = await requestText(MANIFEST_URL);
     const root = parseJson(rootText, 'extension/manifest.json');
-
-    // Backward-compatible during migration from the old flat manifest.
-    if (root?.schemaVersion === 1 && Array.isArray(root.extensions)) {
-      return normalizeExtensionsManifest(root);
-    }
 
     const manifestPaths = normalizeRootManifest(root);
 
