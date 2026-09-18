@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.2.1
+// @version      1.3.0
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifests
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extension/loader.js
@@ -10,15 +10,18 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_info
 // ==/UserScript==
 
 (() => {
   'use strict';
 
   const RAW_ROOT = 'https://raw.githubusercontent.com/mbtema/strapi/main/';
+  const LOADER_URL = `${RAW_ROOT}extension/loader.js`;
   const MANIFEST_URL = `${RAW_ROOT}extension/manifest.json`;
   const CACHE_KEY = 'tm-strapi-extensions-cache-v1';
   const LOADER_ATTR = 'data-tm-strapi-extensions-loader';
+  const CHECK_UPDATES_EVENT = 'tm-strapi-check-updates';
   const EXTENSION_ID_RE = /^[a-z0-9-]+$/i;
   const MANIFEST_PATH_RE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\/manifest\.json$/i;
   const EXTENSION_PATH_RE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\/[a-z0-9-]+\.js$/i;
@@ -70,6 +73,46 @@
 
   function writeCache(cache) {
     GM_setValue(CACHE_KEY, JSON.stringify(cache));
+  }
+
+
+  function compareVersions(left, right) {
+    const a = left.split('.').map(Number);
+    const b = right.split('.').map(Number);
+
+    for (let index = 0; index < 3; index += 1) {
+      if (a[index] > b[index]) return 1;
+      if (a[index] < b[index]) return -1;
+    }
+
+    return 0;
+  }
+
+  async function checkLoaderVersion() {
+    const localVersion = String(
+      typeof GM_info !== 'undefined' ? GM_info.script.version : ''
+    ).trim();
+
+    if (!VERSION_RE.test(localVersion)) {
+      throw new Error('Cannot determine installed loader version');
+    }
+
+    const source = await requestText(LOADER_URL);
+    const match = source.match(/^\/\/ @version\s+(\d+\.\d+\.\d+)\s*$/m);
+
+    if (!match) {
+      throw new Error('Cannot determine repository loader version');
+    }
+
+    const remoteVersion = match[1];
+    const comparison = compareVersions(remoteVersion, localVersion);
+
+    return {
+      localVersion,
+      remoteVersion,
+      updateAvailable: comparison > 0,
+      localAhead: comparison < 0
+    };
   }
 
   function normalizeRootManifest(manifest) {
@@ -267,17 +310,45 @@
     }
   }
 
-  async function refreshCache(currentCache) {
+
+  async function refreshCache(currentCache, options = {}) {
+    const silent = options.silent === true;
     const manifest = await loadManifest();
     const signature = getSignature(manifest);
 
-    if (isCacheCurrent(currentCache, manifest, signature)) return;
+    if (isCacheCurrent(currentCache, manifest, signature)) {
+      return {
+        updated: false,
+        manifest,
+        updatedItems: [],
+        removedItems: []
+      };
+    }
 
     const cachedById = new Map(
       (currentCache?.extensions || [])
         .filter(isRunnableItem)
         .map(item => [item.id, item])
     );
+
+    const manifestIds = new Set(manifest.map(item => item.id));
+
+    const updatedItems = manifest
+      .filter(item => !matchesManifestItem(cachedById.get(item.id), item))
+      .map(item => ({
+        id: item.id,
+        from: cachedById.get(item.id)?.version || null,
+        to: item.version
+      }));
+
+    const removedItems = (currentCache?.extensions || [])
+      .filter(isRunnableItem)
+      .filter(item => !manifestIds.has(item.id))
+      .map(item => ({
+        id: item.id,
+        from: item.version,
+        to: null
+      }));
 
     const extensions = await Promise.all(
       manifest.map(async item => {
@@ -286,7 +357,7 @@
 
         return {
           ...item,
-          code: await requestText(`${RAW_ROOT}${item.path}`)
+          code: await requestText(RAW_ROOT + item.path)
         };
       })
     );
@@ -304,14 +375,167 @@
       currentCache?.extensions?.some(isRunnableItem)
     );
 
-    if (!hadRunnableCache) {
-      runExtensions(extensions);
-      console.log(`[Extensions] Loaded ${extensions.length} extensions`);
-      return;
+    if (!silent) {
+      if (!hadRunnableCache) {
+        runExtensions(extensions);
+        console.log('[Extensions] Loaded ' + extensions.length + ' extensions');
+      } else {
+        console.log('[Extensions] Update cached. Reload Strapi to apply it.');
+      }
     }
 
-    console.log('[Extensions] Update cached. Reload Strapi to apply it.');
+    return {
+      updated: true,
+      manifest,
+      updatedItems,
+      removedItems
+    };
   }
+
+  let manualCheckPromise = null;
+
+  async function checkUpdatesNow() {
+    if (manualCheckPromise) {
+      console.info('[Extensions] Update check is already running.');
+      return manualCheckPromise;
+    }
+
+    manualCheckPromise = (async () => {
+      console.info('[Extensions] Checking loader and extension updates...');
+
+      const currentCache = readCache();
+
+      const results = await Promise.allSettled([
+        checkLoaderVersion(),
+        refreshCache(currentCache, { silent: true })
+      ]);
+
+      const loaderResult = results[0];
+      const extensionResult = results[1];
+
+      let loaderNeedsUpdate = false;
+      let extensionsUpdated = false;
+      let failed = false;
+
+      if (loaderResult.status === 'fulfilled') {
+        const info = loaderResult.value;
+        loaderNeedsUpdate = info.updateAvailable;
+
+        if (info.updateAvailable) {
+          console.warn(
+            '[Extensions] Loader update available: ' +
+            info.localVersion +
+            ' → ' +
+            info.remoteVersion +
+            '. Update the userscript in Tampermonkey.'
+          );
+        } else if (info.localAhead) {
+          console.warn(
+            '[Extensions] Installed loader ' +
+            info.localVersion +
+            ' is newer than repository version ' +
+            info.remoteVersion +
+            '.'
+          );
+        }
+      } else {
+        failed = true;
+        console.error(
+          '[Extensions] Failed to check loader version',
+          loaderResult.reason
+        );
+      }
+
+      if (extensionResult.status === 'fulfilled') {
+        const info = extensionResult.value;
+        extensionsUpdated = info.updated;
+
+        if (info.updatedItems.length) {
+          console.table(
+            info.updatedItems.map(item => ({
+              extension: item.id,
+              cached: item.from || 'not cached',
+              repository: item.to
+            }))
+          );
+        }
+
+        if (info.removedItems.length) {
+          console.table(
+            info.removedItems.map(item => ({
+              extension: item.id,
+              cached: item.from,
+              repository: 'removed'
+            }))
+          );
+        }
+
+        if (info.updated) {
+          console.info(
+            '[Extensions] Extension updates downloaded to cache. Reload Strapi to apply them.'
+          );
+        }
+      } else {
+        failed = true;
+        console.error(
+          '[Extensions] Failed to check extension updates',
+          extensionResult.reason
+        );
+      }
+
+      if (!failed && !loaderNeedsUpdate && !extensionsUpdated) {
+        console.info(
+          '[Extensions] Everything is up to date: loader ' +
+          loaderResult.value.localVersion +
+          ', ' +
+          extensionResult.value.manifest.length +
+          ' extensions.'
+        );
+      }
+
+      return {
+        loader:
+          loaderResult.status === 'fulfilled' ? loaderResult.value : null,
+        extensions:
+          extensionResult.status === 'fulfilled' ? extensionResult.value : null,
+        failed
+      };
+    })().finally(() => {
+      manualCheckPromise = null;
+    });
+
+    return manualCheckPromise;
+  }
+
+  function exposeCheckUpdatesCommand() {
+    const install = () => {
+      const target =
+        document.documentElement || document.head || document.body;
+
+      if (!target) {
+        requestAnimationFrame(install);
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.textContent =
+        "(function(){window.checkUpdates=function(){document.dispatchEvent(new CustomEvent('" +
+        CHECK_UPDATES_EVENT +
+        "'));};})();";
+      target.appendChild(script);
+      script.remove();
+    };
+
+    install();
+  }
+
+  document.addEventListener(CHECK_UPDATES_EVENT, () => {
+    checkUpdatesNow().catch(error => {
+      console.error('[Extensions] Update check failed', error);
+    });
+  });
+
+  exposeCheckUpdatesCommand();
 
   const cache = readCache();
 
