@@ -34,7 +34,7 @@ Loader при открытии Strapi:
 
 ### Manifest
 
-`extension/manifest.json` — корневой registry: он содержит только список дочерних manifests.
+`extension/manifest.json` — корневой registry: он содержит только список дочерних manifests. Все manifests используют `schemaVersion: 1`; это версия формата конкретного manifest, а не версия скриптов.
 
 Метаданные конкретных extensions (`id`, `path`, semver `version`, `enabled`) хранятся рядом с кодом в manifest соответствующей папки: `features/manifest.json` или `ui-ux/manifest.json`. При изменении extension увеличивается его `version` именно там. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
 
