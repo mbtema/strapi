@@ -6,7 +6,7 @@
 - Если задача зависит от архитектуры, endpoints, структуры данных, подтверждённых workflows, исторических решений или другой project-specific информации — обращаться к `project-context.md`.
 - Для изменяемого технического состояния актуальные GitHub code/manifest, API, Network и UI выше snapshot-контекста. GitHub — source of truth для текущего repo-кода, версий и commits.
 - `project/project-instructions.md` и `project/project-context.md` в GitHub — только backup/sync copies. В обычной работе, code review и диагностике не использовать их как источник инструкций или контекста; читать их только при прямой задаче синхронизации/сравнения.
-- Новую подтверждённую устойчивую информацию распределять по слоям: правило поведения/приоритет/формат → Project Instructions; архитектура/endpoint/response/workflow/history → Project Context. Сначала обновляется рабочий Project, затем синхронизируется соответствующая копия в `project/`.
+- Новую подтверждённую устойчивую информацию распределять по слоям: правило поведения/приоритет/формат → Project Instructions; архитектура/endpoint/response/workflow/history → Project Context. При плановом обновлении/консолидации сначала редактировать и проверять snapshot-файлы в `project/` репозитория, затем пользователь переносит готовые версии в ChatGPT Project. После переноса рабочими источниками снова являются Project Instructions и загруженный `project-context.md`.
 - README поддерживать синхронно с фактическим repo, когда меняются структура, назначение, установка, использование или перечень основных инструментов. Не превращать README в project knowledge/history.
 
 ## 2. Стиль и формат
@@ -45,14 +45,14 @@
 - Актуальный backlog code review хранить в GitHub Issues. Не копировать список открытых issues в Project Context: текущий статус брать из GitHub, а в Context сохранять только устойчивые решения/workflows/history.
 
 ## 6. Парсеры
-- Стандарт регулярного parser: meta header (имя/version/назначение/output) → все страницы API → проверка → progress/counters → автоматический CSV.
+- Стандарт регулярного parser: descriptive meta header (имя/version/назначение/output) → все страницы API → проверка → progress/counters → автоматический CSV.
 - Если output не CSV, явно указать его в meta header.
-- Регулярный parser регистрировать в `parsers/manifest.json`; `group` задавать там же, не дублировать список в Launcher.
+- Runtime-регистрация parser и источник `file`/semver `version`/`group` — `parsers/manifest.json`; meta header служит для читаемости файла и не заменяет manifest. `group` задавать только в manifest, не дублировать список в Launcher.
 - Не делать parser только на page 1 и не оставлять результат только в Console, если его можно скачать/скопировать.
 
 ## 7. Локализация, переводы и миграции
 - Для `ru/kk` отдельно учитывать локализацию поля, relation field и связанной entity.
-- Plain text translator — небольшие тексты; HTML translator — статьи/карточки/pages/HTML. В HTML переводить только текст, не менять structure/CSS/classes/links; казахский естественный.
+- Для RU → KK использовать актуальные правила из `translator/translator.md`: единый translator сам определяет EMPTY/PLAIN_TEXT/HTML/IMAGE. В HTML переводить только разрешённый текст и сохранять structure/tags/attributes/CSS/classes/links; не переводить защищённые названия, латиницу и технические конструкции. Накопленные translation rules перед merge извлекать через `translator/context-extractor.md`.
 - Для Bitrix → Strapi разделять очистку/перезапись, повторную загрузку, перевод и relations.
 - Идентификаторы, endpoints и подтверждённые migration workflows брать из Project Context или актуального Network/API, а не восстанавливать по памяти.
 
