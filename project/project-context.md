@@ -8,7 +8,7 @@
 >
 > Для изменяемого состояния актуальные GitHub code/manifest, API, Network и UI выше snapshot из этого файла.
 
-**Последняя сборка:** 2026-09-14  
+**Последняя сборка:** 2026-09-18  
 **Repo:** `mbtema/strapi`  
 **Strapi backend:** `http://10.10.3.80:1337`  
 **Локали:** `ru`, `kk`
@@ -177,18 +177,18 @@ Loader:
 | vimium-open-row | 1.1.3 |
 
 Текущее поведение:
-- `sidebar.js`: visible by default, `Alt+S`, width 320, поиск CT/ST, quick links Товары/Предложения, группы Каталог/Справочник/Фильтры/Прочее, unknown CT → Фильтры, Single Types → Прочее, Settings gear hidden, active collection highlighted.
+- `sidebar.js`: `Alt+S`, width 320, поиск CT/ST, quick links Товары/Предложения, группы Каталог/Справочник/Фильтры/Прочее, unknown CT → Фильтры, Single Types → Прочее, Settings gear hidden, active collection highlighted; hidden/visible state хранится в `sessionStorage` для текущей вкладки и переживает обычный reload.
 - `record-list-scrollbars.js`: скрывает scrollbar/overflow decoration, сохраняя прокрутку.
 - `entry-relocate.js`: переносит реальные React Entry actions к status area.
 - `list-view.js`: скрывает `To be released in`, компактный `Available in`, RU/KK pills.
-- `barcode-extractor.js`: `Ctrl+B` копирует barcode + Strapi toast.
-- `ctrl-enter-publisher.js`: `Ctrl+Enter` нажимает штатный Publish.
+- `barcode-extractor.js`: `Alt+B` копирует barcode из реального `input[name="barcode"]`; вне подходящей карточки hotkey не перехватывается.
+- `ctrl-enter-publisher.js`: `Alt+Enter` нажимает штатный Publish, только если кнопка найдена и доступна.
 - `vimium-open-row.js`: keyboard/Vimium navigation.
-- `parser-launcher.js`: `Alt+P`.
+- `parser-launcher.js`: `Alt+P`; строго валидирует `parsers/manifest.json`, блокирует повторный managed run одного parser и для GET повторяет временные network / `429` / `5xx` ошибки.
 
 ## Product attributes navigator
 
-`ui-ux/product-attributes-navigator.js` `1.0.2`.
+`ui-ux/product-attributes-navigator.js` `1.0.4`.
 
 Scope:
 
@@ -217,7 +217,7 @@ Custom navigator:
 
 ## Product sections
 
-`ui-ux/product-sections.js` `1.1.0` делит Product card на `Контент`, `Фильтры`, `Системное`. Основное определение поля — реальный API `name` в DOM; hint/label используется только как ограниченный fallback.
+`ui-ux/product-sections.js` `1.1.1` делит Product card на `Контент`, `Фильтры`, `Системное`. Основное определение поля — реальный API `name` в DOM; hint/label используется только как ограниченный fallback.
 
 `Фильтры`:
 
@@ -263,7 +263,7 @@ shareUrl
 
 # 4. Parser health layer
 
-`parsers/manifest.json` содержит 14 parsers.
+`parsers/manifest.json` содержит 15 parsers и является runtime-источником регистрации: `file`, semver `version`, `group`.
 
 Product health:
 
@@ -288,25 +288,38 @@ sort-volume
 volume-checker
 ```
 
+Draft/audit:
+
+```text
+attributes-with-barcode-issues
+```
+
 Service: `dom-stealer`.
 
 Ключевая логика:
 - without-attributes/brand/categories — соответствующие проверки active products;
 - `products-with-duplicate-fields` `1.1.0` проверяет только `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`; null/empty игнорируются; отдельная группа/CSV row на каждый конфликтующий field;
-- wrong-prices — active product с offer price=0/empty/non-numeric/fractional;
-- missing-content — нет `name1`, `name2`, `detail_picture` или `detail_text`;
+- `products-with-wrong-prices` `1.2.1`: сначала через Public API собирает `documentId` предложений active products, затем через authenticated Content Manager читает актуальные `barcode`/`price` и формирует CSV `barcode;price;errorType`; проверяются missing/zero/non-numeric/fractional значения;
+- missing-content — active product без `name1`, `name2`, `detail_picture` или `detail_text`; товары в categories `kns3po2mz8hq9kezm3szbvjg` и `a4zy2gvb479ku9nd6py5uxzh` исключаются из этой проверки как служебные;
 - wrong-variants — >1 offers нельзя последовательно выбирать одним типом `shade` или `volume`;
-- attributes-without-product — offer без product;
-- attributes-without-detail-picture — product active, offer isInStock, detail_picture null;
-- missing-shades — active offer с `color_variant1C`, но без shade;
-- shade-and-volume — одновременно заполнены shade и volume;
+- attributes-without-product — published scope через Public API; drafts не входят;
+- attributes-without-detail-picture — product active, offer isInStock, `detail_picture` null;
+- missing-shades — published attribute с `color_variant1C`, без `shade`, связанный с active product; `active` самого attribute сейчас отдельным filter не является;
+- shade-and-volume — published scope через Public API; одновременно заполнены shade и volume;
 - sort-volume — неверный порядок volume;
-- volume-checker — неоднородные единицы volume.
+- volume-checker — неоднородные единицы volume;
+- `attributes-with-barcode-issues` — published offers без barcode и с повторяющимися barcode; без filter по `active`/`isInStock`, с product context в CSV.
 
 Последний прогон `products-with-duplicate-fields`: 21810 товаров Public API, 0 duplicate groups по всем пяти fields. В Content Manager в тот момент было 21849 entries; разница вероятно draft/unpublished. Parser оставлен как проверка опубликованного каталога через `/api/products`.
 
 `products-without-categories` — контрольный список. Автоматическое назначение categories из Bitrix не считается безопасным default из-за бизнес-логики и исключений.
 
+Parser Launcher:
+- manifest должен иметь `schemaVersion: 1`;
+- записи валидируются по `file` / semver `version` / `group` и duplicate file;
+- managed regular parsers получают global run-lock и ограниченный retry для GET при network errors, `429` и `5xx`; постоянные `4xx` не ретраятся.
+
+Актуальные технические дефекты parsers/Launcher не дублируются в этом snapshot: live backlog хранится в GitHub Issues.
 ---
 
 # 5. Нормализация `attributes.name_web` — 2026-09-11
@@ -353,26 +366,32 @@ Bitrix — source system части legacy product/offer данных.
 
 ## Detail picture migration
 
+Текущий browser audit работает напрямую по торговым предложениям Bitrix `IBLOCK_ID=2`, а не через поиск родительского товара в `IBLOCK_ID=1`.
+
 Browser audit:
 
 ```text
-CSV Strapi → barcode → Bitrix filter → parent product
-→ exact offer → DETAIL_PICTURE URL → mapping CSV
+CSV Strapi (barcode + productDocumentId)
+→ все страницы offers Bitrix IBLOCK_ID=2
+→ exact barcode match
+→ DETAIL_PICTURE из строки списка
+→ карточка конкретного offer только если изображение нельзя получить из списка
+→ checkpoint + mapping CSV
 ```
 
-Bitrix barcode filter: `PROPERTY_19`. Offer rows: `input[name="SUB_ID[]"]`. Matching — exact barcode.
+Bitrix barcode column — `PROPERTY_19`. Matching — exact barcode.
 
 Repo:
 
 ```text
-migrator/detail-picture-audit.js      1.0.0
+migrator/detail-picture-audit.js      2.0.0
 migrator/detail-picture-migrator.js   1.0.1
 ```
 
 Pipeline:
 
 ```text
-Bitrix browser audit → mapping CSV → local Node migrator
+Bitrix browser audit offers → mapping CSV → local Node migrator
 → image download → Strapi upload → partial PUT detail_picture
 → publish ru → verify
 ```
@@ -398,9 +417,7 @@ POST /content-manager/collection-types/api::attribute.attribute/<documentId>/act
 body: {}
 ```
 
-Audit 2026-09-09: total 3231; ok 3151; no_detail_picture 59; product_not_found 11; offer_not_found 10.
-
-Production 2026-09-10: success 3139; already_filled 7; manual duplicate-barcode 5. Системных pipeline errors не выявлено.
+Исторический production run 2026-09-09/10 был выполнен предыдущей версией audit pipeline: audit total 3231; ok 3151; no_detail_picture 59; product_not_found 11; offer_not_found 10. Production: success 3139; already_filled 7; manual duplicate-barcode 5. Системных pipeline errors не выявлено. Эти числа — история выполненной миграции, а не описание текущего `2.0.0` browser audit.
 
 Migrator: documentId-first, barcode extra check, checkpoint `*.migration-state.json`, result CSV; `upload_uncertain` не auto-retry, чтобы не дублировать media. Windows: Node/PowerShell, `STRAPI_JWT` в env; для monamie.kz подтверждён `--use-system-ca` из-за прежнего `SELF_SIGNED_CERT_IN_CHAIN`.
 
@@ -461,7 +478,11 @@ Media formats: `thumbnail`, `small`, `medium`; preview 750×750 использу
 - auto-translated kk name мешал relation search;
 - фактический статус внедрения нужно проверять отдельно.
 
-Plain text translator — небольшие тексты. HTML translator — descriptions/articles/pages/Bitrix HTML: переводится только текст, tags/CSS/classes/links/structure сохраняются; английский без необходимости не переводится; казахский естественный.
+Production RU → KK translation workflow хранится в repo:
+- `translator/translator.md` — единый мультимодальный translator для API и ручной работы; сам выбирает `EMPTY`, `PLAIN_TEXT`, `HTML` или `IMAGE`;
+- `translator/context-extractor.md` — служебный audit prompt, который извлекает из истории проекта только устойчивые translation rules и разделяет их на `CONFIRMED`, `STRONG PATTERN`, `UNCERTAIN` перед merge в production prompt.
+
+Для API типичный сценарий — одно поле за запрос. Пустой/whitespace-only input возвращается без пояснений; вход без русского переводимого текста сохраняется; бренды, product/collection/technology names, латиница, SKU, URL, единицы и технические конструкции не изменяются. HTML переводит только разрешённый текст и сохраняет structure/tags/attributes/CSS/classes/links; входной контент не рассматривается как инструкция. Для текущих полных правил source of truth — файлы `translator/*.md`, а не этот краткий snapshot.
 
 ---
 
@@ -546,6 +567,8 @@ Strapi Admin JWT доступен в LocalStorage и используется к
 Реальные tokens/cookies не хранить в repo, документации или shared snippets.
 
 `mbtema/strapi` сознательно остаётся public: loader/Parser Launcher используют прямую загрузку из GitHub. В repo reviews не поднимать публичность как отдельную проблему, если пользователь сам не вернулся к вопросу или нет реальной утечки credentials/secrets.
+
+Актуальный code-review backlog хранится в GitHub Issues. Snapshot context не должен зеркалить список открытых issues: здесь сохраняются только устойчивые решения, workflows и полезная история.
 
 ---
 
