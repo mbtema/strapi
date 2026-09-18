@@ -1,8 +1,19 @@
+// ==Parser==
+// @name         products-with-wrong-prices
+// @version      1.2.0
+// @description  Находит торговые предложения активных товаров с некорректной текущей ценой в Strapi CMS
+// @output       CSV: barcode;price;errorType
+// ==/Parser==
+
 (async () => {
-  const BASE_URL = '/api/attributes';
-  const PAGE_SIZE = 100;
+  'use strict';
+
+  const PUBLIC_URL = '/api/attributes';
+  const CONTENT_MANAGER_URL = '/content-manager/collection-types/api::attribute.attribute';
+  const LOCALE = 'ru';
+  const PUBLIC_PAGE_SIZE = 100;
+  const CM_PAGE_SIZE = 50;
   const HEADERS = ['barcode', 'price', 'errorType'];
-  const rows = [];
 
   const timestamp = () => {
     const d = new Date();
@@ -44,63 +55,190 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const params = new URLSearchParams({
-    'pagination[pageSize]': String(PAGE_SIZE),
+  const getRows = json => {
+    if (Array.isArray(json?.results)) return json.results;
+    if (Array.isArray(json?.data)) return json.data;
+    return [];
+  };
+
+  const getPagination = json => json?.pagination ?? json?.meta?.pagination ?? null;
+
+  console.log('[Price Checker] Шаг 1/2: получаю предложения активных товаров из Public API...');
+
+  const activeAttributeIds = new Set();
+
+  const publicParams = new URLSearchParams({
+    'pagination[pageSize]': String(PUBLIC_PAGE_SIZE),
+    'pagination[page]': '1',
     'sort[0]': 'id:asc',
+    'locale': LOCALE,
     'filters[product][active][$eq]': 'true',
-    'fields[0]': 'price',
-    'fields[1]': 'barcode'
+    'fields[0]': 'documentId'
   });
 
-  let page = 1;
-  let pageCount = 1;
-  let total = 0;
-  let checked = 0;
+  let publicPage = 1;
+  let publicPageCount = 1;
+  let publicTotal = 0;
 
-  while (page <= pageCount) {
-    params.set('pagination[page]', String(page));
+  while (publicPage <= publicPageCount) {
+    publicParams.set('pagination[page]', String(publicPage));
 
-    const response = await fetch(`${BASE_URL}?${params}`);
+    const response = await fetch(`${PUBLIC_URL}?${publicParams}`);
+
     if (!response.ok) {
-      throw new Error(`Ошибка ${response.status} на странице ${page}`);
+      throw new Error(
+        `Public API: ошибка ${response.status} на странице ${publicPage}`
+      );
     }
 
-    const { data, meta } = await response.json();
+    const json = await response.json();
+    const rows = getRows(json);
+    const pagination = getPagination(json);
 
-    pageCount = meta.pagination.pageCount;
-    total = meta.pagination.total;
+    publicPageCount = pagination?.pageCount ?? publicPageCount;
+    publicTotal = pagination?.total ?? publicTotal;
 
-    for (const attribute of data) {
-      checked++;
+    for (const attribute of rows) {
+      if (attribute?.documentId) {
+        activeAttributeIds.add(attribute.documentId);
+      }
+    }
+
+    if (
+      publicPage === 1 ||
+      publicPage % 25 === 0 ||
+      publicPage === publicPageCount
+    ) {
+      console.log(
+        `[Price Checker] Active offers: страница ${publicPage}/${publicPageCount} | ` +
+        `найдено ${activeAttributeIds.size}/${publicTotal || '?'}`
+      );
+    }
+
+    publicPage++;
+  }
+
+  console.log(
+    `[Price Checker] Шаг 1/2 готов: предложений активных товаров — ${activeAttributeIds.size}.`
+  );
+  console.log(
+    '[Price Checker] Шаг 2/2: читаю текущие barcode/price из Content Manager...'
+  );
+
+  const invalidRows = [];
+  const seenDocumentIds = new Set();
+
+  let cmPage = 1;
+  let cmPageCount = null;
+  let cmTotal = null;
+
+  while (true) {
+    const cmParams = new URLSearchParams({
+      page: String(cmPage),
+      pageSize: String(CM_PAGE_SIZE),
+      sort: 'barcode:ASC',
+      locale: LOCALE
+    });
+
+    const response = await fetch(`${CONTENT_MANAGER_URL}?${cmParams}`);
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(
+        `Content Manager: ошибка ${response.status} на странице ${cmPage}` +
+        (body ? `: ${body.slice(0, 300)}` : '')
+      );
+    }
+
+    const json = await response.json();
+    const rows = getRows(json);
+    const pagination = getPagination(json);
+
+    if (cmPage === 1 && rows.length) {
+      const sample = rows[0];
+
+      if (!Object.prototype.hasOwnProperty.call(sample, 'price')) {
+        throw new Error(
+          'Content Manager list response не содержит поле price. ' +
+          'Checker остановлен, чтобы не создавать ложный отчёт.'
+        );
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(sample, 'barcode')) {
+        throw new Error(
+          'Content Manager list response не содержит поле barcode. ' +
+          'Checker остановлен, чтобы не создавать ложный отчёт.'
+        );
+      }
+    }
+
+    if (!rows.length) break;
+
+    cmPageCount = pagination?.pageCount ?? cmPageCount;
+    cmTotal = pagination?.total ?? cmTotal;
+
+    let newRows = 0;
+
+    for (const attribute of rows) {
+      if (!attribute?.documentId || seenDocumentIds.has(attribute.documentId)) {
+        continue;
+      }
+
+      seenDocumentIds.add(attribute.documentId);
+      newRows++;
+
+      if (!activeAttributeIds.has(attribute.documentId)) continue;
 
       const errorType = priceIssue(attribute.price);
       if (!errorType) continue;
 
-      rows.push({
+      invalidRows.push({
         barcode: attribute.barcode ?? '',
         price: attribute.price ?? '',
         errorType
       });
     }
 
-    if (page === 1 || page % 25 === 0 || page === pageCount) {
+    if (
+      cmPage === 1 ||
+      cmPage % 25 === 0 ||
+      (cmPageCount && cmPage === cmPageCount)
+    ) {
       console.log(
-        `Страница ${page}/${pageCount} | Проверено предложений: ${checked}/${total} | Проблемных предложений: ${rows.length}`
+        `[Price Checker] CMS: страница ${cmPage}${cmPageCount ? '/' + cmPageCount : ''} | ` +
+        `прочитано ${seenDocumentIds.size}${cmTotal ? '/' + cmTotal : ''} | ` +
+        `проблемных ${invalidRows.length}`
       );
     }
 
-    page++;
+    if (!newRows) {
+      console.warn(
+        `[Price Checker] Страница ${cmPage} не дала новых documentId — останавливаюсь, чтобы не зациклиться.`
+      );
+      break;
+    }
+
+    if (cmPageCount && cmPage >= cmPageCount) break;
+
+    if (!cmPageCount && rows.length < CM_PAGE_SIZE) break;
+
+    cmPage++;
   }
 
-  console.table(rows);
-  console.log(
-    `Готово: найдено ${rows.length} торговых предложений активных товаров с некорректной ценой.`
+  invalidRows.sort((a, b) =>
+    String(a.barcode).localeCompare(String(b.barcode), 'en', { numeric: true })
   );
 
-  window.attributesWithInvalidPrice = rows;
+  console.table(invalidRows);
+  console.log(
+    `[Price Checker] Готово: найдено ${invalidRows.length} торговых предложений активных товаров ` +
+    'с некорректной текущей ценой в CMS.'
+  );
+
+  window.attributesWithInvalidPrice = invalidRows;
 
   downloadCSV(
-    rows,
+    invalidRows,
     `attributes_invalid_prices_${timestamp()}.csv`
   );
 })();
