@@ -11,7 +11,7 @@
 | [`migrator/`](./migrator) | Утилиты для аудита и миграции данных из Bitrix |
 | [`postman/`](./postman) | Postman collection с общими variables и API paths |
 | [`translator/`](./translator) | Универсальный RU → KK переводчик и prompt для извлечения накопленного translation context |
-| [`project/`](./promts) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
+| [`project/`](./project) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
 
 ## Extension loader
 
