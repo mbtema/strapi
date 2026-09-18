@@ -599,7 +599,7 @@ project/project-context.md
 current code/version/manifest → реальные GitHub files
 ```
 
-При появлении подтверждённой устойчивой информации сначала обновляется соответствующий слой Project, затем синхронизируется копия в `project/`.
+При плановом обновлении/консолидации сначала редактируются и проверяются `project/project-instructions.md` и/или `project/project-context.md` в репозитории, затем пользователь переносит готовые версии в ChatGPT Project. После переноса рабочими source of truth снова являются Project Instructions и загруженный `project-context.md`.
 
 README отражает сам repo: структуру, назначение, установку, использование и основные инструменты; обновляется при repo-facing изменениях, а не при любой внутренней project history.
 
