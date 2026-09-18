@@ -11,7 +11,7 @@
 | [`migrator/`](./migrator) | Утилиты для аудита и миграции данных из Bitrix |
 | [`postman/`](./postman) | Postman collection с общими variables и API paths |
 | [`translator/`](./translator) | Универсальный RU → KK переводчик и prompt для извлечения накопленного translation context |
-| [`promts/`](./promts) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
+| [`project/`](./promts) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
 
 ## Extension loader
 
@@ -100,18 +100,17 @@ Loader строго валидирует включённые entries manifest: 
 
 ## Translator
 
-- `translator/ru-kk-translator-prompt.md` — единый мультимодальный RU → KK translator для API и ручной работы. Сам определяет режим `EMPTY`, `PLAIN_TEXT`, `HTML` или `IMAGE`; использует общий глоссарий и отдельные ограничения для каждого типа входа.
-- `translator/context-extractor-prompt.md` — отдельный служебный prompt для анализа накопленного контекста рабочего translation-проекта и подготовки подтверждённых правил/терминов для последующего merge в основной translator prompt.
-- `translator/benchmark.md` — статический benchmark новой unified-архитектуры против прежних отдельных prompts + runtime A/B test suite.
+- `translator/translator.md` — единый мультимодальный RU → KK translator для API и ручной работы. Сам определяет режим `EMPTY`, `PLAIN_TEXT`, `HTML` или `IMAGE`; использует общий глоссарий и отдельные ограничения для каждого типа входа.
+- `translator/context-extractor.md` — отдельный служебный prompt для анализа накопленного контекста рабочего translation-проекта и подготовки подтверждённых правил/терминов для последующего merge в основной translator prompt.
 
-## Promts / Project context
+## Project
 
-`promts/` не участвует в runtime и не является рабочим source of truth ChatGPT Project.
+`project/` не участвует в runtime и не является рабочим source of truth ChatGPT Project.
 
-- `promts/project-context.md` — snapshot knowledge layer: архитектура, endpoints, ограничения, принятые решения, структура repo, исторические кейсы и рабочие workflows.
-- `promts/project-instructions.md` — snapshot operational layer: приоритеты, формат ответов и правила работы.
+- `project/project-context.md` — snapshot knowledge layer: архитектура, endpoints, ограничения, принятые решения, структура repo, исторические кейсы и рабочие workflows.
+- `project/project-instructions.md` — snapshot operational layer: приоритеты, формат ответов и правила работы.
 
-Рабочие версии находятся непосредственно в ChatGPT Project. При появлении подтверждённой устойчивой информации сначала обновляется соответствующий слой Project, затем синхронизируется его копия в `promts/`.
+Рабочие версии находятся непосредственно в ChatGPT Project. При появлении подтверждённой устойчивой информации сначала обновляется соответствующий слой Project, затем синхронизируется его копия в `project/`.
 
 README обновляется, когда меняются структура, назначение, установка, использование или перечень основных инструментов репозитория.
 
@@ -157,10 +156,9 @@ README обновляется, когда меняются структура, �
 ├── postman/
 │   └── admin-api.json
 ├── translator/
-│   ├── ru-kk-translator-prompt.md
-│   ├── context-extractor-prompt.md
-│   └── benchmark.md
-├── promts/
+│   ├── translator.md
+│   └── context-extractor.md
+├── project/
 │   ├── project-context.md
 │   └── project-instructions.md
 └── README.md
