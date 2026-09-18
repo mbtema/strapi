@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.3.0
+// @version      1.3.1
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifests
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extension/loader.js
@@ -11,6 +11,7 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_info
+// @grant        unsafeWindow
 // ==/UserScript==
 
 (() => {
@@ -21,7 +22,6 @@
   const MANIFEST_URL = `${RAW_ROOT}extension/manifest.json`;
   const CACHE_KEY = 'tm-strapi-extensions-cache-v1';
   const LOADER_ATTR = 'data-tm-strapi-extensions-loader';
-  const CHECK_UPDATES_EVENT = 'tm-strapi-check-updates';
   const EXTENSION_ID_RE = /^[a-z0-9-]+$/i;
   const MANIFEST_PATH_RE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\/manifest\.json$/i;
   const EXTENSION_PATH_RE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\/[a-z0-9-]+\.js$/i;
@@ -507,35 +507,7 @@
     return manualCheckPromise;
   }
 
-  function exposeCheckUpdatesCommand() {
-    const install = () => {
-      const target =
-        document.documentElement || document.head || document.body;
-
-      if (!target) {
-        requestAnimationFrame(install);
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.textContent =
-        "(function(){window.checkUpdates=function(){document.dispatchEvent(new CustomEvent('" +
-        CHECK_UPDATES_EVENT +
-        "'));};})();";
-      target.appendChild(script);
-      script.remove();
-    };
-
-    install();
-  }
-
-  document.addEventListener(CHECK_UPDATES_EVENT, () => {
-    checkUpdatesNow().catch(error => {
-      console.error('[Extensions] Update check failed', error);
-    });
-  });
-
-  exposeCheckUpdatesCommand();
+  unsafeWindow.checkUpdates = () => checkUpdatesNow();
 
   const cache = readCache();
 
