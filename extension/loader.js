@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.1.2
-// @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifest
+// @version      1.2.0
+// @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifests
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extension/loader.js
 // @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/extension/loader.js
@@ -20,7 +20,8 @@
   const CACHE_KEY = 'tm-strapi-extensions-cache-v1';
   const LOADER_ATTR = 'data-tm-strapi-extensions-loader';
   const EXTENSION_ID_RE = /^[a-z0-9-]+$/i;
-  const EXTENSION_PATH_RE = /^(features|ui-ux)\/[a-z0-9-]+\.js$/i;
+  const MANIFEST_PATH_RE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\/manifest\.json$/i;
+  const EXTENSION_PATH_RE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\/[a-z0-9-]+\.js$/i;
   const VERSION_RE = /^\d+\.\d+\.\d+$/;
   const executedIds = new Set();
 
@@ -50,6 +51,14 @@
     });
   }
 
+  function parseJson(text, label) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error(`${label}: invalid JSON`);
+    }
+  }
+
   function readCache() {
     try {
       const raw = GM_getValue(CACHE_KEY, '');
@@ -63,14 +72,49 @@
     GM_setValue(CACHE_KEY, JSON.stringify(cache));
   }
 
-  function normalizeManifest(manifest) {
+  function normalizeRootManifest(manifest) {
+    if (
+      !manifest ||
+      manifest.schemaVersion !== 2 ||
+      !Array.isArray(manifest.manifests) ||
+      manifest.manifests.length === 0
+    ) {
+      throw new Error('Invalid root extensions manifest');
+    }
+
+    const paths = [];
+    const seen = new Set();
+
+    manifest.manifests.forEach((value, index) => {
+      const path = String(value || '').trim();
+      const label = `manifests[${index}]`;
+
+      if (!MANIFEST_PATH_RE.test(path)) {
+        throw new Error(`${label}: invalid manifest path`);
+      }
+      if (seen.has(path)) {
+        throw new Error(`${label}: duplicate manifest path ${path}`);
+      }
+
+      seen.add(path);
+      paths.push(path);
+    });
+
+    return paths;
+  }
+
+  function normalizeExtensionsManifest(manifest, sourcePath = '') {
     if (
       !manifest ||
       manifest.schemaVersion !== 1 ||
       !Array.isArray(manifest.extensions)
     ) {
-      throw new Error('Invalid extensions manifest');
+      throw new Error(`${sourcePath || 'extension/manifest.json'}: invalid extensions manifest`);
     }
+
+    const sourceDir = sourcePath.includes('/')
+      ? sourcePath.slice(0, sourcePath.lastIndexOf('/'))
+      : '';
 
     const items = [];
     const ids = new Set();
@@ -82,7 +126,7 @@
       const id = String(item.id || '').trim();
       const path = String(item.path || '').trim();
       const version = String(item.version || '').trim();
-      const label = `extensions[${index}]`;
+      const label = `${sourcePath || 'extension/manifest.json'} extensions[${index}]`;
 
       if (!EXTENSION_ID_RE.test(id)) {
         throw new Error(`${label}: invalid id`);
@@ -92,6 +136,9 @@
       }
       if (!EXTENSION_PATH_RE.test(path)) {
         throw new Error(`${label}: invalid path for ${id}`);
+      }
+      if (sourceDir && !path.startsWith(`${sourceDir}/`)) {
+        throw new Error(`${label}: path must stay inside ${sourceDir}/`);
       }
       if (path.split('/').pop() !== `${id}.js`) {
         throw new Error(`${label}: path does not match id ${id}`);
@@ -109,6 +156,47 @@
     });
 
     return items;
+  }
+
+  function validateCombinedManifest(items) {
+    const ids = new Set();
+    const paths = new Set();
+
+    items.forEach((item, index) => {
+      if (ids.has(item.id)) {
+        throw new Error(`extensions[${index}]: duplicate id ${item.id} across manifests`);
+      }
+      if (paths.has(item.path)) {
+        throw new Error(`extensions[${index}]: duplicate path ${item.path} across manifests`);
+      }
+
+      ids.add(item.id);
+      paths.add(item.path);
+    });
+
+    return items;
+  }
+
+  async function loadManifest() {
+    const rootText = await requestText(MANIFEST_URL);
+    const root = parseJson(rootText, 'extension/manifest.json');
+
+    // Backward-compatible during migration from the old flat manifest.
+    if (root?.schemaVersion === 1 && Array.isArray(root.extensions)) {
+      return normalizeExtensionsManifest(root);
+    }
+
+    const manifestPaths = normalizeRootManifest(root);
+
+    const groups = await Promise.all(
+      manifestPaths.map(async path => {
+        const text = await requestText(`${RAW_ROOT}${path}`);
+        const manifest = parseJson(text, path);
+        return normalizeExtensionsManifest(manifest, path);
+      })
+    );
+
+    return validateCombinedManifest(groups.flat());
   }
 
   function getSignature(items) {
@@ -185,8 +273,7 @@
   }
 
   async function refreshCache(currentCache) {
-    const manifestText = await requestText(MANIFEST_URL);
-    const manifest = normalizeManifest(JSON.parse(manifestText));
+    const manifest = await loadManifest();
     const signature = getSignature(manifest);
 
     if (isCacheCurrent(currentCache, manifest, signature)) return;
