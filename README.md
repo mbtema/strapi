@@ -1,4 +1,4 @@
-Набор рабочих инструментов для админки Strapi и миграции контента: постоянные extensions, UI/UX-кастомы, парсеры, Bitrix-утилиты, Postman и backup/sync snapshot Project Instructions и Project Context.
+Набор рабочих инструментов для админки Strapi и миграции контента: постоянные extensions, UI/UX-кастомы, парсеры, Bitrix-утилиты, Postman, универсальный RU → KK переводчик и backup/sync snapshot Project Instructions и Project Context.
 
 ## Структура
 
@@ -10,6 +10,7 @@
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
 | [`migrator/`](./migrator) | Утилиты для аудита и миграции данных из Bitrix |
 | [`postman/`](./postman) | Postman collection с общими variables и API paths |
+| [`translator/`](./translator) | Универсальный RU → KK переводчик и prompt для извлечения накопленного translation context |
 | [`promts/`](./promts) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
 
 ## Extension loader
@@ -97,6 +98,11 @@ Loader строго валидирует включённые entries manifest: 
 
 Коллекция хранит общие URL, API paths, pagination/locale/id variables. Секреты (`jwtToken`, `bearerToken`, `categoryDebugToken`) в GitHub не заполняются и задаются только локально.
 
+## Translator
+
+- `translator/ru-kk-translator-prompt.md` — единый мультимодальный RU → KK translator для API и ручной работы. Сам определяет режим `EMPTY`, `PLAIN_TEXT`, `HTML` или `IMAGE`; использует общий глоссарий и отдельные ограничения для каждого типа входа.
+- `translator/context-extractor-prompt.md` — отдельный служебный prompt для анализа накопленного контекста рабочего translation-проекта и подготовки подтверждённых правил/терминов для последующего merge в основной translator prompt.
+
 ## Promts / Project context
 
 `promts/` не участвует в runtime и не является рабочим source of truth ChatGPT Project.
@@ -149,6 +155,9 @@ README обновляется, когда меняются структура, �
 │   └── detail-picture-migrator.js
 ├── postman/
 │   └── admin-api.json
+├── translator/
+│   ├── ru-kk-translator-prompt.md
+│   └── context-extractor-prompt.md
 ├── promts/
 │   ├── project-context.md
 │   └── project-instructions.md
