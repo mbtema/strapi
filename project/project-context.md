@@ -148,11 +148,12 @@ project/
 
 `project/` — backup/sync snapshot Project Context/Instructions; в runtime и обычной работе не участвует.
 
-Tampermonkey использует один loader: `extension/loader.js` `1.3.1`.
+Tampermonkey использует один loader: `extension/loader.js` `1.3.2`.
 
 Loader:
 - стартует cached extensions;
 - читает корневой `extension/manifest.json`;
+- все manifests используют `schemaVersion: 1`; это версия формата manifest, не версия extension;
 - по нему загружает manifests рабочих папок (`ui-ux/manifest.json`, `features/manifest.json`);
 - объединяет их в единый registry и валидирует глобальные дубли `id/path`;
 - обновляет только изменившиеся extensions;
