@@ -102,6 +102,7 @@ Loader строго валидирует включённые entries manifest: 
 
 - `translator/ru-kk-translator-prompt.md` — единый мультимодальный RU → KK translator для API и ручной работы. Сам определяет режим `EMPTY`, `PLAIN_TEXT`, `HTML` или `IMAGE`; использует общий глоссарий и отдельные ограничения для каждого типа входа.
 - `translator/context-extractor-prompt.md` — отдельный служебный prompt для анализа накопленного контекста рабочего translation-проекта и подготовки подтверждённых правил/терминов для последующего merge в основной translator prompt.
+- `translator/benchmark.md` — статический benchmark новой unified-архитектуры против прежних отдельных prompts + runtime A/B test suite.
 
 ## Promts / Project context
 
@@ -157,7 +158,8 @@ README обновляется, когда меняются структура, �
 │   └── admin-api.json
 ├── translator/
 │   ├── ru-kk-translator-prompt.md
-│   └── context-extractor-prompt.md
+│   ├── context-extractor-prompt.md
+│   └── benchmark.md
 ├── promts/
 │   ├── project-context.md
 │   └── project-instructions.md
