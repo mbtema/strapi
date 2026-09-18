@@ -148,7 +148,7 @@ project/
 
 `project/` — backup/sync snapshot Project Context/Instructions; в runtime и обычной работе не участвует.
 
-Tampermonkey использует один loader: `extension/loader.js` `1.2.1`.
+Tampermonkey использует один loader: `extension/loader.js` `1.3.0`.
 
 Loader:
 - стартует cached extensions;
@@ -157,7 +157,8 @@ Loader:
 - объединяет их в единый registry и валидирует глобальные дубли `id/path`;
 - обновляет только изменившиеся extensions;
 - cache: `tm-strapi-extensions-cache-v1`;
-- если root/child manifest недоступен или некорректен, новый cache не записывается и при наличии старого loader продолжает работу из него.
+- если root/child manifest недоступен или некорректен, новый cache не записывается и при наличии старого loader продолжает работу из него;
+- `checkUpdates()` в Console принудительно сравнивает установленный loader и cached extensions с GitHub, скачивает изменившиеся extensions в cache и сообщает о необходимости reload; новая версия самого userscript применяется через Tampermonkey.
 
 Актуальные manifests 2026-09-18:
 
