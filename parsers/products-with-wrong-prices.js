@@ -1,6 +1,6 @@
 // ==Parser==
 // @name         products-with-wrong-prices
-// @version      1.2.0
+// @version      1.2.1
 // @description  Находит торговые предложения активных товаров с некорректной текущей ценой в Strapi CMS
 // @output       CSV: barcode;price;errorType
 // ==/Parser==
@@ -31,6 +31,26 @@
 
     return null;
   };
+
+  const getAdminToken = () => {
+    const raw = localStorage.getItem('jwtToken');
+    if (!raw) return '';
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === 'string') return parsed;
+    } catch {}
+
+    return raw.replace(/^"|"$/g, '');
+  };
+
+  const adminToken = getAdminToken();
+
+  if (!adminToken) {
+    throw new Error(
+      'Не найден jwtToken в LocalStorage. Перезайди в Strapi Admin и запусти checker повторно.'
+    );
+  }
 
   const downloadCSV = (items, filename) => {
     const q = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -140,7 +160,13 @@
       locale: LOCALE
     });
 
-    const response = await fetch(`${CONTENT_MANAGER_URL}?${cmParams}`);
+    const response = await fetch(`${CONTENT_MANAGER_URL}?${cmParams}`, {
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      }
+    });
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
@@ -219,7 +245,6 @@
     }
 
     if (cmPageCount && cmPage >= cmPageCount) break;
-
     if (!cmPageCount && rows.length < CM_PAGE_SIZE) break;
 
     cmPage++;
