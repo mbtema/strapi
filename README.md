@@ -4,9 +4,9 @@
 
 | Папка | Назначение |
 |---|---|
-| [`extension/`](./extension) | Единый Tampermonkey loader и manifest постоянных расширений Strapi |
-| [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper |
-| [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
+| [`extension/`](./extension) | Единый Tampermonkey loader и корневой manifest реестра extensions |
+| [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper + свой `manifest.json` |
+| [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi + свой `manifest.json` |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
 | [`migrator/`](./migrator) | Утилиты для аудита и миграции данных из Bitrix |
 | [`postman/`](./postman) | Postman collection с общими variables и API paths |
@@ -22,17 +22,21 @@
 Loader при открытии Strapi:
 
 1. мгновенно запускает последнюю сохранённую копию extensions из кеша;
-2. в фоне загружает `extension/manifest.json` с GitHub;
-3. при изменении версий или путей скачивает только изменившиеся файлы и сохраняет новый кеш;
-4. обновлённые extensions применяются после следующей перезагрузки Strapi.
+2. в фоне загружает корневой `extension/manifest.json`;
+3. по нему загружает manifests рабочих папок, сейчас `ui-ux/manifest.json` и `features/manifest.json`;
+4. объединяет и валидирует их как единый registry;
+5. при изменении версий или путей скачивает только изменившиеся файлы и сохраняет новый кеш;
+6. обновлённые extensions применяются после следующей перезагрузки Strapi.
 
 Старые отдельные Tampermonkey-скрипты после установки loader нужно отключить или удалить, иначе один функционал будет запускаться дважды.
 
 ### Manifest
 
-`extension/manifest.json` определяет, какие extensions включены. При изменении extension обязательно увеличивать его `version` в manifest. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
+`extension/manifest.json` — корневой registry: он содержит только список дочерних manifests.
 
-Loader строго валидирует включённые entries manifest: `id`, `path`, semver `version`, соответствие имени файла и отсутствие дублей. При некорректном manifest новый кеш не записывается, а при наличии старого loader продолжает использовать его.
+Метаданные конкретных extensions (`id`, `path`, semver `version`, `enabled`) хранятся рядом с кодом в manifest соответствующей папки: `features/manifest.json` или `ui-ux/manifest.json`. При изменении extension увеличивается его `version` именно там. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
+
+Loader валидирует каждый дочерний manifest и итоговый объединённый registry: формат путей, соответствие имени файла `id`, semver и глобальные дубли `id/path`. Если root/child manifest недоступен или некорректен, новый кеш не записывается, а при наличии старого loader продолжает использовать его.
 
 ## Features
 
@@ -56,7 +60,7 @@ Loader строго валидирует включённые entries manifest: 
 - minor (`1.4`) — заметное новое поведение;
 - major (`2.0`) — крупная переработка.
 
-Версия extension независима от версии loader. Единственный источник версии для файлов из `features/` и `ui-ux/` — `extension/manifest.json`; отдельные metadata-блоки и `@version` внутри этих файлов не используются.
+Версия extension независима от версии loader. Единственный источник версии для файла — `manifest.json` его папки (`features/manifest.json` или `ui-ux/manifest.json`); отдельные metadata-блоки и `@version` внутри этих файлов не используются.
 
 ## Parsers
 
@@ -122,11 +126,13 @@ README обновляется, когда меняются структура, �
 │   ├── loader.js
 │   └── manifest.json
 ├── features/
+│   ├── manifest.json
 │   ├── barcode-extractor.js
 │   ├── ctrl-enter-publisher.js
 │   ├── parser-launcher.js
 │   └── vimium-open-row.js
 ├── ui-ux/
+│   ├── manifest.json
 │   ├── sidebar.js
 │   ├── entry-relocate.js
 │   ├── list-view.js
