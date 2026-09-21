@@ -1,3 +1,10 @@
+// ==Parser==
+// @name         attributes-with-barcode-issues
+// @version      1.0.1
+// @description  Находит опубликованные предложения без barcode и с повторяющимися barcode с product context
+// @output       CSV: issue;barcode;duplicateCount;attributeId;attributeDocumentId;attributeName;productDocumentId;productName;productKey;productActive
+// ==/Parser==
+
 (async () => {
   'use strict';
 

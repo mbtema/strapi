@@ -1,3 +1,10 @@
+// ==Parser==
+// @name         products-with-missing-content
+// @version      1.1.1
+// @description  Находит активные товары с незаполненными критичными контентными полями
+// @output       CSV: id;documentId;name;key;missingCount;missingFields;name1;name2;hasDetailPicture;detailTextLength
+// ==/Parser==
+
 (async () => {
   'use strict';
 
