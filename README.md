@@ -66,7 +66,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 ## Parsers
 
-Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Метаданные parser'а хранятся только в `parsers/manifest.json`; metadata-блоков внутри `.js` нет.
+Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация parser'а (`file`, semver `version`, `group`) хранится в `parsers/manifest.json`; каждый regular parser также содержит meta header с `name`, `version`, назначением и форматом `output`.
 
 - `sort-volume.js` — неправильный порядок volume.
 - `volume-checker.js` — разные единицы измерения volume.
@@ -83,9 +83,9 @@ Loader валидирует каждый дочерний manifest и итого
 - `products-with-wrong-variants.js` — товары с неконсистентным выбором вариантов по `shade`/`volume`.
 - `attributes-with-barcode-issues.js` — draft-аудит опубликованных предложений без `barcode` и с повторяющимися `barcode`; без фильтра по `active`/`isInStock`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
-- `manifest.json` — единый источник `file`, semver `version` и `group` для Parser Launcher.
+- `manifest.json` — runtime-источник `file`, semver `version` и `group` для Parser Launcher; `group` задаётся только здесь.
 
-Для нового регулярного parser достаточно добавить `.js` в `parsers/` и зарегистрировать его в `parsers/manifest.json`, указав `file`, `version` и `group`; дублировать metadata внутри parser-файла не нужно.
+Для нового regular parser добавь meta header (`name`, `version`, назначение, `output`), затем зарегистрируй файл в `parsers/manifest.json` с `file`, той же `version` и `group`. `group` внутри parser-файла не дублируется.
 
 Рабочие группы: `products`, `offers`, `attributes`, `drafts`, `service`.
 
