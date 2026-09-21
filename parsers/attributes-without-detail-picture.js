@@ -1,3 +1,10 @@
+// ==Parser==
+// @name         attributes-without-detail-picture
+// @version      1.0.3
+// @description  Находит предложения активных товаров без detail_picture
+// @output       CSV: id;documentId;barcode;name;price;productDocumentId;productName
+// ==/Parser==
+
 (async () => {
   'use strict';
 

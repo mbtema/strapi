@@ -1,3 +1,10 @@
+// ==Parser==
+// @name         products-without-attributes
+// @version      1.0.2
+// @description  Находит активные товары без торговых предложений attributes
+// @output       CSV: id;documentId;name;key
+// ==/Parser==
+
 (async () => {
   const BASE_URL = '/api/products';
   const PAGE_SIZE = 100;

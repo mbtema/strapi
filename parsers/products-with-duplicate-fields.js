@@ -1,3 +1,10 @@
+// ==Parser==
+// @name         products-with-duplicate-fields
+// @version      1.1.1
+// @description  Находит дубли технических идентификаторов товаров по key, code_1c, bitrix_id, xml_id и code
+// @output       CSV: duplicateField;duplicateValue;duplicateCount;id;documentId;name;key;code_1c;bitrix_id;xml_id;code
+// ==/Parser==
+
 (async () => {
   const BASE_URL = '/api/products';
   const PAGE_SIZE = 100;
