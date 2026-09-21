@@ -1,3 +1,10 @@
+// ==Parser==
+// @name         volume-checker
+// @version      1.2.2
+// @description  Находит активные товары с несколькими volume, записанными с разными обозначениями единиц измерения
+// @output       CSV: documentId;volumes;units
+// ==/Parser==
+
 (async () => {
   const BASE_URL = '/api/products';
   const PAGE_SIZE = 100;

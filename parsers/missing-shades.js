@@ -1,3 +1,10 @@
+// ==Parser==
+// @name         missing-shades
+// @version      1.0.2
+// @description  Находит опубликованные предложения активных товаров с color_variant1C, но без shade
+// @output       CSV: id;documentId;barcode;productDocumentId;colorVariantDocumentId
+// ==/Parser==
+
 (async () => {
   const BASE_URL = '/api/attributes';
   const PAGE_SIZE = 100;

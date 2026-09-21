@@ -1,3 +1,10 @@
+// ==Parser==
+// @name         attributes-without-product
+// @version      1.0.4
+// @description  Находит опубликованные торговые предложения без relation product
+// @output       CSV: id;documentId;barcode;name;price
+// ==/Parser==
+
 (async () => {
   const BASE_URL = '/api/attributes';
   const PAGE_SIZE = 100;

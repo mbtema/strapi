@@ -1,3 +1,10 @@
+// ==Parser==
+// @name         shade-and-volume
+// @version      1.0.3
+// @description  Находит опубликованные предложения, у которых одновременно заполнены shade и volume
+// @output       CSV: id;documentId;barcode;productDocumentId;shadeDocumentId;shadeName;volumeDocumentId;volumeName
+// ==/Parser==
+
 (async () => {
   const BASE_URL = '/api/attributes';
   const PAGE_SIZE = 100;

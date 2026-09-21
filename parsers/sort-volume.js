@@ -1,3 +1,10 @@
+// ==Parser==
+// @name         sort-volume
+// @version      1.3.2
+// @description  Проверяет порядок volume у активных товаров и фиксирует неверный порядок, нечитаемые значения и смешанные физические типы
+// @output       CSV: type;productDocumentId;currentOrder;expectedOrder;attributeDocumentIds;unreadableVolumes;mixedUnits
+// ==/Parser==
+
 (async () => {
   const BASE_URL = '/api/products';
   const PAGE_SIZE = 100;
