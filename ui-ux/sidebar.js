@@ -622,7 +622,87 @@
         }
     }
 
+    function restoreCapturedLayout() {
+        if (!originalLayout) return;
+
+        if (sidebar && document.contains(sidebar)) {
+            restoreStyle(
+                sidebar,
+                'display',
+                originalLayout.sidebarDisplay,
+                originalLayout.sidebarDisplayPriority
+            );
+            sidebar.inert = originalLayout.sidebarInert;
+        }
+
+        if (layout && document.contains(layout)) {
+            restoreStyle(
+                layout,
+                'grid-template-columns',
+                originalLayout.gridTemplateColumns,
+                originalLayout.gridTemplatePriority
+            );
+        }
+
+        if (main && document.contains(main)) {
+            restoreStyle(
+                main,
+                'grid-column',
+                originalLayout.mainGridColumn,
+                originalLayout.mainGridColumnPriority
+            );
+            restoreStyle(
+                main,
+                'width',
+                originalLayout.mainWidth,
+                originalLayout.mainWidthPriority
+            );
+            restoreStyle(
+                main,
+                'max-width',
+                originalLayout.mainMaxWidth,
+                originalLayout.mainMaxWidthPriority
+            );
+        }
+    }
+
+    function cleanupSidebarDom(currentSidebar) {
+        if (!currentSidebar) return;
+
+        currentSidebar.querySelectorAll(`[${GROUP_ITEM_ATTR}]`).forEach(node => {
+            node.hidden = false;
+        });
+
+        currentSidebar.querySelectorAll(
+            `[${TOOLBAR_ATTR}], [${GROUP_HEADER_ATTR}], [${ICON_ATTR}]`
+        ).forEach(node => node.remove());
+
+        const managedAttrs = [
+            SIDEBAR_ATTR,
+            CLEANUP_ATTR,
+            LIST_ATTR,
+            HIDDEN_ATTR,
+            SINGLE_SOURCE_ATTR,
+            ACTIVE_ATTR,
+            GROUP_ITEM_ATTR,
+            QUICK_ATTR,
+            COLLAPSED_ATTR
+        ];
+
+        for (const attr of managedAttrs) {
+            currentSidebar.removeAttribute(attr);
+            currentSidebar.querySelectorAll(`[${attr}]`).forEach(node => {
+                node.removeAttribute(attr);
+            });
+        }
+    }
+
     function clearSidebarReferences() {
+        restoreCapturedLayout();
+        cleanupSidebarDom(sidebar);
+
+        layout?.removeAttribute(LAYOUT_ATTR);
+
         sidebar = null;
         collectionList = null;
         singleSourceList = null;
@@ -655,6 +735,7 @@
         originalLayout = {
             sidebarDisplay: currentSidebar.style.getPropertyValue('display'),
             sidebarDisplayPriority: currentSidebar.style.getPropertyPriority('display'),
+            sidebarInert: currentSidebar.inert,
             gridTemplateColumns: layout.style.getPropertyValue('grid-template-columns'),
             gridTemplatePriority: layout.style.getPropertyPriority('grid-template-columns'),
             mainGridColumn: main.style.getPropertyValue('grid-column'),
