@@ -1,6 +1,6 @@
 // ==Parser==
 // @name         products-with-wrong-prices
-// @version      1.2.2
+// @version      1.2.3
 // @description  Находит торговые предложения активных товаров с некорректной текущей ценой в Strapi CMS
 // @output       CSV: barcode;price;errorType
 // ==/Parser==
@@ -156,7 +156,7 @@
     const cmParams = new URLSearchParams({
       page: String(cmPage),
       pageSize: String(CM_PAGE_SIZE),
-      sort: 'barcode:ASC',
+      sort: 'id:ASC',
       locale: LOCALE
     });
 
