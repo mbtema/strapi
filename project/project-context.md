@@ -161,11 +161,11 @@ Loader:
 - если root/child manifest недоступен или некорректен, новый cache не записывается и при наличии старого loader продолжает работу из него;
 - `checkUpdates()` в Console принудительно сравнивает установленный loader и cached extensions с GitHub, скачивает изменившиеся extensions в cache и сообщает о необходимости reload; новая версия самого userscript применяется через Tampermonkey.
 
-Актуальные manifests 2026-09-18:
+Актуальные manifests 2026-09-22:
 
 | id | version |
 |---|---:|
-| sidebar | 2.2.5 |
+| sidebar | 2.2.6 |
 | record-list-scrollbars | 1.0.5 |
 | list-view | 1.3.1 |
 | entry-relocate | 1.4.6 |
@@ -298,8 +298,8 @@ Service: `dom-stealer`.
 
 Ключевая логика:
 - without-attributes/brand/categories — соответствующие проверки active products;
-- `products-with-duplicate-fields` `1.1.0` проверяет только `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`; null/empty игнорируются; отдельная группа/CSV row на каждый конфликтующий field;
-- `products-with-wrong-prices` `1.2.1`: сначала через Public API собирает `documentId` предложений active products, затем через authenticated Content Manager читает актуальные `barcode`/`price` и формирует CSV `barcode;price;errorType`; проверяются missing/zero/non-numeric/fractional значения;
+- `products-with-duplicate-fields` `1.1.1` проверяет только `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`; null/empty игнорируются; отдельная группа/CSV row на каждый конфликтующий field;
+- `products-with-wrong-prices` `1.2.3`: сначала через Public API собирает `documentId` предложений active products, затем через authenticated Content Manager постранично читает актуальные `barcode`/`price` со стабильной сортировкой `id:ASC`; dedup идёт по `documentId`; `missing` и нечисловой `invalid` разделены, также проверяются `zero` и `fractional`; итоговый CSV пока `barcode;price;errorType`;
 - missing-content — active product без `name1`, `name2`, `detail_picture` или `detail_text`; товары в categories `kns3po2mz8hq9kezm3szbvjg` и `a4zy2gvb479ku9nd6py5uxzh` исключаются из этой проверки как служебные;
 - wrong-variants — >1 offers нельзя последовательно выбирать одним типом `shade` или `volume`;
 - attributes-without-product — published scope через Public API; drafts не входят;
@@ -318,8 +318,61 @@ Parser Launcher:
 - manifest должен иметь `schemaVersion: 1`;
 - записи валидируются по `file` / semver `version` / `group` и duplicate file;
 - managed regular parsers получают global run-lock и ограниченный retry для GET при network errors, `429` и `5xx`; постоянные `4xx` не ретраятся.
+- каждый regular parser содержит meta header (`name`, `version`, назначение, `output`); runtime-регистрация и `group` остаются в `parsers/manifest.json`, версия header должна соответствовать manifest.
 
 Актуальные технические дефекты parsers/Launcher не дублируются в этом snapshot: live backlog хранится в GitHub Issues.
+---
+
+## Аудит и массовое заполнение `fragrance_concentration` — 2026-09-21
+
+Полный production-аудит выполнен по всем active products через несколько циклов выгрузки, классификации, dry-run, batch write, Save/Publish и повторной Public API проверки.
+
+Финальный результат:
+
+```text
+active products total: 13441
+relation assigned: 2259
+MATCH: 2259
+POSSIBLE_WRONG: 0
+MISSING: 0
+REVIEW: 0
+SKIP: 8
+NOT_APPLICABLE: 11174
+```
+
+Все заполненные значения — single relation. Финальное распределение:
+
+```text
+edp: 1503
+edt: 523
+parfum: 97
+body-mist: 81
+scent: 33
+hair-perfume: 12
+cologne: 10
+```
+
+Dictionary:
+
+| key | id | documentId |
+|---|---:|---|
+| body-mist | 13 | `o5uklspqv5k0vkghhv756ags` |
+| cologne | 5 | `c2v89b89xmedz5vflmk7tg8b` |
+| edp | 3 | `y5e4mc0nbx19hptxnxcf3laa` |
+| edt | 1 | `rq00sekjvuvzltyshq961vhd` |
+| hair-perfume | 11 | `e6bixcx64d8446l62lm2tvmo` |
+| parfum | 7 | `kzx3adlugfakw9lpuye60bnh` |
+| scent | 9 | `bg9gg4frh9gvqzalza9ax0z5` |
+
+Подтверждённые правила классификации:
+- `name1 + name2` из Content Manager — основной источник; `name` используется как точный identifier/1C и при необходимости для внешней проверки; `detail_text` — supporting source;
+- состав набора decisive: если в наборе несколько разных концентраций, relation не ставить → `SKIP`;
+- generic marketing text не должен переопределять явное controlled значение;
+- `Extrait` при `name2 = Духи` → `scent`;
+- solid perfume / stick / roll-on без подходящего значения в dictionary → `SKIP`;
+- care-категория сама по себе не означает skip: явные `Perfume Hair Mist`, `Body Mist`, `Hair & Body Mist` классифицируются; функциональные care-mists без парфюмерной концентрации остаются без relation;
+- после массового write обязательны Save + Publish + повторная проверка через Public API; один только успешный admin response не считается финальной валидацией.
+
 ---
 
 # 5. Нормализация `attributes.name_web` — 2026-09-11
