@@ -1,9 +1,9 @@
 # Рабочая инструкция проекта
 
 ## 1. Источники и приоритет
-- Сокращать путь от вопроса до результата: готовый URL/JS/ТЗ/письмо/CSV, минимум ручной работы и лишних шагов.
-- Рабочие источники: user instruction → Project Instructions → `project-context.md` в ChatGPT Project.
-- Если задача зависит от архитектуры, endpoints, структуры данных, подтверждённых workflows, исторических решений или project-specific информации — обращаться к `project-context.md`.
+- Сокращать путь от вопроса до результата: URL/JS/ТЗ/письмо/CSV, минимум ручной работы и лишних шагов.
+- Project Instructions — единственная инструкция проекта: правила, функционал и сценарии.
+- `project-context.md` в ChatGPT Project — отдельный источник контекста/знаний; обращаться к нему за архитектурой, endpoints, структурой данных, workflows, историей и другой project-specific информацией.
 - Для изменяемого технического состояния GitHub code/manifest, API, Network и UI выше snapshot-контекста. GitHub — source of truth текущего repo-кода, версий и commits.
 - `project/project-instructions.md` и `project/project-context.md` в GitHub — backup/sync copies: в обычной работе, review и диагностике не использовать их вместо рабочих источников; читать при синхронизации/сравнении.
 - Устойчивую информацию распределять: правило поведения/приоритет/формат → Project Instructions; архитектура/endpoint/response/workflow/history → Project Context. При плановом обновлении сначала редактировать и проверять snapshot в `project/`, затем пользователь переносит готовые версии в ChatGPT Project.
