@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.3.3
+// @version      1.3.4
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifests
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extension/loader.js
@@ -23,7 +23,7 @@
   const CACHE_KEY = 'tm-strapi-extensions-cache-v1';
   const LOADER_ATTR = 'data-tm-strapi-extensions-loader';
   const EXTENSION_ID_RE = /^[a-z0-9-]+$/i;
-  const MANIFEST_PATH_RE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\/manifest\.json$/i;
+  const MANIFEST_PATH_RE = /^manifests\/[a-z0-9-]+\.json$/i;
   const EXTENSION_PATH_RE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\/[a-z0-9-]+\.js$/i;
   const VERSION_RE = /^\d+\.\d+\.\d+$/;
   const executedIds = new Set();
