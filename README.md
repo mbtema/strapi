@@ -10,7 +10,7 @@
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
 | [`migrator/`](./migrator) | Утилиты для аудита и миграции данных из Bitrix |
 | [`postman/`](./postman) | Postman collection с общими variables и API paths |
-| [`translator/`](./translator) | Универсальный RU → KK переводчик и prompt для извлечения накопленного translation context |
+| [`translator/`](./translator) | Универсальный RU → KK переводчик, compressed-вариант и prompt для извлечения накопленного translation context |
 | [`project/`](./project) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
 
 ## Extension loader
@@ -44,7 +44,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`, строго валидирует `file` / semver `version` / `group` и дубли файлов, блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
+- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`, строго валидирует `file` / semver `version` / `group` и дубли файлов; перед запуском regular parser сверяет его `@name` и `@version` с manifest; блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 - `vimium-open-row.js` — делает строки таблиц доступными для Vimium; собственная ссылка помечается через `data-tm-*` и восстанавливается после React re-render.
 
 ## UI/UX
@@ -73,12 +73,12 @@ Loader валидирует каждый дочерний manifest и итого
 - `missing-shades.js` — активные предложения с `color_variant1C`, но без `shade`.
 - `shade-and-volume.js` — опубликованные предложения, у которых одновременно заполнены `shade` и `volume`.
 - `attributes-without-product.js` — опубликованные предложения без `product`.
-- `attributes-without-detail-picture.js` — предложения активных товаров без `detail_picture`.
+- `attributes-without-detail-picture.js` — предложения активных товаров в наличии (`isInStock=true`) без `detail_picture`.
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-brand.js` — активные товары без `brand`.
 - `products-without-categories.js` — активные товары без `categories`.
 - `products-with-duplicate-fields.js` — дубли технических идентификаторов `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`.
-- `products-with-wrong-prices.js` — активные товары с нулевой/пустой/некорректной ценой предложения.
+- `products-with-wrong-prices.js` — предложения активных товаров с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
 - `products-with-missing-content.js` — активные товары без критичных контентных полей; товары из категорий `kns3po2mz8hq9kezm3szbvjg` и `a4zy2gvb479ku9nd6py5uxzh` исключаются из отчёта и считаются неактивными для этой проверки.
 - `products-with-wrong-variants.js` — товары с неконсистентным выбором вариантов по `shade`/`volume`.
 - `attributes-with-barcode-issues.js` — draft-аудит опубликованных предложений без `barcode` и с повторяющимися `barcode`; без фильтра по `active`/`isInStock`.
@@ -107,6 +107,7 @@ Loader валидирует каждый дочерний manifest и итого
 ## Translator
 
 - `translator/translator.md` — единый мультимодальный RU → KK translator для API и ручной работы. Сам определяет режим `EMPTY`, `PLAIN_TEXT`, `HTML` или `IMAGE`; использует общий глоссарий и отдельные ограничения для каждого типа входа.
+- `translator/translator-compressed.md` — сжатый production/project вариант основного translator prompt.
 - `translator/context-extractor.md` — отдельный служебный prompt для анализа накопленного контекста рабочего translation-проекта и подготовки подтверждённых правил/терминов для последующего merge в основной translator prompt.
 
 ## Project
@@ -165,6 +166,7 @@ README обновляется, когда меняются структура, �
 │   └── admin-api.json
 ├── translator/
 │   ├── translator.md
+│   ├── translator-compressed.md
 │   └── context-extractor.md
 ├── project/
 │   ├── project-context.md
