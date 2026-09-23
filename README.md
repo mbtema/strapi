@@ -90,9 +90,11 @@ Loader валидирует каждый дочерний manifest и итого
 
 ## Translator
 
-- `translator/full.md` — полная версия мультимодального RU → KK translator для API и ручной работы. Сам определяет режим `EMPTY`, `PLAIN_TEXT`, `HTML` или `IMAGE`; использует общий глоссарий и отдельные ограничения для каждого типа входа.
-- `translator/compressed.md` — сжатая версия того же translator prompt для Project Instructions с лимитом по размеру.
-- `translator/extractor.md` — отдельный служебный prompt для анализа накопленного контекста рабочего translation-проекта и подготовки подтверждённых правил/терминов для последующего merge в основной translator prompt.
+- `translator/full.md` — полный source of truth для RU → KK перевода: без искусственной экономии символов, с подробными правилами, приоритетами, глоссарием и самопроверкой.
+- `translator/compressed.md` — поведенчески эквивалентная сжатая версия для ChatGPT Project Instructions; должна оставаться не длиннее 8000 символов. Правила и приоритеты те же, сокращаются объяснения и примеры, а не логика.
+- `translator/extractor.md` — служебный prompt для анализа review-таблиц и накопленного translation context перед merge подтверждённых правил.
+
+При изменении translation logic сначала обновляется `full.md`, затем те же правила синхронизируются в `compressed.md` и проверяется лимит 8000 символов. `compressed.md` не должен иметь самостоятельную терминологию, расходящуюся с `full.md`.
 
 ## Project
 
