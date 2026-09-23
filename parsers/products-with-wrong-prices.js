@@ -1,8 +1,8 @@
 // ==Parser==
 // @name         products-with-wrong-prices
-// @version      1.2.3
+// @version      1.2.4
 // @description  Находит торговые предложения активных товаров с некорректной текущей ценой в Strapi CMS
-// @output       CSV: barcode;price;errorType
+// @output       CSV: documentId;barcode;price;errorType
 // ==/Parser==
 
 (async () => {
@@ -13,7 +13,7 @@
   const LOCALE = 'ru';
   const PUBLIC_PAGE_SIZE = 100;
   const CM_PAGE_SIZE = 50;
-  const HEADERS = ['barcode', 'price', 'errorType'];
+  const HEADERS = ['documentId', 'barcode', 'price', 'errorType'];
 
   const timestamp = () => {
     const d = new Date();
@@ -27,6 +27,7 @@
     const price = Number(value);
     if (!Number.isFinite(price)) return 'invalid';
     if (price === 0) return 'zero';
+    if (price < 0) return 'negative';
     if (!Number.isInteger(price)) return 'fractional';
 
     return null;
@@ -219,6 +220,7 @@
       if (!errorType) continue;
 
       invalidRows.push({
+        documentId: attribute.documentId,
         barcode: attribute.barcode ?? '',
         price: attribute.price ?? '',
         errorType
