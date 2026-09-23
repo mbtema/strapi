@@ -1,10 +1,10 @@
 (() => {
   'use strict';
 
-  const RAW_BASE =
-    'https://raw.githubusercontent.com/mbtema/strapi/main/parsers/';
-
-  const MANIFEST_FILE = 'manifest.json';
+  const RAW_ROOT =
+    'https://raw.githubusercontent.com/mbtema/strapi/main/';
+  const PARSERS_BASE = `${RAW_ROOT}parsers/`;
+  const MANIFEST_URL = `${RAW_ROOT}manifests/parsers.json`;
   const OVERLAY_ID = 'tm-parser-launcher-overlay';
   const PARSER_FILE_RE = /^[a-z0-9-]+\.js$/;
   const VERSION_RE = /^\d+\.\d+\.\d+$/;
@@ -25,8 +25,8 @@
 
   window[ACTIVE_RUNS_KEY] = activeRuns;
 
-  async function loadText(file) {
-    const response = await fetch(`${RAW_BASE}${file}?t=${Date.now()}`, {
+  async function loadText(url) {
+    const response = await fetch(`${url}?t=${Date.now()}`, {
       cache: 'no-store'
     });
 
@@ -38,7 +38,7 @@
   }
 
   async function loadManifest() {
-    const text = await loadText(MANIFEST_FILE);
+    const text = await loadText(MANIFEST_URL);
     const manifest = JSON.parse(text);
 
     if (
@@ -215,7 +215,7 @@
     status.style.color = '#c7c7d4';
 
     try {
-      const code = await loadText(parser.file);
+      const code = await loadText(`${PARSERS_BASE}${parser.file}`);
       validateParserMeta(code, parser);
       const managed = executeParser(code, parser.file);
 
@@ -429,7 +429,7 @@
       const parsers = await loadManifest();
 
       if (!document.body.contains(overlay)) return;
-      if (!parsers.length) throw new Error('В manifest.json нет парсеров');
+      if (!parsers.length) throw new Error('В manifests/parsers.json нет парсеров');
 
       const { grouped, service } = splitParsers(parsers);
 
