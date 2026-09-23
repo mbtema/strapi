@@ -1,7 +1,7 @@
 // ==Parser==
 // @name         attributes-without-detail-picture
-// @version      1.0.3
-// @description  Находит предложения активных товаров без detail_picture
+// @version      1.0.4
+// @description  Находит предложения активных товаров в наличии (isInStock=true) без detail_picture
 // @output       CSV: id;documentId;barcode;name;price;productDocumentId;productName
 // ==/Parser==
 
