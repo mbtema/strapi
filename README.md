@@ -1,4 +1,4 @@
-Набор рабочих инструментов для админки Strapi и миграции контента: постоянные extensions, UI/UX-кастомы, парсеры, Bitrix-утилиты, Postman, универсальный RU → KK переводчик и backup/sync snapshot Project Instructions и Project Context.
+Набор рабочих инструментов для админки Strapi: постоянные extensions, UI/UX-кастомы, парсеры, универсальный RU → KK переводчик и backup/sync snapshot Project Instructions и Project Context.
 
 ## Структура
 
@@ -8,8 +8,6 @@
 | [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper + свой `manifest.json` |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi + свой `manifest.json` |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
-| [`migrator/`](./migrator) | Утилиты для аудита и миграции данных из Bitrix |
-| [`postman/`](./postman) | Postman collection с общими variables и API paths |
 | [`translator/`](./translator) | Универсальный RU → KK переводчик, compressed-вариант и prompt для извлечения накопленного translation context |
 | [`project/`](./project) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
 
@@ -89,21 +87,6 @@ Loader валидирует каждый дочерний manifest и итого
 
 Рабочие группы: `products`, `offers`, `attributes`, `drafts`, `service`.
 
-## Bitrix / Migrator
-
-- `migrator/detail-picture-audit.js` — browser-аудит DETAIL_PICTURE: напрямую сканирует торговые предложения `IBLOCK_ID=2`, сопоставляет точный barcode и открывает карточку конкретного offer только когда изображение нельзя получить из строки списка; сохраняет checkpoint и CSV.
-- `migrator/detail-picture-migrator.js` — локальный Node.js migrator: находит Strapi attribute, скачивает изображение, загружает его в Strapi, привязывает `detail_picture`, публикует `ru` и проверяет результат.
-- Migrator сохраняет checkpoint и не повторяет неопределённый `POST /upload`, чтобы не создавать duplicate media.
-- Bitrix browser-утилиты запускаются только на домене Bitrix Admin, где доступна авторизованная сессия.
-
-## Postman
-
-Основной файл:
-
-`postman/admin-api.json`
-
-Коллекция хранит общие URL, API paths, pagination/locale/id variables. Секреты (`jwtToken`, `bearerToken`, `categoryDebugToken`) в GitHub не заполняются и задаются только локально.
-
 ## Translator
 
 - `translator/translator.md` — единый мультимодальный RU → KK translator для API и ручной работы. Сам определяет режим `EMPTY`, `PLAIN_TEXT`, `HTML` или `IMAGE`; использует общий глоссарий и отдельные ограничения для каждого типа входа.
@@ -159,11 +142,6 @@ README обновляется, когда меняются структура, �
 │   ├── products-with-wrong-prices.js
 │   ├── sort-volume.js
 │   └── volume-checker.js
-├── migrator/
-│   ├── detail-picture-audit.js
-│   └── detail-picture-migrator.js
-├── postman/
-│   └── admin-api.json
 ├── translator/
 │   ├── translator.md
 │   ├── translator-compressed.md
