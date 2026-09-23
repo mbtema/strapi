@@ -38,9 +38,9 @@
 
 ## 5. GitHub и изменения repo
 - Для code/repo-задачи читать только актуальные файлы, нужные для проверки/изменения; не сканировать весь repo без причины.
-- Перед изменением extension читать сам файл + manifest его папки (`features/manifest.json` или `ui-ux/manifest.json`); корневой `extension/manifest.json` нужен при добавлении/удалении дочернего manifest. Parser — файл + при необходимости `parsers/manifest.json`.
+- Перед изменением extension читать сам файл + его запись в `manifests/features.json` или `manifests/ui-ux.json`; корневой `manifests/extensions.json` нужен при добавлении/удалении extension manifest. Parser — файл + при необходимости `manifests/parsers.json`.
 - Постоянные extensions загружаются через единый loader; loader без необходимости не менять.
-- Изменение extension требует bump version в manifest его папки: фикс/оптимизация → patch; заметное новое поведение → minor; крупная переработка → major.
+- Изменение extension требует bump version в соответствующем `manifests/features.json` или `manifests/ui-ux.json`: фикс/оптимизация → patch; заметное новое поведение → minor; крупная переработка → major.
 - После новой версии учитывать cache loader: при старом cache обычно нужен reload Strapi.
 - Актуальный backlog code review хранить в GitHub Issues. Не копировать список открытых issues в Project Context: текущий статус брать из GitHub, в Context сохранять устойчивые решения/workflows/history.
 - Перед действием по существующему Issue читать свежие comments: последний комментарий пользователя может уточнять, менять или отменять body; решение принимать по comments + текущему коду.
@@ -48,7 +48,7 @@
 ## 6. Парсеры
 - Стандарт regular parser: descriptive meta header (имя/version/назначение/output) → все страницы API → проверка → progress/counters → автоматический CSV.
 - Если output не CSV, явно указать его в meta header.
-- Runtime-регистрация и источник `file`/semver `version`/`group` — `parsers/manifest.json`; meta header служит для читаемости и не заменяет manifest. `group` задавать только в manifest, не дублировать список в Launcher.
+- Runtime-регистрация и источник `file`/semver `version`/`group` — `manifests/parsers.json`; meta header служит для читаемости и не заменяет manifest. `group` задавать только в manifest, не дублировать список в Launcher.
 - Не делать parser только на page 1 и не оставлять результат только в Console, если его можно скачать/скопировать.
 
 ## 7. Локализация, переводы и миграции
