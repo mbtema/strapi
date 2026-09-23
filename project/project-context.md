@@ -8,7 +8,7 @@
 >
 > Для изменяемого состояния актуальные GitHub code/manifest, API, Network и UI выше snapshot из этого файла.
 
-**Последняя сборка:** 2026-09-22  
+**Последняя сборка:** 2026-09-23  
 **Repo:** `mbtema/strapi`  
 **Strapi backend:** `http://10.10.3.80:1337`  
 **Локали:** `ru`, `kk`
@@ -95,7 +95,7 @@ DevTools:
 - Console — browser scripts и DOM/UI diagnostics;
 - `parsers/dom-stealer.js` копирует `document.documentElement.outerHTML` в Clipboard.
 
-Postman: `postman/admin-api.json`.
+Папка `postman/` удалена из repo 2026-09-23; при необходимости Postman workflow можно вернуть отдельно позже.
 
 Базовые variables:
 
@@ -118,15 +118,17 @@ Secret variables (`jwtToken`, `bearerToken`, `categoryDebugToken`) в GitHub н�
 ```text
 extension/
   loader.js
-  manifest.json
+manifests/
+  extensions.json
+  features.json
+  ui-ux.json
+  parsers.json
 features/
-  manifest.json
   barcode-extractor.js
   ctrl-enter-publisher.js
   parser-launcher.js
   vimium-open-row.js
 ui-ux/
-  manifest.json
   sidebar.js
   entry-relocate.js
   list-view.js
@@ -134,13 +136,11 @@ ui-ux/
   product-sections.js
   record-list-scrollbars.js
 parsers/
-  manifest.json
   ...
-migrator/
-  detail-picture-audit.js
-  detail-picture-migrator.js
-postman/
-  admin-api.json
+translator/
+  translator.md
+  translator-compressed.md
+  context-extractor.md
 project/
   project-context.md
   project-instructions.md
@@ -148,32 +148,32 @@ project/
 
 `project/` — backup/sync snapshot Project Context/Instructions; в runtime и обычной работе не участвует.
 
-Tampermonkey использует один loader: `extension/loader.js` `1.3.2`.
+Tampermonkey использует один loader: `extension/loader.js` `1.3.3`.
 
 Loader:
 - стартует cached extensions;
-- читает корневой `extension/manifest.json`;
+- читает корневой `manifests/extensions.json`;
 - все manifests используют `schemaVersion: 1`; это версия формата manifest, не версия extension;
-- по нему загружает manifests рабочих папок (`ui-ux/manifest.json`, `features/manifest.json`);
+- по нему загружает централизованные `manifests/ui-ux.json` и `manifests/features.json`;
 - объединяет их в единый registry и валидирует глобальные дубли `id/path`;
 - обновляет только изменившиеся extensions;
 - cache: `tm-strapi-extensions-cache-v1`;
 - если root/child manifest недоступен или некорректен, новый cache не записывается и при наличии старого loader продолжает работу из него;
 - `checkUpdates()` в Console принудительно сравнивает установленный loader и cached extensions с GitHub, скачивает изменившиеся extensions в cache и сообщает о необходимости reload; новая версия самого userscript применяется через Tampermonkey.
 
-Актуальные manifests 2026-09-22:
+Актуальные manifests 2026-09-23:
 
 | id | version |
 |---|---:|
 | sidebar | 2.2.6 |
 | record-list-scrollbars | 1.0.5 |
 | list-view | 1.3.1 |
-| entry-relocate | 1.4.6 |
+| entry-relocate | 1.4.7 |
 | product-attributes-navigator | 1.0.4 |
 | product-sections | 1.1.1 |
 | barcode-extractor | 1.4.3 |
 | ctrl-enter-publisher | 1.2.1 |
-| parser-launcher | 1.6.3 |
+| parser-launcher | 1.6.5 |
 | vimium-open-row | 1.1.3 |
 
 Текущее поведение:
@@ -184,7 +184,7 @@ Loader:
 - `barcode-extractor.js`: `Alt+B` копирует barcode из реального `input[name="barcode"]`; вне подходящей карточки hotkey не перехватывается.
 - `ctrl-enter-publisher.js`: `Alt+Enter` нажимает штатный Publish, только если кнопка найдена и доступна.
 - `vimium-open-row.js`: keyboard/Vimium navigation.
-- `parser-launcher.js`: `Alt+P`; строго валидирует `parsers/manifest.json`, блокирует повторный managed run одного parser и для GET повторяет временные network / `429` / `5xx` ошибки.
+- `parser-launcher.js`: `Alt+P`; строго валидирует `manifests/parsers.json`, блокирует повторный managed run одного parser и для GET повторяет временные network / `429` / `5xx` ошибки.
 
 ## Product attributes navigator
 
@@ -263,7 +263,7 @@ shareUrl
 
 # 4. Parser health layer
 
-`parsers/manifest.json` содержит 15 parsers и является runtime-источником регистрации: `file`, semver `version`, `group`.
+`manifests/parsers.json` содержит 15 parsers и является runtime-источником регистрации: `file`, semver `version`, `group`.
 
 Product health:
 
@@ -299,7 +299,7 @@ Service: `dom-stealer`.
 Ключевая логика:
 - without-attributes/brand/categories — соответствующие проверки active products;
 - `products-with-duplicate-fields` `1.1.1` проверяет только `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`; null/empty игнорируются; отдельная группа/CSV row на каждый конфликтующий field;
-- `products-with-wrong-prices` `1.2.3`: сначала через Public API собирает `documentId` предложений active products, затем через authenticated Content Manager постранично читает актуальные `barcode`/`price` со стабильной сортировкой `id:ASC`; dedup идёт по `documentId`; `missing` и нечисловой `invalid` разделены, также проверяются `zero` и `fractional`; итоговый CSV пока `barcode;price;errorType`;
+- `products-with-wrong-prices` `1.2.4`: сначала через Public API собирает `documentId` предложений active products, затем через authenticated Content Manager постранично читает актуальные `barcode`/`price` со стабильной сортировкой `id:ASC`; dedup идёт по `documentId`; `missing` и нечисловой `invalid` разделены, также проверяются `zero`, `negative` и `fractional`; итоговый CSV `documentId;barcode;price;errorType`;
 - missing-content — active product без `name1`, `name2`, `detail_picture` или `detail_text`; товары в categories `kns3po2mz8hq9kezm3szbvjg` и `a4zy2gvb479ku9nd6py5uxzh` исключаются из этой проверки как служебные;
 - wrong-variants — >1 offers нельзя последовательно выбирать одним типом `shade` или `volume`;
 - attributes-without-product — published scope через Public API; drafts не входят;
@@ -318,7 +318,7 @@ Parser Launcher:
 - manifest должен иметь `schemaVersion: 1`;
 - записи валидируются по `file` / semver `version` / `group` и duplicate file;
 - managed regular parsers получают global run-lock и ограниченный retry для GET при network errors, `429` и `5xx`; постоянные `4xx` не ретраятся.
-- каждый regular parser содержит meta header (`name`, `version`, назначение, `output`); runtime-регистрация и `group` остаются в `parsers/manifest.json`, версия header должна соответствовать manifest.
+- каждый regular parser содержит meta header (`name`, `version`, назначение, `output`); runtime-регистрация и `group` остаются в `manifests/parsers.json`, версия header должна соответствовать manifest.
 
 Актуальные технические дефекты parsers/Launcher не дублируются в этом snapshot: live backlog хранится в GitHub Issues.
 ---
@@ -434,12 +434,7 @@ CSV Strapi (barcode + productDocumentId)
 
 Bitrix barcode column — `PROPERTY_19`. Matching — exact barcode.
 
-Repo:
-
-```text
-migrator/detail-picture-audit.js      2.0.0
-migrator/detail-picture-migrator.js   1.0.1
-```
+Исторические scripts `migrator/detail-picture-audit.js` и `migrator/detail-picture-migrator.js` удалены из repo 2026-09-23 при упрощении структуры. Ниже сохранён исторический workflow выполненной миграции.
 
 Pipeline:
 
