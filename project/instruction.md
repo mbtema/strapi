@@ -54,7 +54,7 @@
 - Runtime-регистрация `file/version/group` — `manifests/parsers.json`; meta header не заменяет manifest, `group` задаётся только в manifest.
 - Не делать parser только на page 1 и не оставлять массовый результат только в Console, если его можно скачать/скопировать.
 - Для `ru/kk` учитывать локализацию поля, relation field и связанной entity.
-- RU → KK: использовать актуальные правила `translator/translator.md`; HTML переводить только разрешённый текст с сохранением structure/tags/attributes/CSS/classes/links; защищённые названия, латиницу и техконструкции не переводить. Накопленные rules перед merge извлекать через `translator/context-extractor.md`.
+- RU → KK: использовать актуальные правила `translator/full.md`; HTML переводить только разрешённый текст с сохранением structure/tags/attributes/CSS/classes/links; защищённые названия, латиницу и техконструкции не переводить. Накопленные rules перед merge извлекать через `translator/extractor.md`.
 - Для Bitrix → Strapi разделять очистку/перезапись, повторную загрузку, перевод и relations. Подтверждённые identifiers/endpoints/workflows брать из `context.md` или актуального Network/API, не восстанавливать по памяти.
 
 ## 8. ТЗ, переписка и отчёты

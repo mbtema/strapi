@@ -9,7 +9,7 @@
 | [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
-| [`translator/`](./translator) | Универсальный RU → KK переводчик, compressed-вариант и prompt для извлечения накопленного translation context |
+| [`translator/`](./translator) | RU → KK переводчик: полная версия, compressed-версия и extractor для накопленного translation context |
 | [`project/`](./project) | Sync/staging copies для Project Instructions и источника `context.md` |
 
 ## Extension loader
@@ -90,9 +90,9 @@ Loader валидирует каждый дочерний manifest и итого
 
 ## Translator
 
-- `translator/translator.md` — единый мультимодальный RU → KK translator для API и ручной работы. Сам определяет режим `EMPTY`, `PLAIN_TEXT`, `HTML` или `IMAGE`; использует общий глоссарий и отдельные ограничения для каждого типа входа.
-- `translator/translator-compressed.md` — сжатый production/project вариант основного translator prompt.
-- `translator/context-extractor.md` — отдельный служебный prompt для анализа накопленного контекста рабочего translation-проекта и подготовки подтверждённых правил/терминов для последующего merge в основной translator prompt.
+- `translator/full.md` — полная версия мультимодального RU → KK translator для API и ручной работы. Сам определяет режим `EMPTY`, `PLAIN_TEXT`, `HTML` или `IMAGE`; использует общий глоссарий и отдельные ограничения для каждого типа входа.
+- `translator/compressed.md` — сжатая версия того же translator prompt для Project Instructions с лимитом по размеру.
+- `translator/extractor.md` — отдельный служебный prompt для анализа накопленного контекста рабочего translation-проекта и подготовки подтверждённых правил/терминов для последующего merge в основной translator prompt.
 
 ## Project
 
@@ -147,9 +147,9 @@ README обновляется, когда меняются структура, �
 │   ├── sort-volume.js
 │   └── volume-checker.js
 ├── translator/
-│   ├── translator.md
-│   ├── translator-compressed.md
-│   └── context-extractor.md
+│   ├── full.md
+│   ├── compressed.md
+│   └── extractor.md
 ├── project/
 │   ├── context.md
 │   └── instruction.md

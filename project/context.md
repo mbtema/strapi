@@ -405,7 +405,7 @@ shareUrl
 - localization relation field;
 - localization target entity.
 
-Production RU → KK translation rules живут в `translator/translator.md`; это специализированный source of truth для перевода.
+Production RU → KK translation rules живут в `translator/full.md`; это специализированный source of truth для перевода.
 
 Translator сам определяет тип входа `EMPTY`, `PLAIN_TEXT`, `HTML`, `IMAGE`.
 
@@ -414,7 +414,7 @@ Translator сам определяет тип входа `EMPTY`, `PLAIN_TEXT`, 
 - если русского переводимого текста нет, вход сохраняется;
 - бренды, product/collection/technology names, латиница, SKU, URL, единицы и технические конструкции защищаются;
 - в HTML переводится только разрешённый текст; structure/tags/attributes/CSS/classes/links сохраняются;
-- накопленный translation context перед merge анализируется через `translator/context-extractor.md`.
+- накопленный translation context перед merge анализируется через `translator/extractor.md`.
 
 HISTORICAL: `products.name` не должен был различаться между ru/kk; приоритетом считался ru, а auto-translated kk name мешал relation search. Фактическое текущее состояние этого поведения при новой задаче проверять отдельно.
 
