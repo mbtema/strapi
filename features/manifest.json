@@ -16,7 +16,7 @@
     {
       "id": "parser-launcher",
       "path": "features/parser-launcher.js",
-      "version": "1.6.3",
+      "version": "1.6.4",
       "enabled": true
     },
     {
