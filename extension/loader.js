@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.3.2
+// @version      1.3.3
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifests
 // @match        http://10.10.3.80:1337/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extension/loader.js
@@ -19,7 +19,7 @@
 
   const RAW_ROOT = 'https://raw.githubusercontent.com/mbtema/strapi/main/';
   const LOADER_URL = `${RAW_ROOT}extension/loader.js`;
-  const MANIFEST_URL = `${RAW_ROOT}extension/manifest.json`;
+  const MANIFEST_URL = `${RAW_ROOT}manifests/extensions.json`;
   const CACHE_KEY = 'tm-strapi-extensions-cache-v1';
   const LOADER_ATTR = 'data-tm-strapi-extensions-loader';
   const EXTENSION_ID_RE = /^[a-z0-9-]+$/i;
@@ -152,12 +152,8 @@
       manifest.schemaVersion !== 1 ||
       !Array.isArray(manifest.extensions)
     ) {
-      throw new Error(`${sourcePath || 'extension/manifest.json'}: invalid extensions manifest`);
+      throw new Error(`${sourcePath || 'extensions manifest'}: invalid extensions manifest`);
     }
-
-    const sourceDir = sourcePath.includes('/')
-      ? sourcePath.slice(0, sourcePath.lastIndexOf('/'))
-      : '';
 
     const items = [];
     const ids = new Set();
@@ -169,7 +165,7 @@
       const id = String(item.id || '').trim();
       const path = String(item.path || '').trim();
       const version = String(item.version || '').trim();
-      const label = `${sourcePath || 'extension/manifest.json'} extensions[${index}]`;
+      const label = `${sourcePath || 'extensions manifest'} extensions[${index}]`;
 
       if (!EXTENSION_ID_RE.test(id)) {
         throw new Error(`${label}: invalid id`);
@@ -179,9 +175,6 @@
       }
       if (!EXTENSION_PATH_RE.test(path)) {
         throw new Error(`${label}: invalid path for ${id}`);
-      }
-      if (sourceDir && !path.startsWith(`${sourceDir}/`)) {
-        throw new Error(`${label}: path must stay inside ${sourceDir}/`);
       }
       if (path.split('/').pop() !== `${id}.js`) {
         throw new Error(`${label}: path does not match id ${id}`);
@@ -222,7 +215,7 @@
 
   async function loadManifest() {
     const rootText = await requestText(MANIFEST_URL);
-    const root = parseJson(rootText, 'extension/manifest.json');
+    const root = parseJson(rootText, 'manifests/extensions.json');
 
     const manifestPaths = normalizeRootManifest(root);
 
