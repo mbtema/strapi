@@ -480,7 +480,10 @@
         const aside = getEntry();
         const layout = findLayout(aside, tabList);
 
-        if (!layout) return;
+        if (!layout) {
+            if (currentState) cleanupState(true);
+            return;
+        }
 
         const state = ensureCurrentState(layout);
 
