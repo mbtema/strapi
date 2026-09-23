@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "parsers": [
+    {
+      "file": "sort-volume.js",
+      "version": "1.3.2",
+      "group": "attributes"
+    },
+    {
+      "file": "volume-checker.js",
+      "version": "1.2.2",
+      "group": "attributes"
+    },
+    {
+      "file": "missing-shades.js",
+      "version": "1.0.2",
+      "group": "attributes"
+    },
+    {
+      "file": "shade-and-volume.js",
+      "version": "1.0.3",
+      "group": "attributes"
+    },
+    {
+      "file": "attributes-without-product.js",
+      "version": "1.0.4",
+      "group": "offers"
+    },
+    {
+      "file": "attributes-without-detail-picture.js",
+      "version": "1.0.4",
+      "group": "offers"
+    },
+    {
+      "file": "products-without-attributes.js",
+      "version": "1.0.2",
+      "group": "products"
+    },
+    {
+      "file": "products-without-brand.js",
+      "version": "1.0.2",
+      "group": "products"
+    },
+    {
+      "file": "products-without-categories.js",
+      "version": "1.0.2",
+      "group": "products"
+    },
+    {
+      "file": "products-with-duplicate-fields.js",
+      "version": "1.1.1",
+      "group": "products"
+    },
+    {
+      "file": "products-with-wrong-prices.js",
+      "version": "1.2.4",
+      "group": "products"
+    },
+    {
+      "file": "products-with-missing-content.js",
+      "version": "1.1.1",
+      "group": "products"
+    },
+    {
+      "file": "products-with-wrong-variants.js",
+      "version": "1.0.4",
+      "group": "products"
+    },
+    {
+      "file": "attributes-with-barcode-issues.js",
+      "version": "1.0.1",
+      "group": "drafts"
+    },
+    {
+      "file": "dom-stealer.js",
+      "version": "1.0.1",
+      "group": "service"
+    }
+  ]
+}
