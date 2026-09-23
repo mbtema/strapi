@@ -10,7 +10,7 @@
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
 | [`translator/`](./translator) | Универсальный RU → KK переводчик, compressed-вариант и prompt для извлечения накопленного translation context |
-| [`project/`](./project) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
+| [`project/`](./project) | Sync/staging copies для Project Instructions и источника `context.md` |
 
 ## Extension loader
 
@@ -96,12 +96,14 @@ Loader валидирует каждый дочерний manifest и итого
 
 ## Project
 
-`project/` не участвует в runtime и не является рабочим source of truth ChatGPT Project.
+`project/` не участвует в runtime.
 
-- `project/project-context.md` — snapshot knowledge layer: архитектура, endpoints, ограничения, принятые решения, структура repo, исторические кейсы и рабочие workflows.
-- `project/project-instructions.md` — snapshot operational layer: приоритеты, формат ответов и правила работы.
+- `project/instruction.md` — готовый текст для поля Project Instructions; operational rules, приоритеты и формат работы.
+- `project/context.md` — готовый knowledge source для загрузки в ChatGPT Project: устойчивые факты, CANONICAL workflows, решения, доменная память, history/experiments.
 
-Рабочие версии находятся непосредственно в ChatGPT Project. При появлении подтверждённой устойчивой информации сначала обновляется соответствующий слой Project, затем синхронизируется его копия в `project/`.
+Эти файлы используются как sync/staging copies: при плановой консолидации они обновляются и проверяются в repo, после чего пользователь вручную переносит `instruction.md` в Project Instructions и загружает `context.md` как источник. В обычной работе активными источниками остаются версии внутри ChatGPT Project.
+
+Текущее code/version/manifest/Issue состояние берётся из live GitHub/API/Network/UI, а не из `context.md`.
 
 README обновляется, когда меняются структура, назначение, установка, использование или перечень основных инструментов репозитория.
 
@@ -149,7 +151,7 @@ README обновляется, когда меняются структура, �
 │   ├── translator-compressed.md
 │   └── context-extractor.md
 ├── project/
-│   ├── project-context.md
-│   └── project-instructions.md
+│   ├── context.md
+│   └── instruction.md
 └── README.md
 ```
