@@ -4,9 +4,10 @@
 
 | Папка | Назначение |
 |---|---|
-| [`extension/`](./extension) | Единый Tampermonkey loader и корневой manifest реестра extensions |
-| [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper + свой `manifest.json` |
-| [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi + свой `manifest.json` |
+| [`extension/`](./extension) | Единый Tampermonkey loader |
+| [`manifests/`](./manifests) | Централизованные реестры extensions и parsers |
+| [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper |
+| [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
 | [`translator/`](./translator) | Универсальный RU → KK переводчик, compressed-вариант и prompt для извлечения накопленного translation context |
 | [`project/`](./project) | Backup/sync snapshot Project Instructions и Project Context; не является рабочим source of truth проекта |
@@ -20,8 +21,8 @@
 Loader при открытии Strapi:
 
 1. мгновенно запускает последнюю сохранённую копию extensions из кеша;
-2. в фоне загружает корневой `extension/manifest.json`;
-3. по нему загружает manifests рабочих папок, сейчас `ui-ux/manifest.json` и `features/manifest.json`;
+2. в фоне загружает корневой `manifests/extensions.json`;
+3. по нему загружает `manifests/ui-ux.json` и `manifests/features.json`;
 4. объединяет и валидирует их как единый registry;
 5. при изменении версий или путей скачивает только изменившиеся файлы и сохраняет новый кеш;
 6. обновлённые extensions применяются после следующей перезагрузки Strapi.
@@ -32,9 +33,9 @@ Loader при открытии Strapi:
 
 ### Manifest
 
-`extension/manifest.json` — корневой registry: он содержит только список дочерних manifests. Все manifests используют `schemaVersion: 1`; это версия формата конкретного manifest, а не версия скриптов.
+`manifests/` — единое место для runtime-реестров. `manifests/extensions.json` содержит список extension manifests, сейчас `manifests/features.json` и `manifests/ui-ux.json`. Все manifests используют `schemaVersion: 1`; это версия формата конкретного manifest, а не версия скриптов.
 
-Метаданные конкретных extensions (`id`, `path`, semver `version`, `enabled`) хранятся рядом с кодом в manifest соответствующей папки: `features/manifest.json` или `ui-ux/manifest.json`. При изменении extension увеличивается его `version` именно там. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
+Метаданные конкретных extensions (`id`, `path`, semver `version`, `enabled`) хранятся в `manifests/features.json` и `manifests/ui-ux.json`. При изменении extension увеличивается его `version` в соответствующем manifest. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
 
 Loader валидирует каждый дочерний manifest и итоговый объединённый registry: формат путей, соответствие имени файла `id`, semver и глобальные дубли `id/path`. Если root/child manifest недоступен или некорректен, новый кеш не записывается, а при наличии старого loader продолжает использовать его.
 
@@ -42,7 +43,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `parsers/manifest.json`, строго валидирует `file` / semver `version` / `group` и дубли файлов; перед запуском regular parser сверяет его `@name` и `@version` с manifest; блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
+- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `manifests/parsers.json`, строго валидирует `file` / semver `version` / `group` и дубли файлов; перед запуском regular parser сверяет его `@name` и `@version` с manifest; блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 - `vimium-open-row.js` — делает строки таблиц доступными для Vimium; собственная ссылка помечается через `data-tm-*` и восстанавливается после React re-render.
 
 ## UI/UX
@@ -60,11 +61,11 @@ Loader валидирует каждый дочерний manifest и итого
 - minor (`1.4`) — заметное новое поведение;
 - major (`2.0`) — крупная переработка.
 
-Версия extension независима от версии loader. Единственный источник версии для файла — `manifest.json` его папки (`features/manifest.json` или `ui-ux/manifest.json`); отдельные metadata-блоки и `@version` внутри этих файлов не используются.
+Версия extension независима от версии loader. Единственный источник версии для extension — его запись в `manifests/features.json` или `manifests/ui-ux.json`; отдельные metadata-блоки и `@version` внутри этих файлов не используются.
 
 ## Parsers
 
-Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация parser'а (`file`, semver `version`, `group`) хранится в `parsers/manifest.json`; каждый regular parser также содержит meta header с `name`, `version`, назначением и форматом `output`.
+Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация parser'а (`file`, semver `version`, `group`) хранится в `manifests/parsers.json`; каждый regular parser также содержит meta header с `name`, `version`, назначением и форматом `output`.
 
 - `sort-volume.js` — неправильный порядок volume.
 - `volume-checker.js` — разные единицы измерения volume.
@@ -81,9 +82,9 @@ Loader валидирует каждый дочерний manifest и итого
 - `products-with-wrong-variants.js` — товары с неконсистентным выбором вариантов по `shade`/`volume`.
 - `attributes-with-barcode-issues.js` — draft-аудит опубликованных предложений без `barcode` и с повторяющимися `barcode`; без фильтра по `active`/`isInStock`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
-- `manifest.json` — runtime-источник `file`, semver `version` и `group` для Parser Launcher; `group` задаётся только здесь.
+- `manifests/parsers.json` — runtime-источник `file`, semver `version` и `group` для Parser Launcher; `group` задаётся только здесь.
 
-Для нового regular parser добавь meta header (`name`, `version`, назначение, `output`), затем зарегистрируй файл в `parsers/manifest.json` с `file`, той же `version` и `group`. `group` внутри parser-файла не дублируется.
+Для нового regular parser добавь meta header (`name`, `version`, назначение, `output`), затем зарегистрируй файл в `manifests/parsers.json` с `file`, той же `version` и `group`. `group` внутри parser-файла не дублируется.
 
 Рабочие группы: `products`, `offers`, `attributes`, `drafts`, `service`.
 
@@ -109,16 +110,18 @@ README обновляется, когда меняются структура, �
 ```text
 .
 ├── extension/
-│   ├── loader.js
-│   └── manifest.json
+│   └── loader.js
+├── manifests/
+│   ├── extensions.json
+│   ├── features.json
+│   ├── ui-ux.json
+│   └── parsers.json
 ├── features/
-│   ├── manifest.json
 │   ├── barcode-extractor.js
 │   ├── ctrl-enter-publisher.js
 │   ├── parser-launcher.js
 │   └── vimium-open-row.js
 ├── ui-ux/
-│   ├── manifest.json
 │   ├── sidebar.js
 │   ├── entry-relocate.js
 │   ├── list-view.js
@@ -126,7 +129,6 @@ README обновляется, когда меняются структура, �
 │   ├── product-sections.js
 │   └── record-list-scrollbars.js
 ├── parsers/
-│   ├── manifest.json
 │   ├── attributes-with-barcode-issues.js
 │   ├── attributes-without-detail-picture.js
 │   ├── attributes-without-product.js
