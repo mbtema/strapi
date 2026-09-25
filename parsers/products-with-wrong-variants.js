@@ -1,10 +1,3 @@
-// ==Parser==
-// @name         products-with-wrong-variants
-// @version      1.0.4
-// @description  Находит активные товары с неконсистентным выбором вариантов по shade и volume
-// @output       CSV: id;documentId;name;key;attributeCount;variantMode;issues;shadeOnlyCount;volumeOnlyCount;emptyCount;bothCount;variantValues
-// ==/Parser==
-
 (async () => {
   'use strict';
 
