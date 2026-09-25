@@ -1,10 +1,3 @@
-// ==Parser==
-// @name         products-without-brand
-// @version      1.0.2
-// @description  Находит активные товары без relation brand
-// @output       CSV: id;documentId;name;key
-// ==/Parser==
-
 (async () => {
   const BASE_URL = '/api/products';
   const PAGE_SIZE = 100;
