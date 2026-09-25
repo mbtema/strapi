@@ -18,6 +18,8 @@
 
 `extension/loader.js`
 
+Userscript metadata (`==UserScript==`, `@name`, `@version`, `@match` и т.д.) нужна только этому loader. Дочерние extensions и parsers загружаются через manifests и не содержат собственные metadata-блоки.
+
 Loader при открытии Strapi:
 
 1. мгновенно запускает последнюю сохранённую копию extensions из кеша;
@@ -43,7 +45,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `manifests/parsers.json`, строго валидирует `file` / semver `version` / `group` и дубли файлов; перед запуском regular parser сверяет его `@name` и `@version` с manifest; блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
+- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `manifests/parsers.json`, строго валидирует `file` / semver `version` / `group` и дубли файлов; блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 - `vimium-open-row.js` — делает строки таблиц доступными для Vimium; собственная ссылка помечается через `data-tm-*` и восстанавливается после React re-render.
 
 ## UI/UX
@@ -65,7 +67,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 ## Parsers
 
-Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация parser'а (`file`, semver `version`, `group`) хранится в `manifests/parsers.json`; каждый regular parser также содержит meta header с `name`, `version`, назначением и форматом `output`.
+Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация parser'а и его версия (`file`, semver `version`, `group`) хранятся только в `manifests/parsers.json`; metadata-блоки внутри parser-файлов не используются.
 
 - `sort-volume.js` — неправильный порядок volume.
 - `volume-checker.js` — разные единицы измерения volume.
@@ -80,7 +82,7 @@ Loader валидирует каждый дочерний manifest и итого
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `manifests/parsers.json` — runtime-источник `file`, semver `version` и `group` для Parser Launcher; `group` задаётся только здесь.
 
-Для нового regular parser добавь meta header (`name`, `version`, назначение, `output`), затем зарегистрируй файл в `manifests/parsers.json` с `file`, той же `version` и `group`. `group` внутри parser-файла не дублируется.
+Для нового parser добавь файл в `parsers/` и зарегистрируй его в `manifests/parsers.json` через `file`, `version` и `group`. `version` и `group` внутри parser-файла не дублируются.
 
 Рабочие группы: `products`, `offers`, `attributes`, `drafts`, `service`.
 
