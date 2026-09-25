@@ -12,11 +12,6 @@
       "group": "attributes"
     },
     {
-      "file": "missing-shades.js",
-      "version": "1.0.2",
-      "group": "attributes"
-    },
-    {
       "file": "shade-and-volume.js",
       "version": "1.0.3",
       "group": "attributes"
