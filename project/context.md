@@ -88,7 +88,7 @@ semver version
 group
 ```
 
-Regular parser дополнительно содержит meta header с `name`, `version`, назначением и `output`; `@name` соответствует имени файла без `.js`, `@version` — manifest version. `service` parser может не иметь regular meta contract.
+Parser-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `manifests/parsers.json`. Userscript metadata используется только в `extension/loader.js`, потому что только loader устанавливается напрямую в Tampermonkey.
 
 Managed regular parsers получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
 
