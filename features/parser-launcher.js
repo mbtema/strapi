@@ -97,38 +97,6 @@
     });
   }
 
-  function validateParserMeta(code, parser) {
-    if (parser.group === 'service') return;
-
-    const header = code.match(/^\s*\/\/ ==Parser==\s*\n([\s\S]*?)\n\/\/ ==\/Parser==/);
-    if (!header) {
-      throw new Error(`${parser.file}: отсутствует meta header`);
-    }
-
-    const metaValue = key => {
-      const match = header[1].match(
-        new RegExp('^\\s*//\\s*@' + key + '\\s+(.+?)\\s*$', 'm')
-      );
-      return match?.[1]?.trim() || '';
-    };
-
-    const expectedName = parser.file.replace(/\.js$/, '');
-    const name = metaValue('name');
-    const version = metaValue('version');
-
-    if (name !== expectedName) {
-      throw new Error(
-        `${parser.file}: @name должен быть ${expectedName}, сейчас ${name || '[empty]'}`
-      );
-    }
-
-    if (version !== parser.version) {
-      throw new Error(
-        `${parser.file}: @version ${version || '[empty]'} != manifest ${parser.version}`
-      );
-    }
-  }
-
   function managedParserCode(code, file) {
     const startToken = '(async () => {';
     const endToken = '})();';
@@ -216,7 +184,6 @@
 
     try {
       const code = await loadText(`${PARSERS_BASE}${parser.file}`);
-      validateParserMeta(code, parser);
       const managed = executeParser(code, parser.file);
 
       if (!managed) {
