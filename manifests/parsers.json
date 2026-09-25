@@ -37,11 +37,6 @@
       "group": "products"
     },
     {
-      "file": "products-with-duplicate-fields.js",
-      "version": "1.1.1",
-      "group": "products"
-    },
-    {
       "file": "products-with-wrong-prices.js",
       "version": "1.2.4",
       "group": "products"
