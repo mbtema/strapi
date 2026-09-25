@@ -69,7 +69,6 @@ Loader валидирует каждый дочерний manifest и итого
 
 - `sort-volume.js` — неправильный порядок volume.
 - `volume-checker.js` — разные единицы измерения volume.
-- `missing-shades.js` — активные предложения с `color_variant1C`, но без `shade`.
 - `shade-and-volume.js` — опубликованные предложения, у которых одновременно заполнены `shade` и `volume`.
 - `attributes-without-product.js` — опубликованные предложения без `product`.
 - `products-without-attributes.js` — активные товары без предложений.
@@ -133,7 +132,6 @@ README обновляется, когда меняются структура, �
 ├── parsers/
 │   ├── attributes-without-product.js
 │   ├── dom-stealer.js
-│   ├── missing-shades.js
 │   ├── shade-and-volume.js
 │   ├── products-with-duplicate-fields.js
 │   ├── products-with-missing-content.js
