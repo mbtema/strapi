@@ -1,10 +1,3 @@
-// ==Parser==
-// @name         products-with-wrong-prices
-// @version      1.2.4
-// @description  Находит торговые предложения активных товаров с некорректной текущей ценой в Strapi CMS
-// @output       CSV: documentId;barcode;price;errorType
-// ==/Parser==
-
 (async () => {
   'use strict';
 
