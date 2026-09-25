@@ -72,7 +72,6 @@ Loader валидирует каждый дочерний manifest и итого
 - `missing-shades.js` — активные предложения с `color_variant1C`, но без `shade`.
 - `shade-and-volume.js` — опубликованные предложения, у которых одновременно заполнены `shade` и `volume`.
 - `attributes-without-product.js` — опубликованные предложения без `product`.
-- `attributes-without-detail-picture.js` — предложения активных товаров в наличии (`isInStock=true`) без `detail_picture`.
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-brand.js` — активные товары без `brand`.
 - `products-without-categories.js` — активные товары без `categories`.
@@ -132,7 +131,6 @@ README обновляется, когда меняются структура, �
 │   ├── product-sections.js
 │   └── record-list-scrollbars.js
 ├── parsers/
-│   ├── attributes-without-detail-picture.js
 │   ├── attributes-without-product.js
 │   ├── dom-stealer.js
 │   ├── missing-shades.js
