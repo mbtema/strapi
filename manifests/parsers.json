@@ -67,11 +67,6 @@
       "group": "products"
     },
     {
-      "file": "attributes-with-barcode-issues.js",
-      "version": "1.0.1",
-      "group": "drafts"
-    },
-    {
       "file": "dom-stealer.js",
       "version": "1.0.1",
       "group": "service"
