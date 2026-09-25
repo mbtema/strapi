@@ -50,8 +50,9 @@
 - При изменении структуры/назначения/установки/использования основных инструментов синхронизировать README.
 
 ## 7. Parsers, переводы и миграции
-- Regular parser: descriptive meta header (`name/version/назначение/output`) → все страницы API → проверка → progress/counters → автоматический CSV. Если output не CSV, явно указать его.
-- Runtime-регистрация `file/version/group` — `manifests/parsers.json`; meta header не заменяет manifest, `group` задаётся только в manifest.
+- Regular parser: все страницы API → проверка → progress/counters → автоматический CSV. Если output не CSV, явно указать его.
+- Runtime-регистрация и версия parser (`file/version/group`) — только `manifests/parsers.json`; `version` и `group` внутри parser-файла не дублировать.
+- Userscript metadata (`==UserScript==`, `@name`, `@version`, `@match` и т.д.) нужна только `extension/loader.js`, который устанавливается напрямую в Tampermonkey. Дочерним extensions и parsers metadata-блоки не добавлять.
 - Не делать parser только на page 1 и не оставлять массовый результат только в Console, если его можно скачать/скопировать.
 - Для `ru/kk` учитывать локализацию поля, relation field и связанной entity.
 - RU → KK: использовать актуальные правила `translator/full.md`; HTML переводить только разрешённый текст с сохранением structure/tags/attributes/CSS/classes/links; защищённые названия, латиницу и техконструкции не переводить. Накопленные rules перед merge извлекать через `translator/extractor.md`.
