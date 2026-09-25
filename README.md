@@ -74,7 +74,6 @@ Loader валидирует каждый дочерний manifest и итого
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-brand.js` — активные товары без `brand`.
 - `products-without-categories.js` — активные товары без `categories`.
-- `products-with-duplicate-fields.js` — дубли технических идентификаторов `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`.
 - `products-with-wrong-prices.js` — предложения активных товаров с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
 - `products-with-missing-content.js` — активные товары без критичных контентных полей; товары из категорий `kns3po2mz8hq9kezm3szbvjg` и `a4zy2gvb479ku9nd6py5uxzh` исключаются из отчёта и считаются неактивными для этой проверки.
 - `products-with-wrong-variants.js` — товары с неконсистентным выбором вариантов по `shade`/`volume`.
@@ -133,7 +132,6 @@ README обновляется, когда меняются структура, �
 │   ├── attributes-without-product.js
 │   ├── dom-stealer.js
 │   ├── shade-and-volume.js
-│   ├── products-with-duplicate-fields.js
 │   ├── products-with-missing-content.js
 │   ├── products-with-wrong-variants.js
 │   ├── products-without-attributes.js
