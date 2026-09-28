@@ -11,11 +11,11 @@
   const ACTIVE_RUNS_KEY = '__tmParserLauncherActiveRuns';
 
   const PARSER_GROUPS = [
-    { id: 'products', title: 'Товары' },
-    { id: 'offers', title: 'Предложения' },
-    { id: 'attributes', title: 'Shade / Volume' },
-    { id: 'drafts', title: 'Drafts' },
-    { id: 'service', title: 'Сервис' }
+    { id: 'products', title: 'products' },
+    { id: 'offers', title: 'attributes' },
+    { id: 'attributes', title: 'attributes' },
+    { id: 'drafts', title: 'drafts' },
+    { id: 'service', title: 'service' }
   ];
 
   const KNOWN_GROUP_IDS = new Set(PARSER_GROUPS.map(group => group.id));
@@ -175,6 +175,7 @@
   async function runParser(parser, status) {
     if (activeRuns.has(parser.file)) {
       status.textContent = `Уже запущен: ${parser.file}`;
+      status.style.display = 'block';
       status.style.color = '#d9822b';
       return;
     }
@@ -200,6 +201,7 @@
       activeRuns.delete(parser.file);
       console.error('[Parser Launcher]', error);
       status.textContent = `Ошибка: ${error.message}`;
+      status.style.display = 'block';
       status.style.color = '#d02b20';
     }
   }
@@ -328,39 +330,6 @@
       fontFamily: 'inherit'
     });
 
-    const header = document.createElement('div');
-    Object.assign(header.style, {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: '16px',
-      marginBottom: '16px'
-    });
-
-    const title = document.createElement('strong');
-    title.textContent = 'Parser Launcher';
-    title.style.fontSize = '16px';
-
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.textContent = '×';
-    close.setAttribute('aria-label', 'Закрыть');
-
-    Object.assign(close.style, {
-      width: '30px',
-      height: '30px',
-      padding: '0',
-      border: '0',
-      background: 'transparent',
-      color: '#c7c7d4',
-      fontSize: '24px',
-      lineHeight: '1',
-      cursor: 'pointer'
-    });
-
-    close.addEventListener('click', closeLauncher);
-    header.append(title, close);
-
     const grid = document.createElement('div');
     Object.assign(grid.style, {
       display: 'grid',
@@ -370,15 +339,14 @@
     });
 
     const status = document.createElement('div');
-    status.textContent = 'Загрузка списка парсеров...';
     Object.assign(status.style, {
-      minHeight: '18px',
+      display: 'none',
       marginTop: '14px',
       color: '#a5a5ba',
       fontSize: '12px'
     });
 
-    panel.append(header, grid, status);
+    panel.append(grid, status);
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
 
@@ -399,7 +367,8 @@
         grid.appendChild(createSection(group.title, group.parsers, status));
       }
 
-      status.textContent = 'Alt+P — открыть / закрыть';
+      status.textContent = '';
+      status.style.display = 'none';
     } catch (error) {
       console.error('[Parser Launcher]', error);
       status.textContent = `Ошибка: ${error.message}`;
