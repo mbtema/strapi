@@ -34,6 +34,8 @@ Strapi data → API response → Flutter/mobile
 
 Основной идентификатор Strapi — `documentId`. `barcode` — важный SKU/cross-system ключ, особенно Bitrix ↔ Strapi, но внутри Strapi приоритет у `documentId`.
 
+Рабочая source-of-truth локаль для текущих CMS operations/audits — `ru`. `kk` поддерживается отдельно через зеркалирование/локализационный процесс; если задача явно не про `kk`, audit/edit/check начинать с `ru`.
+
 Частые поля/relations:
 
 ```text
@@ -148,6 +150,31 @@ Admin JWT доступен в LocalStorage как `jwtToken`.
 ```
 
 Для internal API фактический Network request важнее сохранённого исторического endpoint/payload.
+
+## CANONICAL — attributes without product
+
+Назначение проверки: найти **все** `attribute` в рабочей локали `ru`, у которых отсутствует relation `product`. Дополнительные условия (`active`, status, price, stock и т.п.) к этой проверке не относятся и должны жить в отдельных parsers.
+
+Подтверждённый через Strapi Admin Network server-side filter:
+
+```text
+GET /content-manager/collection-types/api::attribute.attribute
+?page=<N>
+&pageSize=<N>
+&sort=barcode:ASC
+&filters[$and][0][product][name][$null]=true
+&locale=ru
+```
+
+Практический workflow:
+- использовать list endpoint с server-side filter, а не делать relation request для каждого attribute;
+- пройти все result pages;
+- output healthcheck: `documentId`, `barcode`, сортировка по `barcode`, пустые barcode в конце;
+- progress по страницам + `console.table` + итоговый counter;
+- CSV `attributes-without-product.csv` скачивать автоматически только если найдены записи;
+- при `0` записей CSV не создавать;
+- при ошибке/неожиданном response остановиться и не формировать частичный CSV;
+- не добавлять fallback на массовый per-record relation scan: если server-side filter перестал работать, сначала заново подтвердить internal request через Network.
 
 Частые Public API paths:
 
@@ -400,7 +427,7 @@ shareUrl
 - wrong prices у offers active products: `missing`, non-numeric `invalid`, `zero`, `negative`, `fractional`; output включает уникальный `documentId` offer;
 - missing content: active product без критичных content fields; служебные categories могут быть исключениями по текущей parser logic — exact IDs брать из live code;
 - wrong variants: несколько offers нельзя последовательно выбирать одним типом `shade` или `volume`;
-- attributes without product — текущее CMS state через Content Manager;
+- attributes without product — все `attribute` в `ru` без relation `product`; server-side Content Manager filter, без дополнительных условий;
 - attributes without detail picture — offer активного product, `isInStock=true`, `detail_picture=null`;
 - missing shades — published offer с `color_variant1C`, без `shade`, связан с active product;
 - shade-and-volume — published offer с одновременно заполненными shade и volume;
