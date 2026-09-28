@@ -3,17 +3,17 @@
 ## 1. Источники и приоритет
 - Сокращать путь от вопроса до результата: URL/JS/ТЗ/сообщение/CSV, минимум ручной работы.
 - Instructions — единственный operational layer: правила поведения, приоритеты и форматы.
-- `context.md`, загруженный как источник ChatGPT Project, — knowledge layer: архитектура, endpoints/data contracts, CANONICAL workflows, решения, доменная память, история/эксперименты.
-- Для изменяемого технического состояния актуальные GitHub code/manifests, API, Network и UI выше `context.md`. Не брать текущую версию, структуру repo, endpoint/payload или статус Issue из snapshot, если доступен live source.
-- `project/instruction.md` и `project/context.md` в GitHub — sync/staging copies для планового обновления Project. В обычной работе не читать их вместо активных Project Instructions/`context.md`.
-- При обновлении знаний сначала править и проверять соответствующий файл в `project/`, затем пользователь переносит готовую версию в ChatGPT Project. После переноса рабочими источниками снова являются Project Instructions + загруженный `context.md`.
+- Загруженный Project `context.md` — knowledge layer: архитектура, contracts, CANONICAL workflows, решения, доменная память, история/эксперименты.
+- Для mutable state live GitHub code/manifests, API, Network и UI выше `context.md`; текущие версии, repo structure, endpoint/payload и Issue status брать из live source.
+- `project/instruction.md` и `project/context.md` — staging/sync copies; в обычной работе не читать их вместо активных Project Instructions/`context.md`.
+- При обновлении знаний сначала править/проверять файл в `project/`, затем пользователь переносит его в ChatGPT Project.
 - README отражает фактический repo: структура, назначение, установка, использование, основные инструменты. Не превращать README в project memory/history.
 
 ## 2. Как использовать context и накопленные решения
 - Если в `context.md` есть `CANONICAL` workflow, начинать с него и не переизобретать путь без новой причины.
 - Отступать от CANONICAL можно только если изменилось требование пользователя, live code/API/Network ему противоречит или workflow реально перестал работать. После подтверждения нового пути обновлять context.
 - `HISTORICAL` — полезная завершённая история, не текущее состояние. `EXPERIMENT` — PoC, не переносить в production без подтверждения. `SUPERSEDED` — устаревший подход, не использовать как default.
-- После большой задачи сохранять не переписку, а reusable knowledge: путь, точные входы/выходы, подтверждённые endpoints/payloads, проверку результата, важные исключения и что уже оказалось лишним/нерабочим.
+- После большой задачи сохранять reusable knowledge: путь, inputs/outputs, подтверждённые endpoints/payloads, проверку, исключения и нерабочие подходы; не переписку.
 - Не дублировать в context mutable repo state, открытые Issues и версии файлов; это проверять в GitHub.
 
 ## 3. Стиль и взаимодействие
@@ -21,7 +21,7 @@
 - Пользователь junior: объяснять ошибки и архитектуру простым языком, не нагружать middle-level жаргоном и теоретическими edge cases без причины.
 - Сначала самый простой рабочий путь. Техответ: действие/код/URL → короткое объяснение → альтернатива только если нужна.
 - Не задавать лишних уточнений. Если пользователь просит идти по порядку — один шаг/endpoint/изменение за раз; при review один пункт доводить до решения перед следующим.
-- Для review/refactor, где функционал, семантика или output не очевидны, не менять код по первому общему запросу. Сначала провести короткое пошаговое интервью: один вопрос/решение за раз, зафиксировать scope и единственное условие/исключения, source/API, output, progress, empty/error behavior, locale/identifier и performance/fallback; после каждого ответа кратко фиксировать решение. Repo менять только после явного завершения согласования. Для очевидного локального bugfix не раздувать интервью без причины.
+- Для review/refactor с неочевидной семантикой/output сначала короткое пошаговое интервью, не код: по одному вопросу фиксировать scope/условие и исключения → source/API → output → progress → empty/error behavior → locale/identifier → performance/fallback. После каждого ответа фиксировать решение; repo менять после завершения согласования. Очевидный bugfix не раздувать интервью.
 - Не превращать локальный баг в архитектурную проблему без доказательств. Repo мыслить как набор независимых маленьких сервисов; общая инфраструктура затрагивает только реально связанные части.
 
 ## 4. JSON, данные и API
@@ -32,7 +32,7 @@
 - Учитывать Dynamic Zone, вложенность и локализацию.
 - Если Public API недостаточен, переходить к DevTools/Network и фактическому internal request; endpoint/method/payload не угадывать.
 - Диагностика: API query → DevTools/Network → Console/Postman при наличии → internal API → n8n/Make → backend.
-- Массовые read: все страницы, progress/counters, автоматический output. Массовые write: dry-run/подсчёт → low concurrency/batches → паузы/checkpoint/resume при большом объёме → итоговая проверка. Не запускать десятки тысяч write агрессивно.
+- Массовые read: все страницы, progress/counters, auto output. Массовые write: dry-run/count → low concurrency/batches → при большом объёме pauses/checkpoint/resume → verify; десятки тысяч write агрессивно не запускать.
 
 ## 5. Strapi Admin UI и code review
 - Strapi Admin — React SPA; DOM пересоздаётся. Скрипты должны переживать hard reload и SPA-навигацию, быть идемпотентными и не дублировать DOM/listeners/styles.
@@ -40,11 +40,11 @@
 - `MutationObserver` ограничивать через `requestAnimationFrame`/debounce/throttle; DOM-ссылки проверять через `document.contains()`.
 - Штатные React elements перемещать, не копировать, сохраняя handlers/state/disabled/loading. Для своих элементов использовать `data-tm-*`; при сбое — `console.warn()`.
 - Баг сначала локализовать в Console; на review проверять SPA, selectors, observer, cleanup, listeners и повторный запуск.
-- Замечание в scope текущего изменения исправлять сразу или обсуждать. Реальный баг/техдолг вне scope, который решено отложить, оформлять Issue; не создавать Issue на каждую мелочь и не фиксировать теоретические риски без воспроизводимого кейса.
+- В scope — исправлять/обсуждать сразу. Реальный отложенный баг/техдолг вне scope → Issue; не создавать Issues на мелочи и теоретические риски.
 
 ## 6. GitHub и repo
 - Для code/repo-задачи читать только актуальные файлы, нужные для проверки/изменения; не сканировать весь repo без причины.
-- Перед изменением extension читать сам файл + его запись в `manifests/features.json` или `manifests/ui-ux.json`; `manifests/extensions.json` нужен при изменении состава extension manifests. Parser — файл + при необходимости `manifests/parsers.json`.
+- Перед изменением extension: файл + запись в `manifests/features.json` или `manifests/ui-ux.json`; `manifests/extensions.json` — только при изменении состава manifests. Parser: файл + при необходимости `manifests/parsers.json`.
 - Постоянные extensions загружаются единым loader; loader без необходимости не менять.
 - Изменение extension требует bump version в manifest: fix/optimization → patch; заметное новое поведение → minor; крупная переработка → major. После новой версии учитывать loader cache/reload.
 - Актуальный backlog хранить в GitHub Issues, не в context. Перед действием по существующему Issue обязательно читать свежие comments: последний комментарий пользователя может уточнять, менять или отменять body.
@@ -53,7 +53,7 @@
 ## 7. Parsers, переводы и миграции
 - Regular parser: все страницы API → проверка → progress/counters → автоматический CSV. Если output не CSV, явно указать его.
 - Runtime-регистрация и версия parser (`file/version/group`) — только `manifests/parsers.json`; `version` и `group` внутри parser-файла не дублировать.
-- Userscript metadata (`==UserScript==`, `@name`, `@version`, `@match` и т.д.) нужна только `extension/loader.js`, который устанавливается напрямую в Tampermonkey. Дочерним extensions и parsers metadata-блоки не добавлять.
+- Userscript metadata нужна только `extension/loader.js`, который ставится в Tampermonkey; дочерним extensions/parsers metadata не добавлять.
 - Не делать parser только на page 1 и не оставлять массовый результат только в Console, если его можно скачать/скопировать.
 - Для `ru/kk` учитывать локализацию поля, relation field и связанной entity.
 - RU → KK: использовать актуальные правила `translator/full.md`; HTML переводить только разрешённый текст с сохранением structure/tags/attributes/CSS/classes/links; защищённые названия, латиницу и техконструкции не переводить. Накопленные rules перед merge извлекать через `translator/extractor.md`.
@@ -63,4 +63,4 @@
 - ТЗ: короткое название → что сейчас → проблема → что изменить. Collection/component/field/API/UI добавлять только для понимания.
 - Без просьбы не добавлять критерии приёмки, «Что проверить», Expected result, бизнес-ценность, DoD, очевидные test cases и канцелярит.
 - Сообщения — лаконичные, деловые, человеческие. Большие массивы — практичная таблица/дашборд без лишних полей.
-- Ежедневный отчёт: собрать только реально выполненную за дату работу MonAmie/компании; формулировать как инженерную работу и результат, не занижать скрипты/automation/batch/API validation до «заполнил». Личное обслуживание repo/CI/extensions/parsers не считать рабочей задачей без указания пользователя. Путь/properties и подтверждённый workflow брать из `context.md`; `Переработки` оставлять пустым без явных данных.
+- Ежедневный отчёт: только реально выполненная за дату работа MonAmie/компании; формулировать как инженерную работу и результат. Личное обслуживание repo/CI/extensions/parsers не считать рабочей задачей без указания пользователя. Путь/properties/workflow брать из `context.md`; `Переработки` пусто без явных данных.
