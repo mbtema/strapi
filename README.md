@@ -45,7 +45,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `manifests/parsers.json`, строго валидирует `file` / semver `version` / `group` и дубли файлов; блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
+- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `manifests/parsers.json` вертикальными колонками по группам, строго валидирует `file` / semver `version` / `group` и дубли файлов; блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 - `vimium-open-row.js` — делает строки таблиц доступными для Vimium; собственная ссылка помечается через `data-tm-*` и восстанавливается после React re-render.
 
 ## UI/UX
@@ -69,9 +69,6 @@ Loader валидирует каждый дочерний manifest и итого
 
 Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация parser'а и его версия (`file`, semver `version`, `group`) хранятся только в `manifests/parsers.json`; metadata-блоки внутри parser-файлов не используются.
 
-- `sort-volume.js` — неправильный порядок volume.
-- `volume-checker.js` — разные единицы измерения volume.
-- `shade-and-volume.js` — опубликованные предложения, у которых одновременно заполнены `shade` и `volume`.
 - `attributes-without-product.js` — опубликованные предложения без `product`.
 - `products-without-attributes.js` — активные товары без предложений.
 - `products-without-categories.js` — активные товары без `categories`.
@@ -132,14 +129,11 @@ README обновляется, когда меняются структура, �
 ├── parsers/
 │   ├── attributes-without-product.js
 │   ├── dom-stealer.js
-│   ├── shade-and-volume.js
 │   ├── products-with-missing-content.js
 │   ├── products-with-wrong-variants.js
 │   ├── products-without-attributes.js
 │   ├── products-without-categories.js
 │   ├── products-with-wrong-prices.js
-│   ├── sort-volume.js
-│   └── volume-checker.js
 ├── translator/
 │   ├── full.md
 │   ├── compressed.md
