@@ -14,11 +14,12 @@
     { id: 'products', title: 'Товары' },
     { id: 'offers', title: 'Предложения' },
     { id: 'attributes', title: 'Shade / Volume' },
-    { id: 'drafts', title: 'Drafts' }
+    { id: 'drafts', title: 'Drafts' },
+    { id: 'service', title: 'Сервис' }
   ];
 
   const KNOWN_GROUP_IDS = new Set(PARSER_GROUPS.map(group => group.id));
-  const ALLOWED_GROUP_IDS = new Set([...KNOWN_GROUP_IDS, 'service']);
+  const ALLOWED_GROUP_IDS = new Set(KNOWN_GROUP_IDS);
   const activeRuns = window[ACTIVE_RUNS_KEY] instanceof Set
     ? window[ACTIVE_RUNS_KEY]
     : new Set();
@@ -285,14 +286,10 @@
   }
 
   function splitParsers(parsers) {
-    const grouped = PARSER_GROUPS.map(group => ({
+    return PARSER_GROUPS.map(group => ({
       ...group,
       parsers: parsers.filter(parser => parser.group === group.id)
     }));
-
-    const service = parsers.filter(parser => parser.group === 'service');
-
-    return { grouped, service };
   }
 
   async function openLauncher() {
@@ -367,13 +364,10 @@
     const grid = document.createElement('div');
     Object.assign(grid.style, {
       display: 'grid',
-      gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
       gap: '14px',
       alignItems: 'start'
     });
-
-    const serviceWrap = document.createElement('div');
-    serviceWrap.style.marginTop = '14px';
 
     const status = document.createElement('div');
     status.textContent = 'Загрузка списка парсеров...';
@@ -384,7 +378,7 @@
       fontSize: '12px'
     });
 
-    panel.append(header, grid, serviceWrap, status);
+    panel.append(header, grid, status);
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
 
@@ -398,17 +392,11 @@
       if (!document.body.contains(overlay)) return;
       if (!parsers.length) throw new Error('В manifests/parsers.json нет парсеров');
 
-      const { grouped, service } = splitParsers(parsers);
+      const grouped = splitParsers(parsers);
 
       for (const group of grouped) {
         if (!group.parsers.length) continue;
         grid.appendChild(createSection(group.title, group.parsers, status));
-      }
-
-      if (service.length) {
-        serviceWrap.appendChild(
-          createSection('Сервис', service, status)
-        );
       }
 
       status.textContent = 'Alt+P — открыть / закрыть';
