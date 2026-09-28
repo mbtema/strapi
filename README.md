@@ -67,14 +67,14 @@ Loader валидирует каждый дочерний manifest и итого
 
 ## Parsers
 
-Парсеры запускаются через `Alt+P`. Регулярные проверочные парсеры проходят API постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация parser'а и его версия (`file`, semver `version`, `group`) хранятся только в `manifests/parsers.json`; metadata-блоки внутри parser-файлов не используются.
+Парсеры запускаются через `Alt+P`. Массовые data-audit parsers проверяют текущее состояние CMS только через Content Manager API, включая draft/modified записи; Public API `/api/...` для этих проверок не используется. Парсеры проходят данные постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация parser'а и его версия (`file`, semver `version`, `group`) хранятся только в `manifests/parsers.json`; metadata-блоки внутри parser-файлов не используются.
 
-- `attributes-without-product.js` — опубликованные предложения без `product`.
-- `products-without-attributes.js` — активные товары без предложений.
-- `products-without-categories.js` — активные товары без `categories`.
-- `products-with-wrong-prices.js` — предложения активных товаров с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
-- `products-with-missing-content.js` — активные товары без критичных контентных полей; товары из категорий `kns3po2mz8hq9kezm3szbvjg` и `a4zy2gvb479ku9nd6py5uxzh` исключаются из отчёта и считаются неактивными для этой проверки.
-- `products-with-wrong-variants.js` — товары с неконсистентным выбором вариантов по `shade`/`volume`.
+- `attributes-without-product.js` — attributes в текущем состоянии CMS без `product`.
+- `products-without-attributes.js` — активные товары в текущем состоянии CMS без `attributes`.
+- `products-without-categories.js` — активные товары в текущем состоянии CMS без `categories`.
+- `products-with-wrong-prices.js` — attributes активных товаров в текущем состоянии CMS с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
+- `products-with-missing-content.js` — активные товары в текущем состоянии CMS без критичных контентных полей; товары из категорий `kns3po2mz8hq9kezm3szbvjg` и `a4zy2gvb479ku9nd6py5uxzh` исключаются из отчёта.
+- `products-with-wrong-variants.js` — активные товары в текущем состоянии CMS с неконсистентным выбором вариантов по `shade`/`volume`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `manifests/parsers.json` — runtime-источник `file`, semver `version` и `group` для Parser Launcher; `group` задаётся только здесь.
 
