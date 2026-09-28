@@ -6,7 +6,7 @@
 >
 > Для текущего code/version/manifest/Issue/API payload/Network/UI всегда проверять live source; изменяемое техническое состояние выше этого snapshot.
 
-**Последняя консолидация:** 2026-09-23  
+**Последняя консолидация:** 2026-09-28  
 **Repo:** `mbtema/strapi`  
 **Strapi backend:** `http://10.10.3.80:1337`  
 **Локали:** `ru`, `kk`
@@ -126,6 +126,18 @@ Internal Content Manager namespace:
 ```
 
 Admin JWT доступен в LocalStorage как `jwtToken`.
+
+## CANONICAL — source для массовых data-audit parsers
+
+Массовые audit parsers проверяют фактическое текущее состояние CMS только через Content Manager API. Public REST `/api/...` не используется как source для таких проверок, потому что published view не отражает draft/modified current state; Public API проверяется отдельно через Postman/client/API diagnostics.
+
+Базовый read pattern:
+- list/detail: `/content-manager/collection-types/api::...`;
+- relations: `/content-manager/relations/api::.../<documentId>/<field>`;
+- `Authorization: Bearer <jwtToken>` + `credentials: include`;
+- для текущих catalog audits используется `locale=ru`;
+- все страницы читаются полностью, relation checks идут через native Content Manager relation endpoint;
+- при несовпадении ожидаемого Content Manager response parser должен остановиться с явной ошибкой, а не формировать потенциально ложный CSV.
 
 Практическая трактовка ошибок:
 
@@ -388,7 +400,7 @@ shareUrl
 - wrong prices у offers active products: `missing`, non-numeric `invalid`, `zero`, `negative`, `fractional`; output включает уникальный `documentId` offer;
 - missing content: active product без критичных content fields; служебные categories могут быть исключениями по текущей parser logic — exact IDs брать из live code;
 - wrong variants: несколько offers нельзя последовательно выбирать одним типом `shade` или `volume`;
-- attributes without product — published scope;
+- attributes without product — текущее CMS state через Content Manager;
 - attributes without detail picture — offer активного product, `isInStock=true`, `detail_picture=null`;
 - missing shades — published offer с `color_variant1C`, без `shade`, связан с active product;
 - shade-and-volume — published offer с одновременно заполненными shade и volume;
