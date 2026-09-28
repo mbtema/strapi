@@ -27,11 +27,6 @@
       "group": "products"
     },
     {
-      "file": "products-without-brand.js",
-      "version": "1.0.2",
-      "group": "products"
-    },
-    {
       "file": "products-without-categories.js",
       "version": "1.0.2",
       "group": "products"
