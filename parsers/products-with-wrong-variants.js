@@ -161,6 +161,21 @@ async function hasRelation(uid, documentId, field) {
   return getRows(json).length > 0;
 }
 
+async function mapLimit(items, limit, worker) {
+  let nextIndex = 0;
+  const runnerCount = Math.min(limit, items.length);
+
+  const runners = Array.from({ length: runnerCount }, async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      await worker(items[index], index);
+    }
+  });
+
+  await Promise.all(runners);
+}
+
 const timestamp = () => {
   const d = new Date();
   const p = n => String(n).padStart(2, '0');
