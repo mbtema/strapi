@@ -1,18 +1,180 @@
+
 (async () => {
   'use strict';
 
-  const PUBLIC_URL = '/api/attributes';
-  const CONTENT_MANAGER_URL = '/content-manager/collection-types/api::attribute.attribute';
-  const LOCALE = 'ru';
-  const PUBLIC_PAGE_SIZE = 100;
-  const CM_PAGE_SIZE = 50;
+  const ATTRIBUTE_UID = 'api::attribute.attribute';
+  const PRODUCT_UID = 'api::product.product';
   const HEADERS = ['documentId', 'barcode', 'price', 'errorType'];
+  const invalidRows = [];
 
-  const timestamp = () => {
-    const d = new Date();
-    const p = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
-  };
+const LOCALE = 'ru';
+const PAGE_SIZE = 100;
+
+const getAdminToken = () => {
+  const raw = localStorage.getItem('jwtToken');
+  if (!raw) return '';
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'string' ? parsed : raw;
+  } catch {
+    return raw.replace(/^"|"$/g, '');
+  }
+};
+
+const adminToken = getAdminToken();
+if (!adminToken) throw new Error('Не найден jwtToken в LocalStorage');
+
+const headers = {
+  Accept: 'application/json',
+  Authorization: `Bearer ${adminToken}`
+};
+
+const getRows = json => Array.isArray(json?.results)
+  ? json.results
+  : Array.isArray(json?.data)
+    ? json.data
+    : [];
+
+const getPagination = json => json?.pagination ?? json?.meta?.pagination ?? null;
+
+async function getJson(url, label) {
+  const response = await fetch(url, {
+    method: 'GET',
+    credentials: 'include',
+    headers
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(
+      `${label}: HTTP ${response.status}${body ? ` — ${body.slice(0, 250)}` : ''}`
+    );
+  }
+
+  return response.json();
+}
+
+async function listAll(uid, label) {
+  const result = [];
+  const seen = new Set();
+  let page = 1;
+  let pageCount = 1;
+
+  while (page <= pageCount) {
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(PAGE_SIZE),
+      sort: 'id:ASC',
+      locale: LOCALE
+    });
+
+    const json = await getJson(
+      `/content-manager/collection-types/${uid}?${params}`,
+      `${label} page ${page}`
+    );
+
+    const items = getRows(json);
+    const pagination = getPagination(json);
+    pageCount = Number(pagination?.pageCount || pageCount);
+
+    for (const item of items) {
+      if (!item?.documentId || seen.has(item.documentId)) continue;
+      seen.add(item.documentId);
+      result.push(item);
+    }
+
+    console.log(
+      `[${label}] CMS list ${page}/${pageCount} | loaded ${result.length}` +
+      (pagination?.total ? `/${pagination.total}` : '')
+    );
+
+    if (!items.length) break;
+    page++;
+  }
+
+  return result;
+}
+
+async function getDetail(uid, documentId, label) {
+  const params = new URLSearchParams({ locale: LOCALE });
+  const json = await getJson(
+    `/content-manager/collection-types/${uid}/${encodeURIComponent(documentId)}?${params}`,
+    `${label} ${documentId}`
+  );
+  return json?.data ?? json;
+}
+
+async function getRelation(uid, documentId, field, pageSize = 100) {
+  const all = [];
+  let page = 1;
+  let pageCount = 1;
+
+  while (page <= pageCount) {
+    const params = new URLSearchParams({
+      locale: LOCALE,
+      page: String(page),
+      pageSize: String(pageSize)
+    });
+
+    const json = await getJson(
+      `/content-manager/relations/${uid}/${encodeURIComponent(documentId)}/${field}?${params}`,
+      `${documentId} relation ${field} page ${page}`
+    );
+
+    const items = getRows(json);
+    const pagination = getPagination(json);
+    pageCount = Number(pagination?.pageCount || pageCount);
+    all.push(...items);
+
+    if (!items.length) break;
+    page++;
+  }
+
+  return all;
+}
+
+async function hasRelation(uid, documentId, field) {
+  const params = new URLSearchParams({
+    locale: LOCALE,
+    page: '1',
+    pageSize: '1'
+  });
+
+  const json = await getJson(
+    `/content-manager/relations/${uid}/${encodeURIComponent(documentId)}/${field}?${params}`,
+    `${documentId} relation ${field}`
+  );
+
+  return getRows(json).length > 0;
+}
+
+const timestamp = () => {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+};
+
+const downloadCSV = (items, headersList, filename) => {
+  const q = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const csv = [
+    headersList.join(';'),
+    ...items.map(row => headersList.map(key => q(row[key])).join(';'))
+  ].join('\n');
+
+  const url = URL.createObjectURL(
+    new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  );
+  const link = Object.assign(document.createElement('a'), {
+    href: url,
+    download: filename
+  });
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
 
   const priceIssue = value => {
     if (value == null || String(value).trim() === '') return 'missing';
@@ -26,224 +188,82 @@
     return null;
   };
 
-  const getAdminToken = () => {
-    const raw = localStorage.getItem('jwtToken');
-    if (!raw) return '';
+  const hasOwn = (value, key) =>
+    Boolean(value) && Object.prototype.hasOwnProperty.call(value, key);
 
-    try {
-      const parsed = JSON.parse(raw);
-      if (typeof parsed === 'string') return parsed;
-    } catch {}
+  const productActiveCache = new Map();
 
-    return raw.replace(/^"|"$/g, '');
-  };
+  async function isProductActive(product) {
+    if (!product?.documentId) return false;
+    if (typeof product.active === 'boolean') return product.active;
 
-  const adminToken = getAdminToken();
+    if (!productActiveCache.has(product.documentId)) {
+      productActiveCache.set(
+        product.documentId,
+        getDetail(PRODUCT_UID, product.documentId, 'Product')
+          .then(detail => {
+            if (typeof detail?.active !== 'boolean') {
+              throw new Error(
+                `Product ${product.documentId}: Content Manager detail не содержит active`
+              );
+            }
+            return detail.active;
+          })
+      );
+    }
 
-  if (!adminToken) {
-    throw new Error(
-      'Не найден jwtToken в LocalStorage. Перезайди в Strapi Admin и запусти checker повторно.'
-    );
+    return productActiveCache.get(product.documentId);
   }
 
-  const downloadCSV = (items, filename) => {
-    const q = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const csv = [
-      HEADERS.join(';'),
-      ...items.map(row => HEADERS.map(key => q(row[key])).join(';'))
-    ].join('\n');
+  const attributes = await listAll(ATTRIBUTE_UID, 'products-with-wrong-prices');
+  let checked = 0;
+  let activeProductOffers = 0;
 
-    const url = URL.createObjectURL(
-      new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  await mapLimit(attributes, 6, async item => {
+    const products = await getRelation(
+      ATTRIBUTE_UID,
+      item.documentId,
+      'product',
+      1
     );
 
-    const link = Object.assign(document.createElement('a'), {
-      href: url,
-      download: filename
-    });
+    const product = products[0] ?? null;
+    if (!product || !(await isProductActive(product))) {
+      checked++;
+      return;
+    }
 
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    activeProductOffers++;
 
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
+    let source = item;
+    if (!hasOwn(item, 'price') || !hasOwn(item, 'barcode')) {
+      source = await getDetail(ATTRIBUTE_UID, item.documentId, 'Attribute');
+    }
 
-  const getRows = json => {
-    if (Array.isArray(json?.results)) return json.results;
-    if (Array.isArray(json?.data)) return json.data;
-    return [];
-  };
-
-  const getPagination = json => json?.pagination ?? json?.meta?.pagination ?? null;
-
-  console.log('[Price Checker] Шаг 1/2: получаю предложения активных товаров из Public API...');
-
-  const activeAttributeIds = new Set();
-
-  const publicParams = new URLSearchParams({
-    'pagination[pageSize]': String(PUBLIC_PAGE_SIZE),
-    'pagination[page]': '1',
-    'sort[0]': 'id:asc',
-    'locale': LOCALE,
-    'filters[product][active][$eq]': 'true',
-    'fields[0]': 'documentId'
-  });
-
-  let publicPage = 1;
-  let publicPageCount = 1;
-  let publicTotal = 0;
-
-  while (publicPage <= publicPageCount) {
-    publicParams.set('pagination[page]', String(publicPage));
-
-    const response = await fetch(`${PUBLIC_URL}?${publicParams}`);
-
-    if (!response.ok) {
+    if (!hasOwn(source, 'price')) {
       throw new Error(
-        `Public API: ошибка ${response.status} на странице ${publicPage}`
+        `Attribute ${item.documentId}: Content Manager не вернул поле price`
       );
     }
 
-    const json = await response.json();
-    const rows = getRows(json);
-    const pagination = getPagination(json);
-
-    publicPageCount = pagination?.pageCount ?? publicPageCount;
-    publicTotal = pagination?.total ?? publicTotal;
-
-    for (const attribute of rows) {
-      if (attribute?.documentId) {
-        activeAttributeIds.add(attribute.documentId);
-      }
-    }
-
-    if (
-      publicPage === 1 ||
-      publicPage % 25 === 0 ||
-      publicPage === publicPageCount
-    ) {
-      console.log(
-        `[Price Checker] Active offers: страница ${publicPage}/${publicPageCount} | ` +
-        `найдено ${activeAttributeIds.size}/${publicTotal || '?'}`
-      );
-    }
-
-    publicPage++;
-  }
-
-  console.log(
-    `[Price Checker] Шаг 1/2 готов: предложений активных товаров — ${activeAttributeIds.size}.`
-  );
-  console.log(
-    '[Price Checker] Шаг 2/2: читаю текущие barcode/price из Content Manager...'
-  );
-
-  const invalidRows = [];
-  const seenDocumentIds = new Set();
-
-  let cmPage = 1;
-  let cmPageCount = null;
-  let cmTotal = null;
-
-  while (true) {
-    const cmParams = new URLSearchParams({
-      page: String(cmPage),
-      pageSize: String(CM_PAGE_SIZE),
-      sort: 'id:ASC',
-      locale: LOCALE
-    });
-
-    const response = await fetch(`${CONTENT_MANAGER_URL}?${cmParams}`, {
-      credentials: 'include',
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${adminToken}`
-      }
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(
-        `Content Manager: ошибка ${response.status} на странице ${cmPage}` +
-        (body ? `: ${body.slice(0, 300)}` : '')
-      );
-    }
-
-    const json = await response.json();
-    const rows = getRows(json);
-    const pagination = getPagination(json);
-
-    if (cmPage === 1 && rows.length) {
-      const sample = rows[0];
-
-      if (!Object.prototype.hasOwnProperty.call(sample, 'price')) {
-        throw new Error(
-          'Content Manager list response не содержит поле price. ' +
-          'Checker остановлен, чтобы не создавать ложный отчёт.'
-        );
-      }
-
-      if (!Object.prototype.hasOwnProperty.call(sample, 'barcode')) {
-        throw new Error(
-          'Content Manager list response не содержит поле barcode. ' +
-          'Checker остановлен, чтобы не создавать ложный отчёт.'
-        );
-      }
-    }
-
-    if (!rows.length) break;
-
-    cmPageCount = pagination?.pageCount ?? cmPageCount;
-    cmTotal = pagination?.total ?? cmTotal;
-
-    let newRows = 0;
-
-    for (const attribute of rows) {
-      if (!attribute?.documentId || seenDocumentIds.has(attribute.documentId)) {
-        continue;
-      }
-
-      seenDocumentIds.add(attribute.documentId);
-      newRows++;
-
-      if (!activeAttributeIds.has(attribute.documentId)) continue;
-
-      const errorType = priceIssue(attribute.price);
-      if (!errorType) continue;
-
+    const errorType = priceIssue(source.price);
+    if (errorType) {
       invalidRows.push({
-        documentId: attribute.documentId,
-        barcode: attribute.barcode ?? '',
-        price: attribute.price ?? '',
+        documentId: item.documentId,
+        barcode: source.barcode ?? item.barcode ?? '',
+        price: source.price ?? '',
         errorType
       });
     }
 
-    if (
-      cmPage === 1 ||
-      cmPage % 25 === 0 ||
-      (cmPageCount && cmPage === cmPageCount)
-    ) {
+    checked++;
+    if (checked % 250 === 0 || checked === attributes.length) {
       console.log(
-        `[Price Checker] CMS: страница ${cmPage}${cmPageCount ? '/' + cmPageCount : ''} | ` +
-        `прочитано ${seenDocumentIds.size}${cmTotal ? '/' + cmTotal : ''} | ` +
-        `проблемных ${invalidRows.length}`
+        `[products-with-wrong-prices] checked ${checked}/${attributes.length} | ` +
+        `offers of active products ${activeProductOffers} | invalid ${invalidRows.length}`
       );
     }
-
-    if (!newRows) {
-      console.warn(
-        `[Price Checker] Страница ${cmPage} не дала новых documentId — останавливаюсь, чтобы не зациклиться.`
-      );
-      break;
-    }
-
-    if (cmPageCount && cmPage >= cmPageCount) break;
-    if (!cmPageCount && rows.length < CM_PAGE_SIZE) break;
-
-    cmPage++;
-  }
+  });
 
   invalidRows.sort((a, b) =>
     String(a.barcode).localeCompare(String(b.barcode), 'en', { numeric: true })
@@ -251,14 +271,13 @@
 
   console.table(invalidRows);
   console.log(
-    `[Price Checker] Готово: найдено ${invalidRows.length} торговых предложений активных товаров ` +
-    'с некорректной текущей ценой в CMS.'
+    `Готово: в CMS найдено ${invalidRows.length} offers активных товаров с некорректной ценой`
   );
 
   window.attributesWithInvalidPrice = invalidRows;
-
   downloadCSV(
     invalidRows,
+    HEADERS,
     `attributes_invalid_prices_${timestamp()}.csv`
   );
 })();
