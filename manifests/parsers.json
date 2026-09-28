@@ -3,32 +3,32 @@
   "parsers": [
     {
       "file": "attributes-without-product.js",
-      "version": "1.0.4",
+      "version": "1.1.0",
       "group": "offers"
     },
     {
       "file": "products-without-attributes.js",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "group": "products"
     },
     {
       "file": "products-without-categories.js",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "group": "products"
     },
     {
       "file": "products-with-wrong-prices.js",
-      "version": "1.2.4",
+      "version": "1.3.0",
       "group": "products"
     },
     {
       "file": "products-with-missing-content.js",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "group": "products"
     },
     {
       "file": "products-with-wrong-variants.js",
-      "version": "1.0.4",
+      "version": "1.1.0",
       "group": "products"
     },
     {
