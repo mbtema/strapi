@@ -133,7 +133,7 @@ README обновляется, когда меняются структура, �
 │   ├── products-with-wrong-variants.js
 │   ├── products-without-attributes.js
 │   ├── products-without-categories.js
-│   ├── products-with-wrong-prices.js
+│   └── products-with-wrong-prices.js
 ├── translator/
 │   ├── full.md
 │   ├── compressed.md
