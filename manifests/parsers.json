@@ -17,9 +17,9 @@
       "group": "products"
     },
     {
-      "file": "products-with-wrong-prices.js",
-      "version": "1.3.0",
-      "group": "products"
+      "file": "attributes-wrong-prices.js",
+      "version": "1.4.0",
+      "group": "attributes"
     },
     {
       "file": "products-missing-content.js",
