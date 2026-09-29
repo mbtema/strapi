@@ -208,6 +208,50 @@ GET /content-manager/collection-types/api::attribute.attribute
 /api/home-page
 ```
 
+## CANONICAL — attributes wrong prices
+
+Назначение проверки: найти offers/attributes, связанные с активными товарами, у которых цена не является корректным положительным целым числом.
+
+Parser: `attributes-wrong-prices.js`. Source — Content Manager API, локаль `ru`.
+
+Scope:
+- пройти все `attribute`;
+- для каждого прочитать relation `product`;
+- если relation отсутствует или связанный `product.active !== true` → skip;
+- дополнительных фильтров по состоянию самого attribute (`active`, stock, published/draft и т.п.) нет;
+- причина: relation с активным product означает, что offer относится к активной карточке товара и его цена должна быть валидной.
+
+Проверяемые типы ошибок `price`:
+- `missing` — значение отсутствует или пустое;
+- `invalid` — значение не приводится к конечному числу;
+- `zero` — цена равна 0;
+- `negative` — цена меньше 0;
+- `fractional` — цена не целая.
+
+Рабочий алгоритм:
+
+```text
+все attributes из Content Manager
+→ relation product
+→ product.active=true
+→ проверка price
+```
+
+Не использовать неподтверждённый server-side filter по `product.active`; если потребуется оптимизация source query, сначала подтвердить фактический internal request через Network.
+
+Output:
+
+```text
+documentId
+barcode
+price
+errorType
+```
+
+CSV: `attributes-wrong-prices.csv`, без timestamp. Отдельная сортировка не нужна — строки остаются в порядке добавления по мере обработки. При 0 проблем CSV не создаётся, достаточно сообщения в Console. При API/response ошибке запуск останавливается и частичный CSV не формируется.
+
+Progress сохраняется: checked/total, offers активных товаров, найденные invalid rows. Рабочая concurrency — 10.
+
 ## CANONICAL — products missing content
 
 Назначение проверки: контролировать однородность критичного контента только у товаров, которые реально могут быть доступны клиенту.
@@ -477,7 +521,7 @@ shareUrl
 Полезные смысловые проверки каталога:
 - active products без attributes / brand / categories;
 - duplicate technical fields `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`; null/empty не считать duplicate value;
-- wrong prices у offers active products: `missing`, non-numeric `invalid`, `zero`, `negative`, `fractional`; output включает уникальный `documentId` offer;
+- wrong prices у offers active products: отдельный CANONICAL workflow выше; `missing`, `invalid`, `zero`, `negative`, `fractional`, output `documentId`, `barcode`, `price`, `errorType`;
 - missing content: отдельный CANONICAL workflow выше; active product проверяется по `name1`, `name2`, `detail_picture`, `detail_text` с дополнительным слоем `categories.active`, без hardcoded category IDs;
 - wrong variants: несколько offers нельзя последовательно выбирать одним типом `shade` или `volume`;
 - attributes without product — все `attribute` в `ru` без relation `product`; server-side Content Manager filter, без дополнительных условий;
