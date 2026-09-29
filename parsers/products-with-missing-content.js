@@ -1,17 +1,14 @@
-
 (async () => {
   'use strict';
 
   const PRODUCT_UID = 'api::product.product';
-  const EXCLUDED_CATEGORY_IDS = new Set([
-    'kns3po2mz8hq9kezm3szbvjg',
-    'a4zy2gvb479ku9nd6py5uxzh'
-  ]);
+  const CATEGORY_UID = 'api::category.category';
   const HEADERS = [
     'id',
     'documentId',
     'name',
     'key',
+    'categoryState',
     'missingCount',
     'missingFields',
     'name1',
@@ -147,21 +144,6 @@ async function getRelation(uid, documentId, field, pageSize = 100) {
   return all;
 }
 
-async function hasRelation(uid, documentId, field) {
-  const params = new URLSearchParams({
-    locale: LOCALE,
-    page: '1',
-    pageSize: '1'
-  });
-
-  const json = await getJson(
-    `/content-manager/relations/${uid}/${encodeURIComponent(documentId)}/${field}?${params}`,
-    `${documentId} relation ${field}`
-  );
-
-  return getRows(json).length > 0;
-}
-
 async function mapLimit(items, limit, worker) {
   let nextIndex = 0;
   const runnerCount = Math.min(limit, items.length);
@@ -227,10 +209,35 @@ const downloadCSV = (items, headersList, filename) => {
   const relationDocumentId = item =>
     item?.documentId ?? item?.attributes?.documentId ?? '';
 
-  const products = await listAll(PRODUCT_UID, 'products-with-missing-content');
+  const categories = await listAll(CATEGORY_UID, 'products-with-missing-content/categories');
+  const categoryActiveById = new Map();
+
+  for (const category of categories) {
+    if (typeof category?.active !== 'boolean') {
+      throw new Error(
+        `Category ${category?.documentId || category?.id || 'unknown'}: Content Manager list не содержит active`
+      );
+    }
+    categoryActiveById.set(category.documentId, category.active);
+  }
+
+  const products = await listAll(PRODUCT_UID, 'products-with-missing-content/products');
   let checked = 0;
   let activeCount = 0;
-  let excludedByCategory = 0;
+  let skippedInactiveCategories = 0;
+  let noCategoriesCount = 0;
+  let mixedCategoriesCount = 0;
+
+  const logProgress = () => {
+    if (checked % 250 === 0 || checked === products.length) {
+      console.log(
+        `[products-with-missing-content] checked ${checked}/${products.length} | ` +
+        `active ${activeCount} | skipped categories inactive ${skippedInactiveCategories} | ` +
+        `no categories ${noCategoriesCount} | mixed categories ${mixedCategoriesCount} | ` +
+        `found ${rows.length}`
+      );
+    }
+  };
 
   await mapLimit(products, 6, async item => {
     const detail = await getDetail(PRODUCT_UID, item.documentId, 'Product');
@@ -243,10 +250,57 @@ const downloadCSV = (items, headersList, filename) => {
 
     if (detail.active !== true) {
       checked++;
+      logProgress();
       return;
     }
 
     activeCount++;
+
+    const relatedCategories = await getRelation(
+      PRODUCT_UID,
+      item.documentId,
+      'categories'
+    );
+
+    let categoryState = 'normal';
+
+    if (!relatedCategories.length) {
+      categoryState = 'no_categories';
+      noCategoriesCount++;
+    } else {
+      const activeStates = relatedCategories.map(category => {
+        const documentId = relationDocumentId(category);
+
+        if (!documentId) {
+          throw new Error(
+            `Product ${item.documentId}: relation categories содержит запись без documentId`
+          );
+        }
+
+        if (!categoryActiveById.has(documentId)) {
+          throw new Error(
+            `Product ${item.documentId}: category ${documentId} не найдена в Content Manager list`
+          );
+        }
+
+        return categoryActiveById.get(documentId);
+      });
+
+      const hasActiveCategory = activeStates.some(Boolean);
+      const hasInactiveCategory = activeStates.some(active => active === false);
+
+      if (!hasActiveCategory) {
+        skippedInactiveCategories++;
+        checked++;
+        logProgress();
+        return;
+      }
+
+      if (hasInactiveCategory) {
+        categoryState = 'mixed_active';
+        mixedCategoriesCount++;
+      }
+    }
 
     for (const field of ['name1', 'name2', 'detail_text', 'detail_picture']) {
       if (!Object.prototype.hasOwnProperty.call(detail, field)) {
@@ -256,34 +310,19 @@ const downloadCSV = (items, headersList, filename) => {
       }
     }
 
-    const categories = await getRelation(
-      PRODUCT_UID,
-      item.documentId,
-      'categories'
-    );
-
-    if (
-      categories.some(category =>
-        EXCLUDED_CATEGORY_IDS.has(relationDocumentId(category))
-      )
-    ) {
-      excludedByCategory++;
-      checked++;
-      return;
-    }
-
     const missing = [];
     if (!hasText(detail.name1)) missing.push('name1');
     if (!hasText(detail.name2)) missing.push('name2');
     if (!hasMedia(detail.detail_picture)) missing.push('detail_picture');
     if (!hasText(detail.detail_text)) missing.push('detail_text');
 
-    if (missing.length) {
+    if (categoryState !== 'normal' || missing.length) {
       rows.push({
         id: detail.id ?? item.id ?? '',
         documentId: item.documentId,
         name: detail.name ?? item.name ?? '',
         key: detail.key ?? item.key ?? '',
+        categoryState,
         missingCount: missing.length,
         missingFields: missing.join(', '),
         name1: detail.name1 ?? '',
@@ -296,20 +335,26 @@ const downloadCSV = (items, headersList, filename) => {
     }
 
     checked++;
-    if (checked % 250 === 0 || checked === products.length) {
-      console.log(
-        `[products-with-missing-content] checked ${checked}/${products.length} | ` +
-        `active ${activeCount} | excluded ${excludedByCategory} | found ${rows.length}`
-      );
-    }
+    logProgress();
   });
 
-  rows.sort((a, b) => String(a.documentId).localeCompare(String(b.documentId)));
+  const categoryStateRank = {
+    normal: 0,
+    no_categories: 1,
+    mixed_active: 2
+  };
+
+  rows.sort((a, b) =>
+    (categoryStateRank[a.categoryState] ?? 99) - (categoryStateRank[b.categoryState] ?? 99) ||
+    String(a.documentId).localeCompare(String(b.documentId))
+  );
+
   console.table(rows);
   console.log(
-    `Готово: в CMS найдено active products с незаполненным критичным контентом: ${rows.length}`
+    `Готово: отчет ${rows.length} products | active ${activeCount} | ` +
+    `skipped categories inactive ${skippedInactiveCategories} | ` +
+    `no categories ${noCategoriesCount} | mixed categories ${mixedCategoriesCount}`
   );
-  console.log(`Исключено по служебным категориям: ${excludedByCategory}`);
 
   window.productsWithMissingContent = rows;
   downloadCSV(rows, HEADERS, `products_missing_content_${timestamp()}.csv`);
