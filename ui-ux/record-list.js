@@ -384,15 +384,23 @@
 
             if (!link.hasAttribute('href')) {
                 event.preventDefault();
-                event.stopPropagation();
             }
+
+            event.stopPropagation();
         });
 
         link.addEventListener('auxclick', event => {
-            if (event.button === 1 && !link.hasAttribute('href')) {
+            if (event.button !== 1) return;
+
+            if (!link.hasAttribute('href')) {
                 event.preventDefault();
-                event.stopPropagation();
             }
+
+            event.stopPropagation();
+        });
+
+        link.addEventListener('mousedown', event => {
+            event.stopPropagation();
         });
 
         return link;
