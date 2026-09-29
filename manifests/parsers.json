@@ -35,6 +35,11 @@
       "file": "dom-stealer.js",
       "version": "1.0.1",
       "group": "service"
+    },
+    {
+      "file": "network-recorder.js",
+      "version": "1.0.0",
+      "group": "service"
     }
   ]
 }
