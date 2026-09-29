@@ -72,7 +72,7 @@ Loader валидирует каждый дочерний manifest и итого
 - `attributes-without-product.js` — attributes в текущем состоянии CMS без `product`.
 - `products-without-attributes.js` — активные товары в текущем состоянии CMS без `attributes`.
 - `products-without-categories.js` — активные товары в текущем состоянии CMS без `categories`.
-- `products-with-wrong-prices.js` — attributes активных товаров в текущем состоянии CMS с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
+- `attributes-wrong-prices.js` — attributes активных товаров в текущем состоянии CMS с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
 - `products-missing-content.js` — проверяет критичные контентные поля активных товаров с учётом `categories.active`: товары только в отключённых категориях пропускаются, а товары без categories или со смешанными active/inactive categories всегда попадают в отчёт как edge cases.
 - `products-with-wrong-variants.js` — активные товары в текущем состоянии CMS с неконсистентным выбором вариантов по `shade`/`volume`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
@@ -135,7 +135,7 @@ README обновляется, когда меняются структура, �
 │   ├── products-with-wrong-variants.js
 │   ├── products-without-attributes.js
 │   ├── products-without-categories.js
-│   └── products-with-wrong-prices.js
+│   └── attributes-wrong-prices.js
 ├── translator/
 │   ├── full.md
 │   ├── compressed.md
