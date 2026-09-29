@@ -6,7 +6,7 @@
 |---|---|
 | [`extension/`](./extension) | Единый Tampermonkey loader |
 | [`manifests/`](./manifests) | Централизованные реестры extensions и parsers |
-| [`features/`](./features) | Функции: горячие клавиши, barcode, Parser Launcher, Vimium helper |
+| [`features/`](./features) | Функции: горячие клавиши, barcode и Parser Launcher |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
 | [`translator/`](./translator) | RU → KK переводчик: полная версия, compressed-версия и extractor для накопленного translation context |
@@ -46,12 +46,11 @@ Loader валидирует каждый дочерний manifest и итого
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
 - `parser-launcher.js` — `Alt+P`, открывает список парсеров из `manifests/parsers.json` вертикальными колонками по группам, строго валидирует `file` / semver `version` / `group` и дубли файлов; блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
-- `vimium-open-row.js` — делает строки таблиц доступными для Vimium; собственная ссылка помечается через `data-tm-*` и восстанавливается после React re-render.
 
 ## UI/UX
 
 - `sidebar.js` — единый sidebar-модуль: `Alt+S`, поиск, быстрый доступ, группировка Content Manager (`Каталог`, `Справочник`, `Фильтры`, `Главная страница WEB`, `Другое`), active state и очистка глобальной левой навигации; новые нераспознанные collection types по умолчанию попадают в `Другое`, а состояние скрыт/показан сохраняется на время текущей вкладки браузера и переживает обычный reload.
-- `record-list-scrollbars.js` — визуально скрывает scrollbar/overflow decoration в списках Content Manager, сохраняя прокрутку.
+- `record-list.js` — дорабатывает record list Content Manager: скрывает scrollbar/overflow decoration, добавляет рядом с checkbox компактную ссылку открытия записи для Vimium и поддерживает обычный click, Ctrl/Meta-click и middle-click в новую вкладку через реальный `documentId`; при ошибке lookup используется безопасный `row.click()` fallback.
 - `list-view.js` — доработки list view Content Manager.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
 - `product-attributes-navigator.js` — навигация по торговым предложениям в карточке товара: загрузка всех relation `attributes`, поиск, пагинация и прямые ссылки; режим «Управление связями» раскрывает штатный Strapi relation list.
@@ -115,15 +114,14 @@ README обновляется, когда меняются структура, �
 ├── features/
 │   ├── barcode-extractor.js
 │   ├── ctrl-enter-publisher.js
-│   ├── parser-launcher.js
-│   └── vimium-open-row.js
+│   └── parser-launcher.js
 ├── ui-ux/
 │   ├── sidebar.js
 │   ├── entry-relocate.js
 │   ├── list-view.js
 │   ├── product-attributes-navigator.js
 │   ├── product-sections.js
-│   └── record-list-scrollbars.js
+│   └── record-list.js
 ├── parsers/
 │   ├── dom-stealer.js
 │   ├── network-recorder.js
