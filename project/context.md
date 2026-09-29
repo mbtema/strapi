@@ -6,7 +6,7 @@
 >
 > Для текущего code/version/manifest/Issue/API payload/Network/UI всегда проверять live source; изменяемое техническое состояние выше этого snapshot.
 
-**Последняя консолидация:** 2026-09-28  
+**Последняя консолидация:** 2026-09-29  
 **Repo:** `mbtema/strapi`  
 **Strapi backend:** `http://10.10.3.80:1337`  
 **Локали:** `ru`, `kk`
@@ -207,6 +207,40 @@ GET /content-manager/collection-types/api::attribute.attribute
 /api/shades
 /api/home-page
 ```
+
+## CANONICAL — products missing content
+
+Назначение проверки: контролировать однородность критичного контента только у товаров, которые реально могут быть доступны клиенту.
+
+Parser: `products-missing-content.js`. Source — Content Manager API, локаль `ru`.
+
+Логика:
+- первый слой: `product.active=true`; inactive products сразу skip;
+- второй слой: состояние связанных `categories`;
+- список categories загружается постранично через Content Manager и превращается в map `documentId → active`;
+- relations товара к `categories` читаются через native relation endpoint;
+- если все связанные categories имеют `active=false` → product skip;
+- если все связанные categories `active=true` → проверяются `name1`, `name2`, `detail_picture`, `detail_text`;
+- если categories отсутствуют → product всегда идёт в отчёт с `categoryState=no_categories`;
+- если одновременно есть active и inactive categories → product всегда идёт в отчёт с `categoryState=mixed_active`, независимо от заполненности контента;
+- hardcoded исключений по category documentId нет.
+
+Контент считается отсутствующим, если:
+- `name1` / `name2` пустые;
+- `detail_picture` отсутствует;
+- `detail_text` после удаления HTML tags и `&nbsp;` / `&#160;` не содержит текста.
+
+Output intentionally compact:
+
+```text
+documentId
+categoryState
+missingFields
+```
+
+CSV: `products-missing-content.csv`, без timestamp. Edge cases и missing content объединяются в одной строке товара; `missingFields` показывает конкретно отсутствующие content fields.
+
+`brand`, `attributes` и сам факт наличия `categories` не добавляются в эту content-проверку как обычные missing-fields: для них используются отдельные healthchecks.
 
 ## CANONICAL — Product attributes relation endpoint
 
@@ -444,7 +478,7 @@ shareUrl
 - active products без attributes / brand / categories;
 - duplicate technical fields `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`; null/empty не считать duplicate value;
 - wrong prices у offers active products: `missing`, non-numeric `invalid`, `zero`, `negative`, `fractional`; output включает уникальный `documentId` offer;
-- missing content: active product без критичных content fields; служебные categories могут быть исключениями по текущей parser logic — exact IDs брать из live code;
+- missing content: отдельный CANONICAL workflow выше; active product проверяется по `name1`, `name2`, `detail_picture`, `detail_text` с дополнительным слоем `categories.active`, без hardcoded category IDs;
 - wrong variants: несколько offers нельзя последовательно выбирать одним типом `shade` или `volume`;
 - attributes without product — все `attribute` в `ru` без relation `product`; server-side Content Manager filter, без дополнительных условий;
 - attributes without detail picture — offer активного product, `isInStock=true`, `detail_picture=null`;
