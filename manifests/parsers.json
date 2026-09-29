@@ -2,21 +2,6 @@
   "schemaVersion": 1,
   "parsers": [
     {
-      "file": "attributes-without-product.js",
-      "version": "1.2.0",
-      "group": "offers"
-    },
-    {
-      "file": "products-without-attributes.js",
-      "version": "1.1.0",
-      "group": "products"
-    },
-    {
-      "file": "products-without-categories.js",
-      "version": "1.1.0",
-      "group": "products"
-    },
-    {
       "file": "attributes-wrong-prices.js",
       "version": "1.4.0",
       "group": "attributes"
