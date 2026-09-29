@@ -71,7 +71,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 - `attributes-wrong-prices.js` — attributes активных товаров в текущем состоянии CMS с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
 - `products-missing-content.js` — проверяет критичные контентные поля активных товаров с учётом `categories.active`: товары только в отключённых категориях пропускаются, а товары без categories или со смешанными active/inactive categories всегда попадают в отчёт как edge cases.
-- `products-with-wrong-variants.js` — активные товары в текущем состоянии CMS с неконсистентным выбором вариантов по `shade`/`volume`.
+- `products-wrong-variants.js` — проверяет варианты `shade`/`volume` у attributes активных товаров и формирует компактный отчёт `documentId` + `errorType`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
 - `manifests/parsers.json` — runtime-источник `file`, semver `version` и `group` для Parser Launcher; `group` задаётся только здесь.
@@ -128,7 +128,7 @@ README обновляется, когда меняются структура, �
 │   ├── dom-stealer.js
 │   ├── network-recorder.js
 │   ├── products-missing-content.js
-│   ├── products-with-wrong-variants.js
+│   ├── products-wrong-variants.js
 │   └── attributes-wrong-prices.js
 ├── translator/
 │   ├── full.md
