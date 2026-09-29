@@ -50,7 +50,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 ## UI/UX
 
-- `sidebar.js` — единый sidebar-модуль: `Alt+S`, поиск, быстрый доступ, группы Collection Types/Single Types, active state и очистка глобальной левой навигации; последнее состояние скрыт/показан сохраняется на время текущей вкладки браузера и переживает обычный reload.
+- `sidebar.js` — единый sidebar-модуль: `Alt+S`, поиск, быстрый доступ, группировка Content Manager (`Каталог`, `Справочник`, `Фильтры`, `Главная страница WEB`, `Другое`), active state и очистка глобальной левой навигации; новые нераспознанные collection types по умолчанию попадают в `Другое`, а состояние скрыт/показан сохраняется на время текущей вкладки браузера и переживает обычный reload.
 - `record-list-scrollbars.js` — визуально скрывает scrollbar/overflow decoration в списках Content Manager, сохраняя прокрутку.
 - `list-view.js` — доработки list view Content Manager.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
