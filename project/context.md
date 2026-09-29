@@ -94,6 +94,25 @@ Parser-файлы не содержат собственные metadata-блок
 
 Managed regular parsers получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
 
+
+## CANONICAL — Network Recorder
+
+`network-recorder.js` — отдельный service parser для быстрого Network-контекста Strapi; `dom-stealer.js` остаётся только DOM snapshot utility.
+
+Workflow:
+- первый запуск через Parser Launcher → Start;
+- выполнить нужное действие в Strapi;
+- повторный запуск → Stop;
+- recorder собирает same-origin `fetch` и XHR для `/api/...`, `/content-manager/...`, `/upload`;
+- для каждого request сохраняет порядок/время старта, method, URL, status, duration, request body и response body;
+- JSON/text сохраняется структурированно; FormData files — только `name/type/size`; binary body не читается;
+- body ограничен 200 KB, session — 200 requests;
+- на Stop новые requests не принимаются, уже начатые ожидаются до 5 секунд;
+- итоговый JSON копируется в Clipboard, fallback — `network-recorder.json`;
+- hard reload сбрасывает session; SPA-навигация внутри вкладки запись не сбрасывает.
+
+Подтверждено в реальном Strapi: Content Manager GET/PUT/POST requests, request payload и JSON response корректно попадают в dump.
+
 ---
 
 # 3. API and data contracts
