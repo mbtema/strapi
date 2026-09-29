@@ -76,6 +76,7 @@ Loader валидирует каждый дочерний manifest и итого
 - `products-with-missing-content.js` — активные товары в текущем состоянии CMS без критичных контентных полей; товары из категорий `kns3po2mz8hq9kezm3szbvjg` и `a4zy2gvb479ku9nd6py5uxzh` исключаются из отчёта.
 - `products-with-wrong-variants.js` — активные товары в текущем состоянии CMS с неконсистентным выбором вариантов по `shade`/`volume`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
+- `network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
 - `manifests/parsers.json` — runtime-источник `file`, semver `version` и `group` для Parser Launcher; `group` задаётся только здесь.
 
 Для нового parser добавь файл в `parsers/` и зарегистрируй его в `manifests/parsers.json` через `file`, `version` и `group`. `version` и `group` внутри parser-файла не дублируются.
@@ -129,6 +130,7 @@ README обновляется, когда меняются структура, �
 ├── parsers/
 │   ├── attributes-without-product.js
 │   ├── dom-stealer.js
+│   ├── network-recorder.js
 │   ├── products-with-missing-content.js
 │   ├── products-with-wrong-variants.js
 │   ├── products-without-attributes.js
