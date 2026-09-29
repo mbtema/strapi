@@ -3,6 +3,7 @@
 
     const STYLE_ID = 'tm-sidebar-style';
     const SIDEBAR_STATE_KEY = 'tm-strapi-sidebar-hidden-v1';
+    const GROUP_STATE_KEY = 'tm-strapi-sidebar-groups-v1';
 
     const GLOBAL_NAV_ATTR = 'data-tm-global-nav';
     const GLOBAL_LOGO_ATTR = 'data-tm-global-logo-hidden';
@@ -19,6 +20,7 @@
     const TOOLBAR_ATTR = 'data-tm-sidebar-toolbar';
     const GROUP_HEADER_ATTR = 'data-tm-sidebar-group-header';
     const GROUP_ITEM_ATTR = 'data-tm-sidebar-group-item';
+    const GROUP_COLLAPSED_ATTR = 'data-tm-sidebar-group-collapsed';
     const QUICK_ATTR = 'data-tm-sidebar-quick';
     const ICON_ATTR = 'data-tm-sidebar-icon';
     const COLLAPSED_ATTR = 'data-tm-sidebar-collapsed';
@@ -61,7 +63,7 @@
         {
             id: 'filters',
             title: 'Фильтры',
-            collapsed: true,
+            collapsed: false,
             uids: [
                 'api::product-age-group.product-age-group',
                 'api::product-usage-time.product-usage-time',
@@ -211,9 +213,45 @@
         globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>'
     };
 
-    const collapsedGroups = new Map(
-        GROUPS.map(group => [group.id, group.collapsed])
-    );
+    function readGroupStates() {
+        const states = new Map(
+            GROUPS.map(group => [group.id, Boolean(group.collapsed)])
+        );
+
+        try {
+            const raw = localStorage.getItem(GROUP_STATE_KEY);
+            if (!raw) return states;
+
+            const stored = JSON.parse(raw);
+            if (!stored || typeof stored !== 'object') return states;
+
+            for (const group of GROUPS) {
+                if (typeof stored[group.id] === 'boolean') {
+                    states.set(group.id, stored[group.id]);
+                }
+            }
+        } catch (error) {
+            console.warn('[sidebar] Failed to read group state', error);
+        }
+
+        return states;
+    }
+
+    const collapsedGroups = readGroupStates();
+
+    function writeGroupStates() {
+        try {
+            const stored = {};
+
+            for (const group of GROUPS) {
+                stored[group.id] = Boolean(collapsedGroups.get(group.id));
+            }
+
+            localStorage.setItem(GROUP_STATE_KEY, JSON.stringify(stored));
+        } catch (error) {
+            console.warn('[sidebar] Failed to persist group state', error);
+        }
+    }
 
     function readSidebarHiddenState() {
         try {
@@ -333,7 +371,8 @@
 
             @media (prefers-reduced-motion: reduce) {
                 [${LAYOUT_ATTR}],
-                [${CLEANUP_ATTR}] {
+                [${CLEANUP_ATTR}],
+                [${CLEANUP_ATTR}] [${GROUP_ITEM_ATTR}] {
                     transition: none !important;
                 }
             }
@@ -473,7 +512,22 @@
             [${CLEANUP_ATTR}] [${GROUP_ITEM_ATTR}] {
                 margin: 0 !important;
                 padding: 0 !important;
+                max-height: 72px;
+                opacity: 1;
+                overflow: hidden;
+                transform: translateY(0);
                 list-style: none !important;
+                transition:
+                    max-height 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                    opacity 140ms ease,
+                    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+            }
+
+            [${CLEANUP_ATTR}] [${GROUP_ITEM_ATTR}][${GROUP_COLLAPSED_ATTR}] {
+                max-height: 0 !important;
+                opacity: 0;
+                transform: translateY(-4px);
+                pointer-events: none;
             }
 
             [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR},
@@ -724,6 +778,7 @@
             SINGLE_SOURCE_ATTR,
             ACTIVE_ATTR,
             GROUP_ITEM_ATTR,
+            GROUP_COLLAPSED_ATTR,
             QUICK_ATTR,
             COLLAPSED_ATTR
         ];
@@ -931,6 +986,7 @@
                     group.id,
                     !(collapsedGroups.get(group.id) || false)
                 );
+                writeGroupStates();
                 applyVisibility();
             });
 
@@ -1114,11 +1170,7 @@
 
             link.toggleAttribute(ACTIVE_ATTR, isActive);
 
-            if (isActive) {
-                const item = link.closest(`[${GROUP_ITEM_ATTR}]`);
-                const groupId = item?.getAttribute(GROUP_ITEM_ATTR);
-                if (groupId) collapsedGroups.set(groupId, false);
-            }
+
         }
 
         sidebar.querySelectorAll(`[${QUICK_ATTR}]`).forEach(button => {
@@ -1153,8 +1205,14 @@
 
             for (const item of items) {
                 const matches = !searchQuery || normalizeText(item.textContent).includes(searchQuery);
-                const visible = searchQuery ? matches : !collapsed;
-                item.hidden = !visible;
+                const filteredOut = Boolean(searchQuery) && !matches;
+
+                item.hidden = filteredOut;
+                item.toggleAttribute(
+                    GROUP_COLLAPSED_ATTR,
+                    !searchQuery && collapsed
+                );
+
                 if (matches) visibleCount++;
             }
 
