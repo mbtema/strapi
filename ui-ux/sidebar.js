@@ -39,7 +39,8 @@
                 'api::category.category',
                 'api::brand.brand',
                 'api::promotion.promotion',
-                'api::page.page'
+                'api::page.page',
+                'api::article.article'
             ]
         },
         {
@@ -75,7 +76,6 @@
                 'api::brand-filter-profile.brand-filter-profile',
                 'api::product-effect.product-effect',
                 'api::product-segment.product-segment',
-                'api::article.article',
                 'api::product-coverage.product-coverage',
                 'api::brand-country.brand-country',
                 'api::hair-type.hair-type',
