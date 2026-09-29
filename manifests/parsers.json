@@ -12,8 +12,8 @@
       "group": "products"
     },
     {
-      "file": "products-with-wrong-variants.js",
-      "version": "1.1.0",
+      "file": "products-wrong-variants.js",
+      "version": "1.2.0",
       "group": "products"
     },
     {
