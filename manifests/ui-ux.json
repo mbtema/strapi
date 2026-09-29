@@ -8,9 +8,9 @@
       "enabled": true
     },
     {
-      "id": "record-list-scrollbars",
-      "path": "ui-ux/record-list-scrollbars.js",
-      "version": "1.0.5",
+      "id": "record-list",
+      "path": "ui-ux/record-list.js",
+      "version": "1.0.0",
       "enabled": true
     },
     {
