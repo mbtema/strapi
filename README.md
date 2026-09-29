@@ -69,9 +69,6 @@ Loader валидирует каждый дочерний manifest и итого
 
 Парсеры запускаются через `Alt+P`. Массовые data-audit parsers проверяют текущее состояние CMS только через Content Manager API, включая draft/modified записи; Public API `/api/...` для этих проверок не используется. Парсеры проходят данные постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация parser'а и его версия (`file`, semver `version`, `group`) хранятся только в `manifests/parsers.json`; metadata-блоки внутри parser-файлов не используются.
 
-- `attributes-without-product.js` — attributes в текущем состоянии CMS без `product`.
-- `products-without-attributes.js` — активные товары в текущем состоянии CMS без `attributes`.
-- `products-without-categories.js` — активные товары в текущем состоянии CMS без `categories`.
 - `attributes-wrong-prices.js` — attributes активных товаров в текущем состоянии CMS с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
 - `products-missing-content.js` — проверяет критичные контентные поля активных товаров с учётом `categories.active`: товары только в отключённых категориях пропускаются, а товары без categories или со смешанными active/inactive categories всегда попадают в отчёт как edge cases.
 - `products-with-wrong-variants.js` — активные товары в текущем состоянии CMS с неконсистентным выбором вариантов по `shade`/`volume`.
@@ -128,13 +125,10 @@ README обновляется, когда меняются структура, �
 │   ├── product-sections.js
 │   └── record-list-scrollbars.js
 ├── parsers/
-│   ├── attributes-without-product.js
 │   ├── dom-stealer.js
 │   ├── network-recorder.js
 │   ├── products-missing-content.js
 │   ├── products-with-wrong-variants.js
-│   ├── products-without-attributes.js
-│   ├── products-without-categories.js
 │   └── attributes-wrong-prices.js
 ├── translator/
 │   ├── full.md
