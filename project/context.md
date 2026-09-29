@@ -170,9 +170,9 @@ Admin JWT доступен в LocalStorage как `jwtToken`.
 
 Для internal API фактический Network request важнее сохранённого исторического endpoint/payload.
 
-## CANONICAL — attributes without product
+## CANONICAL — attributes without product check
 
-Назначение проверки: найти **все** `attribute` в рабочей локали `ru`, у которых отсутствует relation `product`. Дополнительные условия (`active`, status, price, stock и т.п.) к этой проверке не относятся и должны жить в отдельных parsers.
+Назначение проверки: найти все `attribute` в рабочей локали `ru`, у которых отсутствует relation `product`. Это ad hoc healthcheck; отдельный runtime parser для него не поддерживается, проверку можно быстро выполнять через Postman/internal Content Manager API.
 
 Подтверждённый через Strapi Admin Network server-side filter:
 
@@ -186,14 +186,10 @@ GET /content-manager/collection-types/api::attribute.attribute
 ```
 
 Практический workflow:
-- использовать list endpoint с server-side filter, а не делать relation request для каждого attribute;
+- использовать list endpoint с server-side filter, а не relation request для каждого attribute;
 - пройти все result pages;
-- output healthcheck: `documentId`, `barcode`, сортировка по `barcode`, пустые barcode в конце;
-- progress по страницам + `console.table` + итоговый counter;
-- CSV `attributes-without-product.csv` скачивать автоматически только если найдены записи;
-- при `0` записей CSV не создавать;
-- при ошибке/неожиданном response остановиться и не формировать частичный CSV;
-- не добавлять fallback на массовый per-record relation scan: если server-side filter перестал работать, сначала заново подтвердить internal request через Network.
+- для анализа достаточно `documentId` и `barcode`;
+- если server-side filter перестал работать, сначала заново подтвердить internal request через Network, а не добавлять массовый relation-scan fallback.
 
 Частые Public API paths:
 
@@ -519,18 +515,18 @@ shareUrl
 ## Parser health semantics
 
 Полезные смысловые проверки каталога:
-- active products без attributes / brand / categories;
+- active products без attributes / brand / categories — ad hoc checks, при необходимости выполнять через Postman/internal API вместо отдельных runtime parsers;
 - duplicate technical fields `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`; null/empty не считать duplicate value;
 - wrong prices у offers active products: отдельный CANONICAL workflow выше; `missing`, `invalid`, `zero`, `negative`, `fractional`, output `documentId`, `barcode`, `price`, `errorType`;
 - missing content: отдельный CANONICAL workflow выше; active product проверяется по `name1`, `name2`, `detail_picture`, `detail_text` с дополнительным слоем `categories.active`, без hardcoded category IDs;
 - wrong variants: несколько offers нельзя последовательно выбирать одним типом `shade` или `volume`;
-- attributes without product — все `attribute` в `ru` без relation `product`; server-side Content Manager filter, без дополнительных условий;
+- attributes without product — ad hoc/Postman check; все `attribute` в `ru` без relation `product`, server-side Content Manager filter, без дополнительных условий;
 - attributes without detail picture — offer активного product, `isInStock=true`, `detail_picture=null`;
 - missing shades — published offer с `color_variant1C`, без `shade`, связан с active product;
 - shade-and-volume — published offer с одновременно заполненными shade и volume;
 - barcode audit — published offers без barcode и с duplicate barcode, с product context.
 
-`products-without-categories` — healthcheck, а не разрешение автоматически назначать categories из Bitrix. Автоназначение categories по Bitrix не является безопасным default из-за бизнес-логики и исключений.
+Проверка products without categories — healthcheck, а не разрешение автоматически назначать categories из Bitrix. Отдельный runtime parser для неё не поддерживается; автоназначение categories по Bitrix не является безопасным default из-за бизнес-логики и исключений.
 
 ---
 
