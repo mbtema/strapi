@@ -61,16 +61,51 @@
             id: 'filters',
             title: 'Фильтры',
             collapsed: true,
-            fallbackCollections: true
+            uids: [
+                'api::product-age-group.product-age-group',
+                'api::product-usage-time.product-usage-time',
+                'api::fragrance-group.fragrance-group',
+                'api::shade-group.shade-group',
+                'api::product-feature.product-feature',
+                'api::ingredient.ingredient',
+                'api::fragrance-concentration.fragrance-concentration',
+                'api::volume.volume',
+                'api::color-variant.color-variant',
+                'api::shade.shade',
+                'api::brand-filter-profile.brand-filter-profile',
+                'api::product-effect.product-effect',
+                'api::product-segment.product-segment',
+                'api::article.article',
+                'api::product-coverage.product-coverage',
+                'api::brand-country.brand-country',
+                'api::hair-type.hair-type',
+                'api::skin-type.skin-type',
+                'api::product-form.product-form',
+                'api::filtry.filtry',
+                'api::product-finish.product-finish',
+                'api::product-release-form.product-release-form'
+            ]
+        },
+        {
+            id: 'web-home',
+            title: 'Главная страница WEB',
+            collapsed: false,
+            uids: [
+                'api::banner.banner'
+            ],
+            singleUids: [
+                'api::web-home-page.web-home-page'
+            ]
         },
         {
             id: 'other',
-            title: 'Прочее',
+            title: 'Другое',
             collapsed: false,
             uids: [
                 'api::notification-template.notification-template'
             ],
-            singleTypes: true
+            fallbackCollections: true,
+            fallbackSingleTypes: true
         }
     ];
 
@@ -87,6 +122,10 @@
 
     const EXPLICIT_COLLECTION_UIDS = new Set(
         GROUPS.flatMap(group => group.uids || [])
+    );
+
+    const EXPLICIT_SINGLE_UIDS = new Set(
+        GROUPS.flatMap(group => group.singleUids || [])
     );
 
     const COLLECTION_ICONS = {
@@ -939,11 +978,18 @@
         const collectionItems = collectItems(COLLECTION_LINK_SELECTOR);
         const singleItems = collectItems(SINGLE_LINK_SELECTOR);
         const byUid = new Map();
+        const singleByUid = new Map();
 
         for (const item of collectionItems) {
             const link = item.querySelector(COLLECTION_LINK_SELECTOR);
             const uid = getUid(link, 'collection');
             if (uid) byUid.set(uid, item);
+        }
+
+        for (const item of singleItems) {
+            const link = item.querySelector(SINGLE_LINK_SELECTOR);
+            const uid = getUid(link, 'single');
+            if (uid) singleByUid.set(uid, item);
         }
 
         const desired = [];
@@ -964,8 +1010,16 @@
                 }));
             }
 
-            if (group.singleTypes) {
-                items.push(...sortSingleTypes(singleItems));
+            if (group.singleUids) {
+                items.push(...group.singleUids.map(uid => singleByUid.get(uid)).filter(Boolean));
+            }
+
+            if (group.fallbackSingleTypes) {
+                items.push(...sortSingleTypes(singleItems.filter(item => {
+                    const link = item.querySelector(SINGLE_LINK_SELECTOR);
+                    const uid = getUid(link, 'single');
+                    return uid && !EXPLICIT_SINGLE_UIDS.has(uid);
+                })));
             }
 
             if (!items.length) continue;
