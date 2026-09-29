@@ -56,29 +56,45 @@
         .catch(() => UNAVAILABLE);
       const nativePromise = state.nativeFetch.call(this, input, init);
 
-      trackPending(state, (async () => {
-        record.requestBody = await requestBodyPromise;
-
-        try {
-          const response = await nativePromise;
+      return nativePromise.then(
+        response => {
           record.status = response.status;
           record.duration = roundMs(performance.now() - started);
 
+          let responseBodyPromise;
           try {
-            record.responseBody = await readFetchResponse(response.clone());
+            responseBodyPromise = readFetchResponse(response.clone())
+              .catch(() => UNAVAILABLE);
           } catch {
-            record.responseBody = UNAVAILABLE;
+            responseBodyPromise = Promise.resolve(UNAVAILABLE);
           }
-        } catch {
-          record.status = null;
-          record.duration = roundMs(performance.now() - started);
-          record.responseBody = UNAVAILABLE;
-        } finally {
-          record.done = true;
-        }
-      })());
 
-      return nativePromise;
+          trackPending(state, (async () => {
+            try {
+              record.requestBody = await requestBodyPromise;
+              record.responseBody = await responseBodyPromise;
+            } finally {
+              record.done = true;
+            }
+          })());
+
+          return response;
+        },
+        error => {
+          trackPending(state, (async () => {
+            try {
+              record.requestBody = await requestBodyPromise;
+              record.status = null;
+              record.duration = roundMs(performance.now() - started);
+              record.responseBody = UNAVAILABLE;
+            } finally {
+              record.done = true;
+            }
+          })());
+
+          throw error;
+        }
+      );
     };
 
     state.xhrOpenWrapper = function networkRecorderXhrOpen(method, url) {
