@@ -4,17 +4,9 @@
   const PRODUCT_UID = 'api::product.product';
   const CATEGORY_UID = 'api::category.category';
   const HEADERS = [
-    'id',
     'documentId',
-    'name',
-    'key',
     'categoryState',
-    'missingCount',
-    'missingFields',
-    'name1',
-    'name2',
-    'hasDetailPicture',
-    'detailTextLength'
+    'missingFields'
   ];
   const rows = [];
 
@@ -318,19 +310,9 @@ const downloadCSV = (items, headersList, filename) => {
 
     if (categoryState !== 'normal' || missing.length) {
       rows.push({
-        id: detail.id ?? item.id ?? '',
         documentId: item.documentId,
-        name: detail.name ?? item.name ?? '',
-        key: detail.key ?? item.key ?? '',
         categoryState,
-        missingCount: missing.length,
-        missingFields: missing.join(', '),
-        name1: detail.name1 ?? '',
-        name2: detail.name2 ?? '',
-        hasDetailPicture: hasMedia(detail.detail_picture),
-        detailTextLength: hasText(detail.detail_text)
-          ? String(detail.detail_text).trim().length
-          : 0
+        missingFields: missing.join(', ')
       });
     }
 
