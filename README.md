@@ -73,7 +73,7 @@ Loader валидирует каждый дочерний manifest и итого
 - `products-without-attributes.js` — активные товары в текущем состоянии CMS без `attributes`.
 - `products-without-categories.js` — активные товары в текущем состоянии CMS без `categories`.
 - `products-with-wrong-prices.js` — attributes активных товаров в текущем состоянии CMS с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
-- `products-with-missing-content.js` — активные товары в текущем состоянии CMS без критичных контентных полей; товары из категорий `kns3po2mz8hq9kezm3szbvjg` и `a4zy2gvb479ku9nd6py5uxzh` исключаются из отчёта.
+- `products-with-missing-content.js` — проверяет критичные контентные поля активных товаров с учётом `categories.active`: товары только в отключённых категориях пропускаются, а товары без categories или со смешанными active/inactive categories всегда попадают в отчёт как edge cases.
 - `products-with-wrong-variants.js` — активные товары в текущем состоянии CMS с неконсистентным выбором вариантов по `shade`/`volume`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
