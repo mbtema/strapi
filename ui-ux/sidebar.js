@@ -89,6 +89,14 @@
             ]
         },
         {
+            id: 'mobile-home',
+            title: 'Главная страница MOBILE',
+            collapsed: false,
+            singleUids: [
+                'api::home-page.home-page'
+            ]
+        },
+        {
             id: 'web-home',
             title: 'Главная страница WEB',
             collapsed: false,
