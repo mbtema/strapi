@@ -63,9 +63,14 @@
 
           let responseBodyPromise;
           try {
-            responseBodyPromise = readFetchResponse(response.clone())
-              .catch(() => UNAVAILABLE);
-          } catch {
+            const clone = response.clone();
+            responseBodyPromise = readFetchResponse(clone)
+              .catch(error => {
+                record.responseError = formatError('read', error);
+                return UNAVAILABLE;
+              });
+          } catch (error) {
+            record.responseError = formatError('clone', error);
             responseBodyPromise = Promise.resolve(UNAVAILABLE);
           }
 
@@ -242,6 +247,7 @@
       duration: null,
       requestBody: null,
       responseBody: UNAVAILABLE,
+      responseError: '',
       done: false
     };
 
@@ -258,7 +264,8 @@
       status: record.status,
       duration: record.duration,
       requestBody: record.requestBody,
-      responseBody: record.responseBody
+      responseBody: record.responseBody,
+      ...(record.responseError ? { responseError: record.responseError } : {})
     };
   }
 
@@ -491,6 +498,12 @@
       type.includes('application/pdf') ||
       type.includes('application/zip') ||
       type.includes('application/x-zip');
+  }
+
+  function formatError(stage, error) {
+    const name = error?.name || 'Error';
+    const message = error?.message || String(error || 'unknown error');
+    return `${stage}: ${name}: ${message}`;
   }
 
   function roundMs(value) {
