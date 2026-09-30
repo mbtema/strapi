@@ -447,7 +447,6 @@
     }
 
     function applyVisibility() {
-        restoreFilterGroupLayout();
         clearManagedVisibility();
 
         if (!isProductEntry() || !currentPanel) return;
