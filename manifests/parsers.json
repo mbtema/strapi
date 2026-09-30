@@ -32,8 +32,8 @@
       "group": "service"
     },
     {
-      "file": "product-layout-sync.js",
-      "version": "1.0.4",
+      "file": "layout-sync.js",
+      "version": "1.0.5",
       "group": "service"
     }
   ]
