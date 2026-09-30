@@ -204,6 +204,16 @@
       }
     }
 
+    for (const name of fieldNames) {
+      if (markerByName.has(name)) continue;
+
+      const fallback = [...textCandidates].find(element =>
+        String(element.textContent || '').includes(name)
+      );
+
+      if (fallback) markerByName.set(name, [fallback]);
+    }
+
     return markerByName;
   }
 
