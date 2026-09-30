@@ -2,6 +2,7 @@
     'use strict';
 
     const STYLE_ID = 'tm-product-attributes-navigator-style';
+    const CREATED_ATTR = 'data-tm-created';
     const ROOT = 'data-tm-attributes-navigator-root';
     const PANEL = 'data-tm-attributes-navigator';
     const NATIVE = 'data-tm-attributes-native';
@@ -278,6 +279,7 @@
 
     function createPanel() {
         const panel = el('div');
+        panel.setAttribute(CREATED_ATTR, 'product-attributes-navigator');
         panel.setAttribute(PANEL, '');
 
         const search = el('input', 'tm-pan-search');
