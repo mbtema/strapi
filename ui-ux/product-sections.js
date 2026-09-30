@@ -146,11 +146,11 @@
                 margin:0;
                 padding:4px 0 8px;
                 border-bottom:1px solid #3f3f5f;
-                color:#c0c0cf;
+                color:#fff;
                 font:inherit;
-                font-size:13px;
-                font-weight:600;
-                line-height:18px;
+                font-size:16px;
+                font-weight:700;
+                line-height:22px;
             }
         `;
     }
