@@ -4,13 +4,13 @@
     {
       "id": "sidebar",
       "path": "ui-ux/sidebar.js",
-      "version": "2.5.0",
+      "version": "2.5.1",
       "enabled": true
     },
     {
       "id": "record-list",
       "path": "ui-ux/record-list.js",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "enabled": true
     },
     {
@@ -22,19 +22,19 @@
     {
       "id": "entry-relocate",
       "path": "ui-ux/entry-relocate.js",
-      "version": "1.4.7",
+      "version": "1.4.8",
       "enabled": true
     },
     {
       "id": "product-attributes-navigator",
       "path": "ui-ux/product-attributes-navigator.js",
-      "version": "1.0.4",
+      "version": "1.0.5",
       "enabled": true
     },
     {
       "id": "product-sections",
       "path": "ui-ux/product-sections.js",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "enabled": true
     }
   ]
