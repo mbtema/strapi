@@ -6,7 +6,7 @@
 >
 > Для текущего code/version/manifest/Issue/API payload/Network/UI всегда проверять live source; изменяемое техническое состояние выше этого snapshot.
 
-**Последняя консолидация:** 2026-09-29  
+**Последняя консолидация:** 2026-09-30  
 **Repo:** `mbtema/strapi`  
 **Strapi backend:** `http://10.10.3.80:1337`  
 **Локали:** `ru`, `kk`
@@ -112,6 +112,26 @@ Workflow:
 - hard reload сбрасывает session; SPA-навигация внутри вкладки запись не сбрасывает.
 
 Подтверждено в реальном Strapi: Content Manager GET/PUT/POST requests, request payload и JSON response корректно попадают в dump.
+
+## CANONICAL — ссылки на записи в Content Manager list view
+
+Прямой URL карточки collection type использует `documentId`:
+
+```text
+/admin/content-manager/collection-types/<uid>/<documentId>?plugins[i18n][locale]=ru
+```
+
+В DOM строки list view может быть доступен только числовой `id`, поэтому `href="#"` нельзя использовать как ссылку на запись: Vimium распознаёт её, но Ctrl/Meta-click и middle-click открывают текущий list view вместо карточки.
+
+Рабочая стратегия:
+- для текущей страницы списка одним GET через Content Manager получить записи и построить map `id → documentId`;
+- ссылка строки получает реальный `href` с `documentId`, поэтому Vimium, Ctrl/Meta-click и middle-click работают нативно;
+- обычный click может вызывать штатный `row.click()`, сохраняя поведение React/Strapi;
+- lookup кэшировать по текущему UID + query страницы, чтобы React re-render/MutationObserver не создавал повторные GET;
+- при временной ошибке GET сделать один retry;
+- если lookup повторно не сработал, обычный click/Vimium деградируют до `row.click()`, а middle-click не должен открывать заведомо неправильный URL.
+
+Для UI штатный checkbox не копировать: его можно переместить в общий flex-контейнер рядом с собственной ссылкой, сохраняя React handlers/state/disabled/loading.
 
 ---
 
