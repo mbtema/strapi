@@ -362,7 +362,7 @@
       if (className.startsWith('tm-')) result.push(`.${className}`);
     }
 
-    for (const attribute of element.attributes) {
+    for (const attribute of Array.from(element.attributes)) {
       if (attribute.name.startsWith('data-tm-')) {
         result.push(
           attribute.value
