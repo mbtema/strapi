@@ -6,6 +6,8 @@
     const DOCUMENT_TABLIST_SELECTOR = '[role="tablist"][aria-label="Document status"]';
     const TOOLBAR_SELECTOR = '[data-tm-entry-toolbar="true"]';
     const ACTIONS_SELECTOR = '[data-tm-entry-actions="true"]';
+    const CREATED_ATTR = 'data-tm-created';
+    const MODIFIED_ATTR = 'data-tm-modified';
 
     let currentState = null;
     let frameScheduled = false;
@@ -250,6 +252,7 @@
         const toolbar = document.createElement('div');
         const actions = document.createElement('div');
 
+        toolbar.setAttribute(CREATED_ATTR, 'entry-relocate');
         toolbar.dataset.tmEntryToolbar = 'true';
         actions.dataset.tmEntryActions = 'true';
 
@@ -279,6 +282,7 @@
         if (!parent) return null;
 
         parent.insertBefore(toolbar, tabList);
+        tabList.setAttribute(MODIFIED_ATTR, 'entry-relocate');
         toolbar.appendChild(tabList);
         toolbar.appendChild(actions);
 
@@ -299,6 +303,8 @@
             const actions = existingToolbar.querySelector(ACTIONS_SELECTOR);
 
             if (actions) {
+                existingToolbar.setAttribute(CREATED_ATTR, 'entry-relocate');
+                tabList.setAttribute(MODIFIED_ATTR, 'entry-relocate');
                 state.tabList = tabList;
                 state.toolbar = existingToolbar;
                 state.actions = actions;
@@ -347,6 +353,7 @@
 
         orderedButtons.forEach(button => {
             rememberButtonOrigin(state, button);
+            button.setAttribute(MODIFIED_ATTR, 'entry-relocate');
             actions.appendChild(button);
         });
 
@@ -366,6 +373,8 @@
         origins.forEach(([button, origin]) => {
             if (!document.contains(button)) return;
             if (!origin.parent || !document.contains(origin.parent)) return;
+
+            button.removeAttribute(MODIFIED_ATTR);
 
             if (
                 origin.nextSibling &&
@@ -392,6 +401,10 @@
             toolbar.parentNode
         ) {
             toolbar.parentNode.insertBefore(tabList, toolbar);
+        }
+
+        if (tabList && document.contains(tabList)) {
+            tabList.removeAttribute(MODIFIED_ATTR);
         }
 
         if (toolbar && document.contains(toolbar)) {
