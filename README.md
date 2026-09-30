@@ -54,7 +54,7 @@ Loader валидирует каждый дочерний manifest и итого
 - `list-view.js` — доработки list view Content Manager.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
 - `product-attributes-navigator.js` — навигация по торговым предложениям в карточке товара: загрузка всех relation `attributes`, поиск, пагинация и прямые ссылки; режим «Управление связями» раскрывает штатный Strapi relation list.
-- `product-sections.js` — разделяет карточку Product на вкладки `Контент`, `Фильтры`, `Системное`, распределяя существующие Strapi-поля по API name без их копирования; внутри `Фильтры` поддерживает смысловые группы: `Парфюмерия` (`fragrance_group`, `fragrance_concentration`) и ниже `Макияж` (`shade_groups`, `release_form`, `finish`, `coverage`, `product_features`).
+- `product-sections.js` — разделяет карточку Product на вкладки `Контент`, `Фильтры`, `Системное` и показывает смысловые заголовки групп `Парфюмерия` / `Макияж`; нативные React-поля больше не перемещает в DOM, а только управляет show/hide. Порядок полей хранится штатно в Strapi `layouts.edit` и при необходимости синхронизируется через `product-layout-sync.js`.
 
 ## Версионирование extensions
 
