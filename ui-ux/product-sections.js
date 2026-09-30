@@ -48,6 +48,24 @@
                 'coverage',
                 'product_features'
             ])
+        },
+        {
+            id: 'skin-care',
+            title: 'Уход за кожей',
+            fields: new Set(),
+            placeholder: true
+        },
+        {
+            id: 'hair-care',
+            title: 'Уход за волосами',
+            fields: new Set(),
+            placeholder: true
+        },
+        {
+            id: 'other',
+            title: 'Другое',
+            fields: new Set(),
+            placeholder: true
         }
     ];
 
@@ -309,6 +327,20 @@
         const childOrder = new Map(
             [...stack.children].map((child, index) => [child, index])
         );
+        const assignedFields = new Set(
+            FILTER_GROUPS.flatMap(group => [...group.fields])
+        );
+        const ungroupedFilterRows = [...rows]
+            .filter(([, rowMarkers]) =>
+                rowMarkers.some(marker => FILTER_FIELDS.has(marker.name)) &&
+                !rowMarkers.some(marker => assignedFields.has(marker.name))
+            )
+            .map(([row]) => row)
+            .sort((a, b) =>
+                (childOrder.get(a) ?? Number.MAX_SAFE_INTEGER) -
+                (childOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
+            );
+        const placeholderAnchor = ungroupedFilterRows[0] || null;
 
         for (const group of FILTER_GROUPS) {
             const groupRows = [...rows]
@@ -325,7 +357,7 @@
                 `:scope > [${FILTER_GROUP_TITLE_ATTR}="${group.id}"]`
             );
 
-            if (!groupRows.length) {
+            if (!groupRows.length && !group.placeholder) {
                 existingTitle?.remove();
                 continue;
             }
@@ -344,11 +376,17 @@
 
             const firstRow = groupRows[0];
 
-            if (
-                firstRow &&
-                title.nextElementSibling !== firstRow
-            ) {
-                stack.insertBefore(title, firstRow);
+            if (firstRow) {
+                if (title.nextElementSibling !== firstRow) {
+                    stack.insertBefore(title, firstRow);
+                }
+                continue;
+            }
+
+            if (placeholderAnchor) {
+                stack.insertBefore(title, placeholderAnchor);
+            } else if (title.parentElement !== stack || title !== stack.lastElementChild) {
+                stack.appendChild(title);
             }
         }
     }
