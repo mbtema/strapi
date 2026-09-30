@@ -1,7 +1,7 @@
 (async () => {
   'use strict';
 
-  const VERSION = '1.0.2';
+  const VERSION = '1.0.3';
   const PRODUCT_UID = 'api::product.product';
   const PRODUCT_ENTRY_RE = /^\/admin\/content-manager\/collection-types\/api::product\.product\/([^/]+)\/?$/;
   const CONFIG_URL = '/content-manager/content-types/' + PRODUCT_UID + '/configuration';
@@ -402,6 +402,18 @@
     return JSON.stringify(a) === JSON.stringify(b);
   }
 
+  function sanitizeMetadatasForPut(metadatas) {
+    const cleaned = JSON.parse(JSON.stringify(metadatas));
+
+    for (const metadata of Object.values(cleaned || {})) {
+      if (metadata?.list && typeof metadata.list === 'object') {
+        delete metadata.list.mainField;
+      }
+    }
+
+    return cleaned;
+  }
+
   function printLayout(label, layout) {
     console.log('[product-layout-sync] ' + label);
 
@@ -548,7 +560,7 @@
       edit: desiredLayout
     },
     settings: configuration.settings,
-    metadatas: configuration.metadatas
+    metadatas: sanitizeMetadatasForPut(configuration.metadatas)
   };
 
   console.log('[product-layout-sync] Записываю configuration...');
