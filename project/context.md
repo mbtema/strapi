@@ -532,6 +532,18 @@ shareUrl
 
 Остальное — `Контент`. Основной identifier поля — реальный API `name`; label/hint только fallback. UI logic должна работать с существующими React fields, не создавать их копии.
 
+### CANONICAL — Product card layout + sections
+
+`ui-ux/product-sections.js` отвечает только за вкладки `Контент / Фильтры / Системное`, show/hide полей и смысловые заголовки групп. Нативные React fields не перемещать между DOM-контейнерами: это конфликтует с внутренним SPA/focus Strapi.
+
+Штатный порядок карточки хранится в Content Manager configuration:
+
+```text
+GET/PUT /content-manager/content-types/api::product.product/configuration
+```
+
+Source of truth для физического порядка — `layouts.edit`. Service `parsers/product-layout-sync.js` используется после layout-изменений: читает текущий UI, делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
+
 ## Style-stealer UI origin semantics
 
 **Статус:** CANONICAL.
