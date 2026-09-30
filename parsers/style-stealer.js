@@ -2,8 +2,10 @@
   'use strict';
 
   const PARSER = 'style-stealer';
-  const VERSION = '1.0.3';
+  const VERSION = '1.1.0';
   const OUTPUT_FILE = 'style-stealer.json';
+  const CREATED_ATTR = 'data-tm-created';
+  const MODIFIED_ATTR = 'data-tm-modified';
   const BATCH_SIZE = 150;
   const MAX_EXAMPLES = 5;
   const MAX_SELECTOR_ERROR_SAMPLES = 20;
@@ -89,14 +91,16 @@
 
   const cssIndex = collectCssRules();
   const elements = [document.body, ...document.body.querySelectorAll('*')];
-  const customState = new WeakMap();
+  const kindState = new WeakMap();
 
   const buckets = {
     native: createBucket(),
+    modified: createBucket(),
     custom: createBucket()
   };
 
   let nativeElements = 0;
+  let modifiedElements = 0;
   let customElements = 0;
   let pseudoBefore = 0;
   let pseudoAfter = 0;
@@ -106,14 +110,14 @@
 
     for (let index = offset; index < end; index++) {
       const element = elements[index];
-      const parentCustom = element.parentElement
-        ? customState.get(element.parentElement) === true
-        : false;
-      const custom = parentCustom || hasOwnCustomMarker(element);
-      customState.set(element, custom);
+      const parentKind = element.parentElement
+        ? kindState.get(element.parentElement) || 'native'
+        : 'native';
+      const kind = classifyElement(element, parentKind);
+      kindState.set(element, kind);
 
-      const kind = custom ? 'custom' : 'native';
-      if (custom) customElements += 1;
+      if (kind === 'custom') customElements += 1;
+      else if (kind === 'modified') modifiedElements += 1;
       else nativeElements += 1;
 
       captureProfile(buckets[kind], element, null, cssIndex);
@@ -132,7 +136,7 @@
     }
 
     console.log(
-      `[style-stealer] ${end}/${elements.length} элементов | native ${nativeElements} | custom ${customElements} | profiles ${buckets.native.profiles.size + buckets.custom.profiles.size}`
+      `[style-stealer] ${end}/${elements.length} элементов | native ${nativeElements} | modified ${modifiedElements} | custom ${customElements} | profiles ${buckets.native.profiles.size + buckets.modified.profiles.size + buckets.custom.profiles.size}`
     );
 
     if (end < elements.length) {
@@ -141,6 +145,7 @@
   }
 
   const native = finalizeBucket(buckets.native);
+  const modified = finalizeBucket(buckets.modified);
   const custom = finalizeBucket(buckets.custom);
 
   const page = getPageMetadata();
@@ -155,10 +160,12 @@
     summary: {
       scannedElements: elements.length,
       nativeElements,
+      modifiedElements,
       customElements,
       pseudoBefore,
       pseudoAfter,
       nativeProfiles: native.profiles.length,
+      modifiedProfiles: modified.profiles.length,
       customProfiles: custom.profiles.length,
       cssStyleRules: cssIndex.rules.length,
       stylesheets: {
@@ -170,10 +177,14 @@
     },
     tokens: {
       native: native.tokens,
+      modified: modified.tokens,
       custom: custom.tokens
     },
     native: {
       profiles: native.profiles
+    },
+    modified: {
+      profiles: modified.profiles
     },
     custom: {
       profiles: custom.profiles
@@ -193,7 +204,7 @@
   }
 
   console.log(
-    `[style-stealer] Готово: ${elements.length} элементов | ${native.profiles.length + custom.profiles.length} profiles | ${Math.round(text.length / 1024).toLocaleString()} KB | ${durationMs} ms` +
+    `[style-stealer] Готово: ${elements.length} элементов | ${native.profiles.length + modified.profiles.length + custom.profiles.length} profiles | ${Math.round(text.length / 1024).toLocaleString()} KB | ${durationMs} ms` +
     (copied ? ' | JSON скопирован в буфер' : ` | JSON скачан: ${OUTPUT_FILE}`)
   );
 
@@ -281,7 +292,15 @@
     return { profiles, tokens };
   }
 
-  function hasOwnCustomMarker(element) {
+  function classifyElement(element, parentKind) {
+    if (element.hasAttribute(CREATED_ATTR)) return 'custom';
+    if (element.hasAttribute(MODIFIED_ATTR)) return 'modified';
+    if (parentKind === 'custom') return 'custom';
+    if (hasOwnTmMarker(element)) return 'modified';
+    return 'native';
+  }
+
+  function hasOwnTmMarker(element) {
     const id = String(element.getAttribute('id') || '');
     if (id.startsWith('tm-')) return true;
 
@@ -314,8 +333,8 @@
     if (ariaLabel) descriptor.ariaLabel = ariaLabel;
     if (text) descriptor.text = text;
 
-    const markers = getCustomMarkers(element);
-    if (markers.length) descriptor.customMarkers = markers;
+    const markers = getTmMarkers(element);
+    if (markers.length) descriptor.tmMarkers = markers;
 
     return descriptor;
   }
@@ -359,7 +378,7 @@
     return tag;
   }
 
-  function getCustomMarkers(element) {
+  function getTmMarkers(element) {
     const result = [];
     const id = String(element.getAttribute('id') || '');
 
