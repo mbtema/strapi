@@ -5,10 +5,8 @@
     const ROOT_SELECTOR = '[data-tm-product-sections="true"]';
     const STYLE_ID = 'tm-product-sections-style';
     const CREATED_ATTR = 'data-tm-created';
-    const MODIFIED_ATTR = 'data-tm-modified';
     const FILTER_GROUP_TITLE_ATTR = 'data-tm-product-filter-group-title';
     const FILTER_GROUP_ATTR = 'data-tm-product-filter-group';
-    const FILTER_GROUP_ROW_ATTR = 'data-tm-product-filter-group-row';
 
     const FILTER_FIELDS = new Set([
         'is_hypoallergenic',
@@ -90,7 +88,6 @@
     let activeTab = 'content';
     let frameScheduled = false;
     let currentPanel = null;
-    const filterBranchOrigins = new Map();
 
     function isProductEntry() {
         return location.pathname.startsWith(PRODUCT_PATH);
@@ -278,33 +275,7 @@
             });
     }
 
-    function restoreFilterGroupLayout() {
-        for (const [branch, origin] of filterBranchOrigins) {
-            if (!document.contains(branch)) continue;
-            if (!origin.parent || !document.contains(origin.parent)) continue;
-
-            branch.removeAttribute(MODIFIED_ATTR);
-
-            if (
-                origin.nextSibling &&
-                origin.nextSibling.parentElement === origin.parent
-            ) {
-                origin.parent.insertBefore(branch, origin.nextSibling);
-            } else {
-                origin.parent.appendChild(branch);
-            }
-        }
-
-        filterBranchOrigins.clear();
-
-        document
-            .querySelectorAll(`[${FILTER_GROUP_ROW_ATTR}]`)
-            .forEach(element => element.remove());
-    }
-
     function clearFilterGroupMarkers() {
-        restoreFilterGroupLayout();
-
         document
             .querySelectorAll(`[${FILTER_GROUP_TITLE_ATTR}]`)
             .forEach(element => element.remove());
@@ -330,74 +301,25 @@
         return title;
     }
 
-    function createFilterGroupRow(sourceRow, groupId) {
-        const row = document.createElement(sourceRow.tagName.toLowerCase());
-
-        if (typeof sourceRow.className === 'string' && sourceRow.className) {
-            row.className = sourceRow.className;
-        }
-
-        const inlineStyle = sourceRow.getAttribute('style');
-        if (inlineStyle) row.setAttribute('style', inlineStyle);
-
-        row.setAttribute(CREATED_ATTR, 'product-sections');
-        row.setAttribute(FILTER_GROUP_ROW_ATTR, groupId);
-        row.setAttribute(FILTER_GROUP_ATTR, groupId);
-
-        return row;
-    }
-
-    function moveGroupedBranch(branch, sourceRow, groupId) {
-        if (!filterBranchOrigins.has(branch)) {
-            filterBranchOrigins.set(branch, {
-                parent: sourceRow,
-                nextSibling: branch.nextSibling
-            });
-        }
-
-        branch.setAttribute(MODIFIED_ATTR, 'product-sections');
-
-        const row = createFilterGroupRow(sourceRow, groupId);
-        row.appendChild(branch);
-        return row;
-    }
-
     function applyFilterGroups(stack, rows) {
         for (const row of stack.querySelectorAll(`:scope > [${FILTER_GROUP_ATTR}]`)) {
             row.removeAttribute(FILTER_GROUP_ATTR);
         }
 
-        const managedNodes = [];
+        const childOrder = new Map(
+            [...stack.children].map((child, index) => [child, index])
+        );
 
         for (const group of FILTER_GROUPS) {
-            const groupRows = [];
-
-            for (const [row, rowMarkers] of rows) {
-                const branches = new Map();
-
-                for (const marker of rowMarkers) {
-                    const branch = directChildUnder(marker.element, row) || row;
-                    if (!branches.has(branch)) branches.set(branch, new Set());
-                    branches.get(branch).add(marker.name);
-                }
-
-                const groupedBranches = [...branches]
-                    .filter(([, names]) =>
-                        [...names].some(name => group.fields.has(name))
-                    )
-                    .map(([branch]) => branch);
-
-                if (!groupedBranches.length) continue;
-
-                if (groupedBranches.length === branches.size) {
-                    groupRows.push(row);
-                    continue;
-                }
-
-                for (const branch of groupedBranches) {
-                    groupRows.push(moveGroupedBranch(branch, row, group.id));
-                }
-            }
+            const groupRows = [...rows]
+                .filter(([, rowMarkers]) =>
+                    rowMarkers.some(marker => group.fields.has(marker.name))
+                )
+                .map(([row]) => row)
+                .sort((a, b) =>
+                    (childOrder.get(a) ?? Number.MAX_SAFE_INTEGER) -
+                    (childOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
+                );
 
             const existingTitle = stack.querySelector(
                 `:scope > [${FILTER_GROUP_TITLE_ATTR}="${group.id}"]`
@@ -420,20 +342,15 @@
                 row.setAttribute(FILTER_GROUP_ATTR, group.id);
             }
 
-            managedNodes.push(title, ...groupRows);
+            const firstRow = groupRows[0];
+
+            if (
+                firstRow &&
+                title.nextElementSibling !== firstRow
+            ) {
+                stack.insertBefore(title, firstRow);
+            }
         }
-
-        if (!managedNodes.length) return;
-
-        const alreadyAtTop = managedNodes.every(
-            (node, index) => stack.children[index] === node
-        );
-
-        if (alreadyAtTop) return;
-
-        const fragment = document.createDocumentFragment();
-        managedNodes.forEach(node => fragment.appendChild(node));
-        stack.prepend(fragment);
     }
 
     function getSection(names) {
