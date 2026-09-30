@@ -37,6 +37,17 @@
                 'fragrance_group',
                 'fragrance_concentration'
             ])
+        },
+        {
+            id: 'makeup',
+            title: 'Макияж',
+            fields: new Set([
+                'shade_groups',
+                'release_form',
+                'finish',
+                'coverage',
+                'product_features'
+            ])
         }
     ];
 
