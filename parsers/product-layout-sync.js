@@ -1,6 +1,7 @@
 (async () => {
   'use strict';
 
+  const VERSION = '1.0.2';
   const PRODUCT_UID = 'api::product.product';
   const PRODUCT_ENTRY_RE = /^\/admin\/content-manager\/collection-types\/api::product\.product\/([^/]+)\/?$/;
   const CONFIG_URL = '/content-manager/content-types/' + PRODUCT_UID + '/configuration';
@@ -214,6 +215,17 @@
       if (fallback) markerByName.set(name, [fallback]);
     }
 
+    if (!markerByName.has('relatedProductsSlider')) {
+      const sliderLabel = [...panel.querySelectorAll('label')]
+        .find(label =>
+          String(label.textContent || '').includes('relatedProductsSlider')
+        );
+
+      if (sliderLabel) {
+        markerByName.set('relatedProductsSlider', [sliderLabel]);
+      }
+    }
+
     return markerByName;
   }
 
@@ -402,6 +414,7 @@
     );
   }
 
+  console.log('[product-layout-sync] v' + VERSION + ' start');
   console.log('[product-layout-sync] Читаю штатную configuration...');
 
   const configuration = await getConfiguration('GET configuration');
