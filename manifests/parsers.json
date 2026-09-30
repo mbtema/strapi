@@ -30,6 +30,11 @@
       "file": "style-stealer.js",
       "version": "1.1.0",
       "group": "service"
+    },
+    {
+      "file": "product-layout-sync.js",
+      "version": "1.0.0",
+      "group": "service"
     }
   ]
 }
