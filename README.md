@@ -73,6 +73,7 @@ Loader валидирует каждый дочерний manifest и итого
 - `products-wrong-variants.js` — проверяет варианты `shade`/`volume` у attributes активных товаров и формирует компактный отчёт `documentId` + `errorType`.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
+- `style-stealer.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `custom`; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
 - `manifests/parsers.json` — runtime-источник `file`, semver `version` и `group` для Parser Launcher; `group` задаётся только здесь.
 
 Для нового parser добавь файл в `parsers/` и зарегистрируй его в `manifests/parsers.json` через `file`, `version` и `group`. `version` и `group` внутри parser-файла не дублируются.
@@ -125,6 +126,7 @@ README обновляется, когда меняются структура, �
 ├── parsers/
 │   ├── dom-stealer.js
 │   ├── network-recorder.js
+│   ├── style-stealer.js
 │   ├── products-missing-content.js
 │   ├── products-wrong-variants.js
 │   └── attributes-wrong-prices.js
