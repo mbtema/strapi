@@ -2,6 +2,7 @@
   'use strict';
 
   const PARSER = 'style-stealer';
+  const VERSION = '1.0.3';
   const OUTPUT_FILE = 'style-stealer.json';
   const BATCH_SIZE = 150;
   const MAX_EXAMPLES = 5;
@@ -83,6 +84,7 @@
     return;
   }
 
+  console.log(`[style-stealer] v${VERSION} start`);
   console.log('[style-stealer] Подготовка CSS rules...');
 
   const cssIndex = collectCssRules();
@@ -146,6 +148,10 @@
 
   const dump = {
     page,
+    parser: {
+      name: PARSER,
+      version: VERSION
+    },
     summary: {
       scannedElements: elements.length,
       nativeElements,
@@ -285,8 +291,8 @@
 
     if (classes.some(name => name.startsWith('tm-'))) return true;
 
-    return Array.from(element.attributes)
-      .some(attribute => attribute.name.startsWith('data-tm-'));
+    return element.getAttributeNames()
+      .some(name => name.startsWith('data-tm-'));
   }
 
   function describeElement(element, pseudo) {
@@ -325,13 +331,14 @@
     const name = element.getAttribute('name');
     if (name) return `${tag}[name="${escapeAttribute(name)}"]`;
 
-    const tmAttr = Array.from(element.attributes)
-      .find(attribute => attribute.name.startsWith('data-tm-'));
+    const tmAttrName = element.getAttributeNames()
+      .find(name => name.startsWith('data-tm-'));
 
-    if (tmAttr) {
-      return tmAttr.value
-        ? `${tag}[${tmAttr.name}="${escapeAttribute(tmAttr.value)}"]`
-        : `${tag}[${tmAttr.name}]`;
+    if (tmAttrName) {
+      const tmAttrValue = element.getAttribute(tmAttrName);
+      return tmAttrValue
+        ? `${tag}[${tmAttrName}="${escapeAttribute(tmAttrValue)}"]`
+        : `${tag}[${tmAttrName}]`;
     }
 
     const role = element.getAttribute('role');
@@ -362,14 +369,15 @@
       if (className.startsWith('tm-')) result.push(`.${className}`);
     }
 
-    for (const attribute of Array.from(element.attributes)) {
-      if (attribute.name.startsWith('data-tm-')) {
-        result.push(
-          attribute.value
-            ? `[${attribute.name}="${attribute.value}"]`
-            : `[${attribute.name}]`
-        );
-      }
+    for (const name of element.getAttributeNames()) {
+      if (!name.startsWith('data-tm-')) continue;
+      const value = element.getAttribute(name);
+
+      result.push(
+        value
+          ? `[${name}="${value}"]`
+          : `[${name}]`
+      );
     }
 
     return result;
