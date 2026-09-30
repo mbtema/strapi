@@ -285,7 +285,7 @@
 
     if (classes.some(name => name.startsWith('tm-'))) return true;
 
-    return [...element.attributes]
+    return Array.from(element.attributes)
       .some(attribute => attribute.name.startsWith('data-tm-'));
   }
 
@@ -325,7 +325,7 @@
     const name = element.getAttribute('name');
     if (name) return `${tag}[name="${escapeAttribute(name)}"]`;
 
-    const tmAttr = [...element.attributes]
+    const tmAttr = Array.from(element.attributes)
       .find(attribute => attribute.name.startsWith('data-tm-'));
 
     if (tmAttr) {
@@ -386,7 +386,7 @@
     const visited = new WeakSet();
     let readableStylesheets = 0;
 
-    [...document.styleSheets].forEach((sheet, index) => {
+    Array.from(document.styleSheets).forEach((sheet, index) => {
       walkStyleSheet(sheet, sheet.href || `inline:${index + 1}`);
     });
 
@@ -416,7 +416,7 @@
     }
 
     function walkRuleList(ruleList, source, context) {
-      for (const rule of ruleList) {
+      for (const rule of Array.from(ruleList)) {
         if (rule.type === CSSRule.STYLE_RULE) {
           const declarations = pickRuleDeclarations(rule.style);
           if (!Object.keys(declarations).length) continue;
@@ -480,7 +480,8 @@
   function pickRuleDeclarations(style) {
     const result = {};
 
-    for (const property of style) {
+    for (let index = 0; index < style.length; index++) {
+      const property = style.item(index);
       if (!isRelevantDeclaration(property)) continue;
 
       const value = style.getPropertyValue(property).trim();
@@ -510,6 +511,24 @@
   function matchCssRules(element, pseudo, rules) {
     const matched = [];
     const seen = new Set();
+
+    if (!pseudo) {
+      const inlineDeclarations = pickRuleDeclarations(element.style);
+
+      if (Object.keys(inlineDeclarations).length) {
+        matched.push({
+          selector: '[style]',
+          source: 'element.style',
+          declarations: inlineDeclarations
+        });
+        seen.add(JSON.stringify([
+          '[style]',
+          'element.style',
+          [],
+          inlineDeclarations
+        ]));
+      }
+    }
 
     for (const rule of rules) {
       const selectors = splitSelectorList(rule.selector);
