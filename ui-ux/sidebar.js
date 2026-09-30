@@ -2,6 +2,7 @@
     'use strict';
 
     const STYLE_ID = 'tm-sidebar-style';
+    const CREATED_ATTR = 'data-tm-created';
     const SIDEBAR_STATE_KEY = 'tm-strapi-sidebar-hidden-v1';
     const GROUP_STATE_KEY = 'tm-strapi-sidebar-groups-v1';
 
@@ -925,6 +926,7 @@
 
     function createToolbar() {
         const wrapper = document.createElement('div');
+        wrapper.setAttribute(CREATED_ATTR, 'sidebar');
         wrapper.setAttribute(TOOLBAR_ATTR, '');
 
         const search = document.createElement('input');
@@ -979,6 +981,7 @@
 
         if (!header) {
             header = document.createElement('li');
+            header.setAttribute(CREATED_ATTR, 'sidebar');
             header.setAttribute(GROUP_HEADER_ATTR, group.id);
 
             const button = document.createElement('button');
@@ -1116,6 +1119,7 @@
 
     function createIcon(name) {
         const icon = document.createElement('span');
+        icon.setAttribute(CREATED_ATTR, 'sidebar');
         icon.setAttribute(ICON_ATTR, name);
         icon.setAttribute('aria-hidden', 'true');
         icon.innerHTML = `<svg viewBox="0 0 24 24" focusable="false">${ICONS[name] || ICONS.sliders}</svg>`;
