@@ -4,6 +4,8 @@
     const GLOBAL_KEY = '__tmRecordList';
     const LEGACY_SCROLLBAR_KEY = '__tmRecordListScrollbars';
     const STYLE_ID = 'tm-record-list-style';
+    const CREATED_ATTR = 'data-tm-created';
+    const MODIFIED_ATTR = 'data-tm-modified';
 
     const HIDDEN_ATTR = 'data-tm-record-list-scrollbars-hidden';
     const SHADOW_ATTR = 'data-tm-record-list-overflow-shadow';
@@ -155,6 +157,7 @@
                 const cell = wrapper.closest('td');
 
                 if (checkbox && cell) {
+                    checkbox.removeAttribute(MODIFIED_ATTR);
                     cell.insertBefore(checkbox, wrapper);
                 }
 
@@ -425,12 +428,19 @@
 
             if (!wrapper) {
                 wrapper = document.createElement('div');
+                wrapper.setAttribute(CREATED_ATTR, 'record-list');
                 wrapper.setAttribute(ACTIONS_ATTR, '');
 
                 firstCell.insertBefore(wrapper, checkbox);
+                checkbox.setAttribute(MODIFIED_ATTR, 'record-list');
                 wrapper.appendChild(checkbox);
-            } else if (checkbox.parentElement !== wrapper) {
-                wrapper.insertBefore(checkbox, wrapper.firstChild);
+            } else {
+                wrapper.setAttribute(CREATED_ATTR, 'record-list');
+                checkbox.setAttribute(MODIFIED_ATTR, 'record-list');
+
+                if (checkbox.parentElement !== wrapper) {
+                    wrapper.insertBefore(checkbox, wrapper.firstChild);
+                }
             }
 
             if (!link) {
