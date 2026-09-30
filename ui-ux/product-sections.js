@@ -5,8 +5,10 @@
     const ROOT_SELECTOR = '[data-tm-product-sections="true"]';
     const STYLE_ID = 'tm-product-sections-style';
     const CREATED_ATTR = 'data-tm-created';
+    const MODIFIED_ATTR = 'data-tm-modified';
     const FILTER_GROUP_TITLE_ATTR = 'data-tm-product-filter-group-title';
     const FILTER_GROUP_ATTR = 'data-tm-product-filter-group';
+    const FILTER_GROUP_ROW_ATTR = 'data-tm-product-filter-group-row';
 
     const FILTER_FIELDS = new Set([
         'is_hypoallergenic',
@@ -88,6 +90,7 @@
     let activeTab = 'content';
     let frameScheduled = false;
     let currentPanel = null;
+    const filterBranchOrigins = new Map();
 
     function isProductEntry() {
         return location.pathname.startsWith(PRODUCT_PATH);
@@ -275,7 +278,33 @@
             });
     }
 
+    function restoreFilterGroupLayout() {
+        for (const [branch, origin] of filterBranchOrigins) {
+            if (!document.contains(branch)) continue;
+            if (!origin.parent || !document.contains(origin.parent)) continue;
+
+            branch.removeAttribute(MODIFIED_ATTR);
+
+            if (
+                origin.nextSibling &&
+                origin.nextSibling.parentElement === origin.parent
+            ) {
+                origin.parent.insertBefore(branch, origin.nextSibling);
+            } else {
+                origin.parent.appendChild(branch);
+            }
+        }
+
+        filterBranchOrigins.clear();
+
+        document
+            .querySelectorAll(`[${FILTER_GROUP_ROW_ATTR}]`)
+            .forEach(element => element.remove());
+    }
+
     function clearFilterGroupMarkers() {
+        restoreFilterGroupLayout();
+
         document
             .querySelectorAll(`[${FILTER_GROUP_TITLE_ATTR}]`)
             .forEach(element => element.remove());
@@ -301,6 +330,38 @@
         return title;
     }
 
+    function createFilterGroupRow(sourceRow, groupId) {
+        const row = document.createElement(sourceRow.tagName.toLowerCase());
+
+        if (typeof sourceRow.className === 'string' && sourceRow.className) {
+            row.className = sourceRow.className;
+        }
+
+        const inlineStyle = sourceRow.getAttribute('style');
+        if (inlineStyle) row.setAttribute('style', inlineStyle);
+
+        row.setAttribute(CREATED_ATTR, 'product-sections');
+        row.setAttribute(FILTER_GROUP_ROW_ATTR, groupId);
+        row.setAttribute(FILTER_GROUP_ATTR, groupId);
+
+        return row;
+    }
+
+    function moveGroupedBranch(branch, sourceRow, groupId) {
+        if (!filterBranchOrigins.has(branch)) {
+            filterBranchOrigins.set(branch, {
+                parent: sourceRow,
+                nextSibling: branch.nextSibling
+            });
+        }
+
+        branch.setAttribute(MODIFIED_ATTR, 'product-sections');
+
+        const row = createFilterGroupRow(sourceRow, groupId);
+        row.appendChild(branch);
+        return row;
+    }
+
     function applyFilterGroups(stack, rows) {
         for (const row of stack.querySelectorAll(`:scope > [${FILTER_GROUP_ATTR}]`)) {
             row.removeAttribute(FILTER_GROUP_ATTR);
@@ -312,8 +373,29 @@
             const groupRows = [];
 
             for (const [row, rowMarkers] of rows) {
-                if (rowMarkers.some(marker => group.fields.has(marker.name))) {
+                const branches = new Map();
+
+                for (const marker of rowMarkers) {
+                    const branch = directChildUnder(marker.element, row) || row;
+                    if (!branches.has(branch)) branches.set(branch, new Set());
+                    branches.get(branch).add(marker.name);
+                }
+
+                const groupedBranches = [...branches]
+                    .filter(([, names]) =>
+                        [...names].some(name => group.fields.has(name))
+                    )
+                    .map(([branch]) => branch);
+
+                if (!groupedBranches.length) continue;
+
+                if (groupedBranches.length === branches.size) {
                     groupRows.push(row);
+                    continue;
+                }
+
+                for (const branch of groupedBranches) {
+                    groupRows.push(moveGroupedBranch(branch, row, group.id));
                 }
             }
 
@@ -365,6 +447,7 @@
     }
 
     function applyVisibility() {
+        restoreFilterGroupLayout();
         clearManagedVisibility();
 
         if (!isProductEntry() || !currentPanel) return;
