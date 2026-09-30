@@ -25,6 +25,11 @@
       "file": "network-recorder.js",
       "version": "1.0.2",
       "group": "service"
+    },
+    {
+      "file": "style-stealer.js",
+      "version": "1.0.0",
+      "group": "service"
     }
   ]
-}
+}\n
