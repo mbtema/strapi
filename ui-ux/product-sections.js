@@ -95,7 +95,7 @@
             ${ROOT_SELECTOR} {
                 display:flex !important;
                 align-items:center !important;
-                gap:6px !important;
+                gap:0 !important;
                 width:100% !important;
                 margin:0 0 12px !important;
                 padding:0 !important;
@@ -111,27 +111,38 @@
                 box-shadow:none !important;
             }
             ${ROOT_SELECTOR} [data-tm-product-section-tab] {
-                min-height:34px;
-                padding:7px 12px;
-                border:1px solid transparent;
-                border-radius:6px;
+                position:relative;
+                min-height:47px;
+                padding:16px;
+                border:0;
+                border-radius:0;
                 background:transparent;
                 color:#a5a5ba;
                 font:inherit;
-                font-size:13px;
-                font-weight:500;
-                line-height:18px;
+                font-size:10px;
+                font-weight:400;
+                line-height:15px;
+                text-transform:uppercase;
                 cursor:pointer;
             }
+            ${ROOT_SELECTOR} [data-tm-product-section-tab]::after {
+                content:"";
+                position:absolute;
+                right:0;
+                bottom:0;
+                left:0;
+                height:2px;
+                background:currentColor;
+                opacity:0;
+            }
             ${ROOT_SELECTOR} [data-tm-product-section-tab]:hover {
-                background:#212134;
-                color:#dcdce4;
+                color:#c0c0cf;
             }
             ${ROOT_SELECTOR} [data-tm-product-section-tab][aria-selected="true"] {
-                border-color:#5b5b80;
-                background:#302c6f;
-                color:#fff;
-                font-weight:600;
+                color:#7b79ff;
+            }
+            ${ROOT_SELECTOR} [data-tm-product-section-tab][aria-selected="true"]::after {
+                opacity:1;
             }
             [data-tm-product-section-hidden="true"] {
                 display:none !important;
@@ -149,8 +160,8 @@
                 border-bottom:1px solid #3f3f5f;
                 color:#fff;
                 font:inherit;
-                font-size:16px;
-                font-weight:700;
+                font-size:18px;
+                font-weight:600;
                 line-height:22px;
             }
         `;
