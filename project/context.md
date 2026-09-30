@@ -532,6 +532,18 @@ shareUrl
 
 Остальное — `Контент`. Основной identifier поля — реальный API `name`; label/hint только fallback. UI logic должна работать с существующими React fields, не создавать их копии.
 
+## Style-stealer UI origin semantics
+
+**Статус:** CANONICAL.
+
+Для design snapshot страницы `parsers/style-stealer.js` делит UI на три происхождения:
+
+- `native` — нативный Strapi без наших маркеров;
+- `modified` — нативный DOM-узел, изменённый extension; обычные `data-tm-*` / `tm-*` на самом элементе означают modified;
+- `custom` — UI, созданный extension; root помечается `data-tm-created="<extension-id>"`, его собственные потомки считаются custom.
+
+Если нативный Strapi-узел перемещён внутрь custom-контейнера, ставить на сам узел `data-tm-modified="<extension-id>"`: этот marker создаёт native/modified boundary и не даёт считать перемещённый React element custom. Нативные React elements перемещать, не копировать.
+
 ## Parser health semantics
 
 Полезные смысловые проверки каталога:
