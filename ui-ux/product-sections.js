@@ -4,6 +4,8 @@
     const PRODUCT_PATH = '/admin/content-manager/collection-types/api::product.product/';
     const ROOT_SELECTOR = '[data-tm-product-sections="true"]';
     const STYLE_ID = 'tm-product-sections-style';
+    const FILTER_GROUP_TITLE_ATTR = 'data-tm-product-filter-group-title';
+    const FILTER_GROUP_ATTR = 'data-tm-product-filter-group';
 
     const FILTER_FIELDS = new Set([
         'is_hypoallergenic',
@@ -25,6 +27,17 @@
         'coverage',
         'product_features'
     ]);
+
+    const FILTER_GROUPS = [
+        {
+            id: 'fragrance',
+            title: 'Парфюмерия',
+            fields: new Set([
+                'fragrance_group',
+                'fragrance_concentration'
+            ])
+        }
+    ];
 
     const SYSTEM_FIELDS = new Set([
         'relatedProductsSlider',
@@ -121,6 +134,23 @@
             }
             [data-tm-product-section-hidden="true"] {
                 display:none !important;
+            }
+            [${FILTER_GROUP_TITLE_ATTR}] {
+                display:flex;
+                align-items:center;
+                align-self:stretch;
+                grid-column:1 / -1;
+                width:100%;
+                min-height:32px;
+                box-sizing:border-box;
+                margin:0;
+                padding:4px 0 8px;
+                border-bottom:1px solid #3f3f5f;
+                color:#c0c0cf;
+                font:inherit;
+                font-size:13px;
+                font-weight:600;
+                line-height:18px;
             }
         `;
     }
@@ -222,6 +252,84 @@
             });
     }
 
+    function clearFilterGroupMarkers() {
+        document
+            .querySelectorAll(`[${FILTER_GROUP_TITLE_ATTR}]`)
+            .forEach(element => element.remove());
+
+        document
+            .querySelectorAll(`[${FILTER_GROUP_ATTR}]`)
+            .forEach(element => {
+                element.removeAttribute(FILTER_GROUP_ATTR);
+            });
+    }
+
+    function ensureFilterGroupTitle(stack, group) {
+        const selector = `:scope > [${FILTER_GROUP_TITLE_ATTR}="${group.id}"]`;
+        let title = stack.querySelector(selector);
+
+        if (!title) {
+            title = document.createElement('div');
+            title.setAttribute(FILTER_GROUP_TITLE_ATTR, group.id);
+            title.textContent = group.title;
+        }
+
+        return title;
+    }
+
+    function applyFilterGroups(stack, rows) {
+        for (const row of stack.querySelectorAll(`:scope > [${FILTER_GROUP_ATTR}]`)) {
+            row.removeAttribute(FILTER_GROUP_ATTR);
+        }
+
+        const managedNodes = [];
+
+        for (const group of FILTER_GROUPS) {
+            const groupRows = [];
+
+            for (const [row, rowMarkers] of rows) {
+                if (rowMarkers.some(marker => group.fields.has(marker.name))) {
+                    groupRows.push(row);
+                }
+            }
+
+            const existingTitle = stack.querySelector(
+                `:scope > [${FILTER_GROUP_TITLE_ATTR}="${group.id}"]`
+            );
+
+            if (!groupRows.length) {
+                existingTitle?.remove();
+                continue;
+            }
+
+            const title = ensureFilterGroupTitle(stack, group);
+
+            if (activeTab === 'filters') {
+                delete title.dataset.tmProductSectionHidden;
+            } else {
+                title.dataset.tmProductSectionHidden = 'true';
+            }
+
+            for (const row of groupRows) {
+                row.setAttribute(FILTER_GROUP_ATTR, group.id);
+            }
+
+            managedNodes.push(title, ...groupRows);
+        }
+
+        if (!managedNodes.length) return;
+
+        const alreadyAtTop = managedNodes.every(
+            (node, index) => stack.children[index] === node
+        );
+
+        if (alreadyAtTop) return;
+
+        const fragment = document.createDocumentFragment();
+        managedNodes.forEach(node => fragment.appendChild(node));
+        stack.prepend(fragment);
+    }
+
     function getSection(names) {
         if ([...names].some(name => SYSTEM_FIELDS.has(name))) return 'system';
         if ([...names].some(name => FILTER_FIELDS.has(name))) return 'filters';
@@ -278,6 +386,8 @@
                 row.dataset.tmProductSectionHidden = 'true';
             }
         }
+
+        applyFilterGroups(stack, rows);
     }
 
     function setActiveTab(tab) {
@@ -329,6 +439,7 @@
 
     function cleanup() {
         clearManagedVisibility();
+        clearFilterGroupMarkers();
 
         const root = document.querySelector(ROOT_SELECTOR);
         if (root) root.remove();
