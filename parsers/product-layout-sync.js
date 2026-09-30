@@ -1,7 +1,7 @@
 (async () => {
   'use strict';
 
-  const VERSION = '1.0.3';
+  const VERSION = '1.0.4';
   const PRODUCT_UID = 'api::product.product';
   const PRODUCT_ENTRY_RE = /^\/admin\/content-manager\/collection-types\/api::product\.product\/([^/]+)\/?$/;
   const CONFIG_URL = '/content-manager/content-types/' + PRODUCT_UID + '/configuration';
@@ -402,13 +402,38 @@
     return JSON.stringify(a) === JSON.stringify(b);
   }
 
-  function sanitizeMetadatasForPut(metadatas) {
-    const cleaned = JSON.parse(JSON.stringify(metadatas));
+  function pickKeys(source, allowedKeys) {
+    const result = {};
+    if (!source || typeof source !== 'object') return result;
 
-    for (const metadata of Object.values(cleaned || {})) {
-      if (metadata?.list && typeof metadata.list === 'object') {
-        delete metadata.list.mainField;
+    for (const key of allowedKeys) {
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
+        result[key] = source[key];
       }
+    }
+
+    return result;
+  }
+
+  function sanitizeMetadatasForPut(metadatas) {
+    const cleaned = {};
+
+    for (const [name, metadata] of Object.entries(metadatas || {})) {
+      cleaned[name] = {
+        edit: pickKeys(metadata?.edit, [
+          'label',
+          'description',
+          'placeholder',
+          'visible',
+          'editable',
+          'mainField'
+        ]),
+        list: pickKeys(metadata?.list, [
+          'label',
+          'searchable',
+          'sortable'
+        ])
+      };
     }
 
     return cleaned;
@@ -554,15 +579,33 @@
     return;
   }
 
+  const sanitizedMetadatas = sanitizeMetadatasForPut(configuration.metadatas);
+  const forbiddenListMainFields = Object.entries(sanitizedMetadatas)
+    .filter(([, metadata]) =>
+      Object.prototype.hasOwnProperty.call(metadata?.list || {}, 'mainField')
+    )
+    .map(([name]) => name);
+
+  if (forbiddenListMainFields.length) {
+    throw new Error(
+      '[product-layout-sync] Preflight: list.mainField не очищен у ' +
+      forbiddenListMainFields.join(', ')
+    );
+  }
+
   const payload = {
     layouts: {
       ...configuration.layouts,
       edit: desiredLayout
     },
     settings: configuration.settings,
-    metadatas: sanitizeMetadatasForPut(configuration.metadatas)
+    metadatas: sanitizedMetadatas
   };
 
+  console.log(
+    '[product-layout-sync] PUT preflight OK | metadatas: ' +
+    Object.keys(sanitizedMetadatas).length
+  );
   console.log('[product-layout-sync] Записываю configuration...');
   await putConfiguration(payload);
 
