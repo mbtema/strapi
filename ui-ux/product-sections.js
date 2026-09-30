@@ -4,6 +4,7 @@
     const PRODUCT_PATH = '/admin/content-manager/collection-types/api::product.product/';
     const ROOT_SELECTOR = '[data-tm-product-sections="true"]';
     const STYLE_ID = 'tm-product-sections-style';
+    const CREATED_ATTR = 'data-tm-created';
     const FILTER_GROUP_TITLE_ATTR = 'data-tm-product-filter-group-title';
     const FILTER_GROUP_ATTR = 'data-tm-product-filter-group';
 
@@ -270,6 +271,7 @@
 
         if (!title) {
             title = document.createElement('div');
+            title.setAttribute(CREATED_ATTR, 'product-sections');
             title.setAttribute(FILTER_GROUP_TITLE_ATTR, group.id);
             title.textContent = group.title;
         }
@@ -409,6 +411,7 @@
 
     function createTabs(panel) {
         const root = document.createElement('div');
+        root.setAttribute(CREATED_ATTR, 'product-sections');
         root.dataset.tmProductSections = 'true';
         root.setAttribute('role', 'tablist');
         root.setAttribute('aria-label', 'Разделы карточки товара');
