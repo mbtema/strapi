@@ -54,7 +54,7 @@ Loader валидирует каждый дочерний manifest и итого
 - `list-view.js` — доработки list view Content Manager.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
 - `product-attributes-navigator.js` — навигация по торговым предложениям в карточке товара: загрузка всех relation `attributes`, поиск, пагинация и прямые ссылки; режим «Управление связями» раскрывает штатный Strapi relation list.
-- `product-sections.js` — разделяет карточку Product на вкладки `Контент`, `Фильтры`, `Системное` и показывает смысловые заголовки групп `Парфюмерия` / `Макияж`; нативные React-поля больше не перемещает в DOM, а только управляет show/hide. Порядок полей хранится штатно в Strapi `layouts.edit` и при необходимости синхронизируется через `product-layout-sync.js`.
+- `product-sections.js` — разделяет карточку Product на вкладки `Контент`, `Фильтры`, `Системное` и показывает смысловые заголовки групп `Парфюмерия` / `Макияж`; нативные React-поля больше не перемещает в DOM, а только управляет show/hide. Порядок полей хранится штатно в Strapi `layouts.edit` и при необходимости синхронизируется через `layout-sync.js`.
 
 ## Версионирование extensions
 
@@ -74,7 +74,7 @@ Loader валидирует каждый дочерний manifest и итого
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
 - `style-stealer.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
-- `product-layout-sync.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
+- `layout-sync.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
 - `manifests/parsers.json` — runtime-источник `file`, semver `version` и `group` для Parser Launcher; `group` задаётся только здесь.
 
 Для нового parser добавь файл в `parsers/` и зарегистрируй его в `manifests/parsers.json` через `file`, `version` и `group`. `version` и `group` внутри parser-файла не дублируются.
@@ -128,7 +128,7 @@ README обновляется, когда меняются структура, �
 │   ├── dom-stealer.js
 │   ├── network-recorder.js
 │   ├── style-stealer.js
-│   ├── product-layout-sync.js
+│   ├── layout-sync.js
 │   ├── products-missing-content.js
 │   ├── products-wrong-variants.js
 │   └── attributes-wrong-prices.js
