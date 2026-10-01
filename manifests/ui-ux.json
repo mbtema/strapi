@@ -28,7 +28,7 @@
     {
       "id": "product-sections",
       "path": "ui-ux/product-sections.js",
-      "version": "1.5.1",
+      "version": "1.6.0",
       "enabled": true
     }
   ]
