@@ -315,8 +315,9 @@
     }
 
     function applyFilterGroups(stack, rows) {
-        for (const row of stack.querySelectorAll(`:scope > [${FILTER_GROUP_ATTR}]`)) {
+        for (const row of stack.querySelectorAll(`:scope > [${FILTER_GROUP_ATTR}], :scope > [${FILTER_GROUP_ORDER_ATTR}]`)) {
             row.removeAttribute(FILTER_GROUP_ATTR);
+            row.removeAttribute(FILTER_GROUP_ORDER_ATTR);
         }
 
         const childOrder = new Map(
@@ -366,9 +367,10 @@
             }
 
             for (const row of groupRows) {
-                const currentOrder = Number(row.getAttribute(FILTER_GROUP_ORDER_ATTR));
+                const currentOrderRaw = row.getAttribute(FILTER_GROUP_ORDER_ATTR);
+                const currentOrder = currentOrderRaw === null ? null : Number(currentOrderRaw);
 
-                if (!Number.isFinite(currentOrder) || groupIndex < currentOrder) {
+                if (currentOrder === null || !Number.isFinite(currentOrder) || groupIndex < currentOrder) {
                     row.setAttribute(FILTER_GROUP_ATTR, group.id);
                     row.setAttribute(FILTER_GROUP_ORDER_ATTR, String(groupIndex));
                 }
