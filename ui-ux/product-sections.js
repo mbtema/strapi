@@ -65,8 +65,10 @@
         {
             id: 'hair-care',
             title: 'Уход за волосами',
-            fields: new Set(),
-            placeholder: true
+            fields: new Set([
+                'hair_types',
+                'is_hypoallergenic'
+            ])
         },
         {
             id: 'other',
@@ -349,9 +351,18 @@
         const childOrder = new Map(
             [...stack.children].map((child, index) => [child, index])
         );
-        const assignedFields = new Set(
-            FILTER_GROUPS.flatMap(group => [...group.fields])
+        const explicitlyAssignedFields = new Set(
+            FILTER_GROUPS
+                .filter(group => group.id !== 'other')
+                .flatMap(group => [...group.fields])
         );
+        const otherFields = new Set(
+            [...FILTER_FIELDS].filter(name => !explicitlyAssignedFields.has(name))
+        );
+        const assignedFields = new Set([
+            ...explicitlyAssignedFields,
+            ...otherFields
+        ]);
         const ungroupedFilterRows = [...rows]
             .filter(([, rowMarkers]) =>
                 rowMarkers.some(marker => FILTER_FIELDS.has(marker.name)) &&
@@ -364,9 +375,12 @@
             );
 
         for (const [groupIndex, group] of FILTER_GROUPS.entries()) {
+            const groupFields = group.id === 'other'
+                ? otherFields
+                : group.fields;
             const groupRows = [...rows]
                 .filter(([, rowMarkers]) =>
-                    rowMarkers.some(marker => group.fields.has(marker.name))
+                    rowMarkers.some(marker => groupFields.has(marker.name))
                 )
                 .map(([row]) => row)
                 .sort((a, b) =>
