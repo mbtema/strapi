@@ -74,7 +74,6 @@ Loader валидирует каждый дочерний manifest и итого
 - `network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
 - `style-stealer.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
 - `layout-sync.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, во вкладке `Фильтры` учитывает порядок смысловых групп, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
-- `makeup-category-tree.js` — read-only service parser: от фиксированного корня раздела «Макияж» (`documentId=keziuozkg1hgs2c1427457tm`) рекурсивно проходит relation `categories`, читает все страницы, показывает дерево/счётчики и скачивает `makeup-category-tree.csv`; одноимённые кастомные разделы не участвуют.
 - `manifests/parsers.json` — runtime-источник `file`, semver `version` и `group` для Parser Launcher; `group` задаётся только здесь.
 
 Для нового parser добавь файл в `parsers/` и зарегистрируй его в `manifests/parsers.json` через `file`, `version` и `group`. `version` и `group` внутри parser-файла не дублируются.
@@ -128,7 +127,6 @@ README обновляется, когда меняются структура, �
 │   ├── network-recorder.js
 │   ├── style-stealer.js
 │   ├── layout-sync.js
-│   ├── makeup-category-tree.js
 │   ├── products-missing-content.js
 │   ├── products-wrong-variants.js
 │   └── attributes-wrong-prices.js
