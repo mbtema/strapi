@@ -542,7 +542,7 @@ shareUrl
 GET/PUT /content-manager/content-types/api::product.product/configuration
 ```
 
-Source of truth для физического порядка — `layouts.edit`. Service `parsers/layout-sync.js` используется после layout-изменений: читает текущий UI, делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
+Source of truth для физического порядка — `layouts.edit`. Service `parsers/layout-sync.js` используется после layout-изменений: читает текущий UI; для вкладки `Фильтры` учитывает `data-tm-product-filter-group-order`, выставленный `product-sections`, поэтому смысловые группы сохраняются в заданном порядке; делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
 
 ## Style-stealer UI origin semantics
 
