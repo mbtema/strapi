@@ -534,7 +534,7 @@ shareUrl
 
 ### CANONICAL — Product card layout + sections
 
-`ui-ux/product-sections.js` отвечает только за вкладки `Контент / Фильтры / Системное`, show/hide полей и смысловые заголовки групп. Нативные React fields не перемещать между DOM-контейнерами: это конфликтует с внутренним SPA/focus Strapi.
+`ui-ux/product-sections.js` отвечает только за вкладки `Контент / Фильтры / Системное`, show/hide полей и смысловые заголовки групп. Нативные React fields не перемещать между DOM-контейнерами: это конфликтует с внутренним SPA/focus Strapi. Для временного визуального порядка групп допустим CSS `order` на существующих top-level rows (без reparent): после этого `layout-sync.js` переносит тот же порядок в штатный `layouts.edit`.
 
 Штатный порядок карточки хранится в Content Manager configuration:
 
