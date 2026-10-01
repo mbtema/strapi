@@ -8,6 +8,8 @@
     const FILTER_GROUP_TITLE_ATTR = 'data-tm-product-filter-group-title';
     const FILTER_GROUP_ATTR = 'data-tm-product-filter-group';
     const FILTER_GROUP_ORDER_ATTR = 'data-tm-product-filter-group-order';
+    const FILTER_SORT_ATTR = 'data-tm-product-filter-sort';
+    const FILTER_SORT_PROP = '--tm-product-filter-order';
 
     const FILTER_FIELDS = new Set([
         'is_hypoallergenic',
@@ -170,6 +172,9 @@
             [data-tm-product-section-hidden="true"] {
                 display:none !important;
             }
+            [${FILTER_SORT_ATTR}] {
+                order:var(${FILTER_SORT_PROP}) !important;
+            }
             [${FILTER_GROUP_TITLE_ATTR}] {
                 display:flex;
                 align-items:center;
@@ -293,10 +298,14 @@
             .forEach(element => element.remove());
 
         document
-            .querySelectorAll(`[${FILTER_GROUP_ATTR}], [${FILTER_GROUP_ORDER_ATTR}]`)
+            .querySelectorAll(
+                `[${FILTER_GROUP_ATTR}], [${FILTER_GROUP_ORDER_ATTR}], [${FILTER_SORT_ATTR}]`
+            )
             .forEach(element => {
                 element.removeAttribute(FILTER_GROUP_ATTR);
                 element.removeAttribute(FILTER_GROUP_ORDER_ATTR);
+                element.removeAttribute(FILTER_SORT_ATTR);
+                element.style.removeProperty(FILTER_SORT_PROP);
             });
     }
 
@@ -314,11 +323,28 @@
         return title;
     }
 
+    function setFilterSort(element, order) {
+        element.setAttribute(FILTER_SORT_ATTR, '');
+        element.style.setProperty(FILTER_SORT_PROP, String(order));
+    }
+
     function applyFilterGroups(stack, rows) {
-        for (const row of stack.querySelectorAll(`:scope > [${FILTER_GROUP_ATTR}], :scope > [${FILTER_GROUP_ORDER_ATTR}]`)) {
+        for (const row of stack.querySelectorAll(
+            `:scope > [${FILTER_GROUP_ATTR}], :scope > [${FILTER_GROUP_ORDER_ATTR}], :scope > [${FILTER_SORT_ATTR}]`
+        )) {
             row.removeAttribute(FILTER_GROUP_ATTR);
             row.removeAttribute(FILTER_GROUP_ORDER_ATTR);
+            row.removeAttribute(FILTER_SORT_ATTR);
+            row.style.removeProperty(FILTER_SORT_PROP);
         }
+
+        const stackDisplay = getComputedStyle(stack).display;
+        const supportsVisualOrder = [
+            'flex',
+            'inline-flex',
+            'grid',
+            'inline-grid'
+        ].includes(stackDisplay);
 
         const childOrder = new Map(
             [...stack.children].map((child, index) => [child, index])
@@ -336,7 +362,6 @@
                 (childOrder.get(a) ?? Number.MAX_SAFE_INTEGER) -
                 (childOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
             );
-        const placeholderAnchor = ungroupedFilterRows[0] || null;
 
         for (const [groupIndex, group] of FILTER_GROUPS.entries()) {
             const groupRows = [...rows]
@@ -366,33 +391,55 @@
                 title.dataset.tmProductSectionHidden = 'true';
             }
 
-            for (const row of groupRows) {
-                const currentOrderRaw = row.getAttribute(FILTER_GROUP_ORDER_ATTR);
-                const currentOrder = currentOrderRaw === null ? null : Number(currentOrderRaw);
-
-                if (currentOrder === null || !Number.isFinite(currentOrder) || groupIndex < currentOrder) {
-                    row.setAttribute(FILTER_GROUP_ATTR, group.id);
-                    row.setAttribute(FILTER_GROUP_ORDER_ATTR, String(groupIndex));
-                }
-            }
-
-            const firstRow = groupRows[0];
-
-            if (firstRow) {
-                if (title.nextElementSibling !== firstRow) {
-                    stack.insertBefore(title, firstRow);
-                }
-                continue;
-            }
-
-            if (placeholderAnchor) {
-                stack.insertBefore(title, placeholderAnchor);
-            } else if (title.parentElement !== stack || title !== stack.lastElementChild) {
+            if (!title.parentElement) {
                 stack.appendChild(title);
             }
+
+            if (supportsVisualOrder) {
+                setFilterSort(title, groupIndex * 1000);
+            }
+
+            groupRows.forEach((row, rowIndex) => {
+                const currentOrderRaw = row.getAttribute(FILTER_GROUP_ORDER_ATTR);
+                const currentOrder = currentOrderRaw === null
+                    ? null
+                    : Number(currentOrderRaw);
+
+                if (
+                    currentOrder === null ||
+                    !Number.isFinite(currentOrder) ||
+                    groupIndex < currentOrder
+                ) {
+                    row.setAttribute(FILTER_GROUP_ATTR, group.id);
+                    row.setAttribute(FILTER_GROUP_ORDER_ATTR, String(groupIndex));
+
+                    if (supportsVisualOrder) {
+                        setFilterSort(row, groupIndex * 1000 + rowIndex + 1);
+                    }
+                }
+            });
+
+            if (!supportsVisualOrder) {
+                const firstRow = groupRows[0];
+
+                if (firstRow && title.nextElementSibling !== firstRow) {
+                    stack.insertBefore(title, firstRow);
+                }
+            }
+        }
+
+        if (supportsVisualOrder) {
+            const ungroupedBase = FILTER_GROUPS.length * 1000;
+
+            ungroupedFilterRows.forEach((row, index) => {
+                setFilterSort(row, ungroupedBase + index);
+            });
+        } else {
+            console.warn(
+                '[product-sections] Контейнер полей не flex/grid; визуальный порядок групп не применён'
+            );
         }
     }
-
     function getSection(names) {
         if ([...names].some(name => SYSTEM_FIELDS.has(name))) return 'system';
         if ([...names].some(name => FILTER_FIELDS.has(name))) return 'filters';
