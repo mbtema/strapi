@@ -11,6 +11,8 @@
     const GLOBAL_TOP_SEPARATOR_ATTR = 'data-tm-global-top-separator-hidden';
     const GLOBAL_PROFILE_ATTR = 'data-tm-global-profile';
     const GLOBAL_PROFILE_SEPARATOR_ATTR = 'data-tm-global-profile-separator-hidden';
+    const CONTENT_MANAGER_HOME =
+        '/admin/content-manager/collection-types/api::product.product';
 
     const SIDEBAR_ATTR = 'data-tm-content-manager-sidebar';
     const CLEANUP_ATTR = 'data-tm-sidebar-cleanup';
@@ -670,6 +672,25 @@
         if (!nav) return;
 
         nav.setAttribute(GLOBAL_NAV_ATTR, '');
+
+        const contentManagerLink = nav.querySelector(
+            'a[aria-label="Content Manager"][href^="/admin/content-manager"]'
+        );
+
+        if (contentManagerLink) {
+            const params = new URLSearchParams(location.search);
+            const locale = params.get('plugins[i18n][locale]');
+            const target = new URL(CONTENT_MANAGER_HOME, location.origin);
+
+            if (locale) {
+                target.searchParams.set('plugins[i18n][locale]', locale);
+            }
+
+            contentManagerLink.setAttribute(
+                'href',
+                target.pathname + target.search
+            );
+        }
 
         const logo = nav.querySelector('img[alt="Application logo"]');
         const logoRoot = directChildContaining(nav, logo);
