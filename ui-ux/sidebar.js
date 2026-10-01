@@ -281,8 +281,6 @@
         }
     }
 
-    const boundContentManagerLinks = new WeakSet();
-
     let hidden = readSidebarHiddenState();
     let sidebar = null;
     let collectionList = null;
@@ -682,28 +680,48 @@
 
     function bindContentManagerHome(link) {
         link.setAttribute('href', getContentManagerHomeHref());
+    }
 
-        if (boundContentManagerLinks.has(link)) return;
-        boundContentManagerLinks.add(link);
+    function getContentManagerNavLink(event) {
+        const target = event.target instanceof Element
+            ? event.target
+            : event.target?.parentElement;
 
-        link.addEventListener('click', event => {
-            link.setAttribute('href', getContentManagerHomeHref());
+        const link = target?.closest(
+            'a[aria-label="Content Manager"][href^="/admin/content-manager"]'
+        );
 
-            if (
-                event.button !== 0 ||
-                event.ctrlKey ||
-                event.metaKey ||
-                event.shiftKey ||
-                event.altKey
-            ) {
-                return;
-            }
+        return link || null;
+    }
 
-            event.preventDefault();
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-            location.assign(link.href);
-        }, true);
+    function handleContentManagerNavPointer(event) {
+        const link = getContentManagerNavLink(event);
+        if (!link) return;
+
+        link.setAttribute('href', getContentManagerHomeHref());
+    }
+
+    function handleContentManagerNavClick(event) {
+        const link = getContentManagerNavLink(event);
+        if (!link) return;
+
+        const href = getContentManagerHomeHref();
+        link.setAttribute('href', href);
+
+        if (
+            event.button !== 0 ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.shiftKey ||
+            event.altKey
+        ) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        location.assign(href);
     }
 
     function applyGlobalNav() {
@@ -1429,6 +1447,17 @@
             requestAnimationFrame(start);
             return;
         }
+
+        document.addEventListener(
+            'pointerdown',
+            handleContentManagerNavPointer,
+            true
+        );
+        document.addEventListener(
+            'click',
+            handleContentManagerNavClick,
+            true
+        );
 
         ensureStyle();
         observer.observe(document.documentElement, {
