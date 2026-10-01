@@ -50,8 +50,7 @@ Loader валидирует каждый дочерний manifest и итого
 ## UI/UX
 
 - `sidebar.js` — единый sidebar-модуль: `Alt+S`, поиск, быстрый доступ, группировка Content Manager (`Каталог`, `Справочник`, `Фильтры`, `Главная страница MOBILE`, `Главная страница WEB`, `Другое`), active state и очистка глобальной левой навигации; новые нераспознанные collection types по умолчанию попадают в `Другое`; группы по умолчанию раскрыты, их свернутое/раскрытое состояние сохраняется в `localStorage` и восстанавливается после reload, раскрытие/сворачивание анимировано; состояние всего sidebar скрыт/показан сохраняется на время текущей вкладки браузера.
-- `record-list.js` — дорабатывает record list Content Manager: скрывает scrollbar/overflow decoration, добавляет рядом с checkbox компактную ссылку открытия записи для Vimium и поддерживает обычный click, Ctrl/Meta-click и middle-click в новую вкладку через реальный `documentId`; при ошибке lookup используется безопасный `row.click()` fallback.
-- `list-view.js` — доработки list view Content Manager.
+- `record-list.js` — единый модуль для списков записей Content Manager: скрывает scrollbar/overflow decoration, скрывает колонку `to be released in`, компактно показывает `Available in` как RU/KK, добавляет рядом с checkbox ссылку открытия записи для Vimium и поддерживает обычный click, Ctrl/Meta-click и middle-click в новую вкладку через реальный `documentId`; при ошибке lookup используется безопасный `row.click()` fallback.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
 - `product-attributes-navigator.js` — навигация по торговым предложениям в карточке товара: загрузка всех relation `attributes`, поиск, пагинация и прямые ссылки; режим «Управление связями» раскрывает штатный Strapi relation list.
 - `product-sections.js` — разделяет карточку Product на вкладки `Контент`, `Фильтры`, `Системное` и показывает смысловые заголовки групп `Парфюмерия`, `Макияж`, `Уход за кожей`, `Уход за волосами`, `Другое`; последние три пока пустые placeholders для дальнейшей сортировки. Нативные React-поля не перемещает в DOM, а только управляет show/hide. Порядок полей хранится штатно в Strapi `layouts.edit` и при необходимости синхронизируется через `layout-sync.js`.
@@ -120,7 +119,6 @@ README обновляется, когда меняются структура, �
 ├── ui-ux/
 │   ├── sidebar.js
 │   ├── entry-relocate.js
-│   ├── list-view.js
 │   ├── product-attributes-navigator.js
 │   ├── product-sections.js
 │   └── record-list.js
