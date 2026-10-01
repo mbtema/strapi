@@ -281,6 +281,8 @@
         }
     }
 
+    const boundContentManagerLinks = new WeakSet();
+
     let hidden = readSidebarHiddenState();
     let sidebar = null;
     let collectionList = null;
@@ -666,6 +668,44 @@
         return (link?.textContent || '').trim().replace(/\s+/g, ' ');
     }
 
+    function getContentManagerHomeHref() {
+        const params = new URLSearchParams(location.search);
+        const locale = params.get('plugins[i18n][locale]');
+        const target = new URL(CONTENT_MANAGER_HOME, location.origin);
+
+        if (locale) {
+            target.searchParams.set('plugins[i18n][locale]', locale);
+        }
+
+        return target.pathname + target.search;
+    }
+
+    function bindContentManagerHome(link) {
+        link.setAttribute('href', getContentManagerHomeHref());
+
+        if (boundContentManagerLinks.has(link)) return;
+        boundContentManagerLinks.add(link);
+
+        link.addEventListener('click', event => {
+            link.setAttribute('href', getContentManagerHomeHref());
+
+            if (
+                event.button !== 0 ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey ||
+                event.altKey
+            ) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            location.assign(link.href);
+        }, true);
+    }
+
     function applyGlobalNav() {
         const homeLink = document.querySelector('nav a[aria-label="Home"][href="/admin"]');
         const nav = homeLink?.closest('nav');
@@ -677,20 +717,7 @@
             'a[aria-label="Content Manager"][href^="/admin/content-manager"]'
         );
 
-        if (contentManagerLink) {
-            const params = new URLSearchParams(location.search);
-            const locale = params.get('plugins[i18n][locale]');
-            const target = new URL(CONTENT_MANAGER_HOME, location.origin);
-
-            if (locale) {
-                target.searchParams.set('plugins[i18n][locale]', locale);
-            }
-
-            contentManagerLink.setAttribute(
-                'href',
-                target.pathname + target.search
-            );
-        }
+        if (contentManagerLink) bindContentManagerHome(contentManagerLink);
 
         const logo = nav.querySelector('img[alt="Application logo"]');
         const logoRoot = directChildContaining(nav, logo);
