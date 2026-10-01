@@ -7,6 +7,7 @@
     const CREATED_ATTR = 'data-tm-created';
     const FILTER_GROUP_TITLE_ATTR = 'data-tm-product-filter-group-title';
     const FILTER_GROUP_ATTR = 'data-tm-product-filter-group';
+    const FILTER_GROUP_ORDER_ATTR = 'data-tm-product-filter-group-order';
 
     const FILTER_FIELDS = new Set([
         'is_hypoallergenic',
@@ -292,9 +293,10 @@
             .forEach(element => element.remove());
 
         document
-            .querySelectorAll(`[${FILTER_GROUP_ATTR}]`)
+            .querySelectorAll(`[${FILTER_GROUP_ATTR}], [${FILTER_GROUP_ORDER_ATTR}]`)
             .forEach(element => {
                 element.removeAttribute(FILTER_GROUP_ATTR);
+                element.removeAttribute(FILTER_GROUP_ORDER_ATTR);
             });
     }
 
@@ -335,7 +337,7 @@
             );
         const placeholderAnchor = ungroupedFilterRows[0] || null;
 
-        for (const group of FILTER_GROUPS) {
+        for (const [groupIndex, group] of FILTER_GROUPS.entries()) {
             const groupRows = [...rows]
                 .filter(([, rowMarkers]) =>
                     rowMarkers.some(marker => group.fields.has(marker.name))
@@ -364,7 +366,12 @@
             }
 
             for (const row of groupRows) {
-                row.setAttribute(FILTER_GROUP_ATTR, group.id);
+                const currentOrder = Number(row.getAttribute(FILTER_GROUP_ORDER_ATTR));
+
+                if (!Number.isFinite(currentOrder) || groupIndex < currentOrder) {
+                    row.setAttribute(FILTER_GROUP_ATTR, group.id);
+                    row.setAttribute(FILTER_GROUP_ORDER_ATTR, String(groupIndex));
+                }
             }
 
             const firstRow = groupRows[0];
