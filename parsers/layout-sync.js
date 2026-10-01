@@ -6,6 +6,7 @@
   const CONFIG_URL = '/content-manager/content-types/' + PRODUCT_UID + '/configuration';
   const ROOT_SELECTOR = '[data-tm-product-sections="true"]';
   const TAB_SELECTOR = '[data-tm-product-section-tab]';
+  const FILTER_GROUP_ORDER_ATTR = 'data-tm-product-filter-group-order';
   const SECTION_KEYS = ['content', 'filters', 'system'];
   const ROW_TOLERANCE_PX = 4;
 
@@ -287,7 +288,7 @@
     return new Promise(resolve => requestAnimationFrame(resolve));
   }
 
-  function groupByVisualRows(items, sizeByName) {
+  function groupByVisualRows(items, sizeByName, sortByFilterGroup = false) {
     const sorted = [...items].sort((a, b) =>
       Math.abs(a.top - b.top) > ROW_TOLERANCE_PX
         ? a.top - b.top
@@ -309,7 +310,20 @@
       row.items.push(item);
     }
 
-    rows.sort((a, b) => a.top - b.top);
+    rows.sort((a, b) => {
+      if (sortByFilterGroup) {
+        const aGroup = Math.min(
+          ...a.items.map(item => item.groupOrder ?? Number.MAX_SAFE_INTEGER)
+        );
+        const bGroup = Math.min(
+          ...b.items.map(item => item.groupOrder ?? Number.MAX_SAFE_INTEGER)
+        );
+
+        if (aGroup !== bGroup) return aGroup - bGroup;
+      }
+
+      return a.top - b.top;
+    });
 
     return rows.map(row =>
       row.items
@@ -321,7 +335,7 @@
     );
   }
 
-  function scanVisibleSection(stack, markerByName, fieldNames, sizeByName) {
+  function scanVisibleSection(stack, markerByName, fieldNames, sizeByName, section) {
     const items = [];
     const seen = new Set();
 
@@ -341,10 +355,17 @@
 
         const rect = branch.getBoundingClientRect();
 
+        const groupOrderRaw = row.getAttribute(FILTER_GROUP_ORDER_ATTR);
+        const groupOrder = Number(groupOrderRaw);
+
         items.push({
           name,
           top: Math.round(rect.top * 10) / 10,
-          left: Math.round(rect.left * 10) / 10
+          left: Math.round(rect.left * 10) / 10,
+          groupOrder:
+            section === 'filters' && Number.isFinite(groupOrder)
+              ? groupOrder
+              : null
         });
 
         seen.add(name);
@@ -353,7 +374,7 @@
     }
 
     return {
-      rows: groupByVisualRows(items, sizeByName),
+      rows: groupByVisualRows(items, sizeByName, section === 'filters'),
       names: [...seen]
     };
   }
@@ -490,7 +511,8 @@
         stack,
         markerByName,
         fieldNames,
-        sizeByName
+        sizeByName,
+        section
       );
 
       for (const row of scan.rows) {
