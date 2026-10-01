@@ -515,6 +515,36 @@ coverage
 product_features
 ```
 
+Смысловые группы внутри вкладки `Фильтры` идут в порядке:
+
+```text
+Парфюмерия:
+fragrance_group
+fragrance_concentration
+
+Макияж:
+shade_groups
+release_form
+finish
+coverage
+product_features
+
+Уход за кожей:
+usage_time
+age_group
+product_segment
+ingredients
+
+Уход за волосами:
+hair_types
+is_hypoallergenic
+
+Другое:
+все остальные FILTER_FIELDS, которые не назначены в группы выше
+```
+
+`Другое` всегда последняя группа. Такой fallback должен быть динамическим: новое filter-поле, пока его явно не разнесли, автоматически попадает в `Другое`.
+
 `Системное`:
 
 ```text
