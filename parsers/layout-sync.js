@@ -356,14 +356,18 @@
         const rect = branch.getBoundingClientRect();
 
         const groupOrderRaw = row.getAttribute(FILTER_GROUP_ORDER_ATTR);
-        const groupOrder = Number(groupOrderRaw);
+        const groupOrder = groupOrderRaw === null
+          ? null
+          : Number(groupOrderRaw);
 
         items.push({
           name,
           top: Math.round(rect.top * 10) / 10,
           left: Math.round(rect.left * 10) / 10,
           groupOrder:
-            section === 'filters' && Number.isFinite(groupOrder)
+            section === 'filters' &&
+            groupOrder !== null &&
+            Number.isFinite(groupOrder)
               ? groupOrder
               : null
         });
