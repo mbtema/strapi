@@ -13,6 +13,15 @@
     const ACTIONS_ATTR = 'data-tm-record-list-select-actions';
     const LINK_ATTR = 'data-tm-record-list-row-link';
     const LINK_READY_ATTR = 'data-tm-record-list-row-link-ready';
+    const COLUMN_HIDDEN_ATTR = 'data-tm-record-list-hidden-column';
+    const LOCALES_CELL_ATTR = 'data-tm-record-list-locales-cell';
+    const LOCALES_BUTTON_ATTR = 'data-tm-record-list-locales-button';
+    const HAS_RU_ATTR = 'data-tm-record-list-has-ru';
+    const HAS_KK_ATTR = 'data-tm-record-list-has-kk';
+
+    const HIDDEN_COLUMNS = new Set([
+        'to be released in'
+    ]);
 
     const TABLE_SELECTOR = 'table, [role="table"], [role="grid"]';
     const LIST_TABLE_SELECTOR = 'main#main-content table[role="grid"]';
@@ -136,6 +145,64 @@
             [${LINK_ATTR}][${LINK_READY_ATTR}="false"] {
                 opacity: 0.55 !important;
             }
+
+            [${COLUMN_HIDDEN_ATTR}] {
+                display: none !important;
+            }
+
+            [${LOCALES_CELL_ATTR}] {
+                width: 120px !important;
+                min-width: 120px !important;
+                max-width: 120px !important;
+            }
+
+            th[${LOCALES_CELL_ATTR}] {
+                white-space: nowrap !important;
+            }
+
+            [${LOCALES_BUTTON_ATTR}] {
+                width: auto !important;
+                min-width: 0 !important;
+                max-width: 112px !important;
+                padding-left: 6px !important;
+                padding-right: 6px !important;
+                gap: 4px !important;
+                white-space: nowrap !important;
+                font-size: 0 !important;
+            }
+
+            [${LOCALES_BUTTON_ATTR}] span {
+                font-size: 0 !important;
+            }
+
+            [${LOCALES_BUTTON_ATTR}]::before,
+            [${LOCALES_BUTTON_ATTR}]::after {
+                display: none;
+                align-items: center;
+                justify-content: center;
+                min-width: 28px;
+                height: 20px;
+                box-sizing: border-box;
+                padding: 0 7px;
+                border: 1px solid #4a4a6a;
+                border-radius: 999px;
+                background: #2a2a42;
+                color: #dcdce4;
+                font-size: 10px;
+                font-weight: 600;
+                line-height: 18px;
+                letter-spacing: 0.02em;
+            }
+
+            [${LOCALES_BUTTON_ATTR}][${HAS_RU_ATTR}]::before {
+                content: 'RU';
+                display: inline-flex;
+            }
+
+            [${LOCALES_BUTTON_ATTR}][${HAS_KK_ATTR}]::after {
+                content: 'KK';
+                display: inline-flex;
+            }
         `;
     }
 
@@ -146,6 +213,77 @@
                 element.removeAttribute(HIDDEN_ATTR);
                 element.removeAttribute(SHADOW_ATTR);
             });
+    }
+
+    function normalize(value) {
+        return String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ');
+    }
+
+    function clearListDecorations() {
+        document.querySelectorAll(`
+            [${COLUMN_HIDDEN_ATTR}],
+            [${LOCALES_CELL_ATTR}],
+            [${LOCALES_BUTTON_ATTR}],
+            [${HAS_RU_ATTR}],
+            [${HAS_KK_ATTR}]
+        `).forEach(element => {
+            element.removeAttribute(COLUMN_HIDDEN_ATTR);
+            element.removeAttribute(LOCALES_CELL_ATTR);
+            element.removeAttribute(LOCALES_BUTTON_ATTR);
+            element.removeAttribute(HAS_RU_ATTR);
+            element.removeAttribute(HAS_KK_ATTR);
+        });
+    }
+
+    function decorateLocalesColumn(table, index) {
+        table.querySelectorAll(`tr > *:nth-child(${index + 1})`).forEach(cell => {
+            cell.setAttribute(LOCALES_CELL_ATTR, '');
+
+            if (!(cell instanceof HTMLTableCellElement) || cell.tagName === 'TH') return;
+
+            const button = cell.querySelector('button');
+            if (!button) return;
+
+            const text = normalize(button.textContent);
+            const hasRu = /russian\s*\(ru\)|\bru\b/.test(text);
+            const hasKk = /kazakh\s*\(kk\)|\bkk\b/.test(text);
+
+            if (!hasRu && !hasKk) return;
+
+            button.setAttribute(LOCALES_BUTTON_ATTR, '');
+            if (hasRu) button.setAttribute(HAS_RU_ATTR, '');
+            if (hasKk) button.setAttribute(HAS_KK_ATTR, '');
+        });
+    }
+
+    function applyListDecorations() {
+        clearListDecorations();
+
+        const context = getListContext();
+        if (!context) return;
+
+        const table = document.querySelector(LIST_TABLE_SELECTOR);
+        if (!table) return;
+
+        const headers = [...table.querySelectorAll('thead th')];
+
+        headers.forEach((header, index) => {
+            const name = normalize(header.textContent);
+
+            if (HIDDEN_COLUMNS.has(name)) {
+                table.querySelectorAll(`tr > *:nth-child(${index + 1})`).forEach(cell => {
+                    cell.setAttribute(COLUMN_HIDDEN_ATTR, '');
+                });
+                return;
+            }
+
+            if (name === 'available in') {
+                decorateLocalesColumn(table, index);
+            }
+        });
     }
 
     function cleanupRowLinks() {
@@ -498,6 +636,8 @@
             root.querySelectorAll(TABLE_SELECTOR).forEach(markAncestorChain);
         }
 
+        applyListDecorations();
+
         applyRowLinks().catch(error => {
             console.warn('[record-list] Не удалось обработать ссылки строк', error);
         });
@@ -586,6 +726,7 @@
         if (frameId) cancelAnimationFrame(frameId);
 
         clearVisualMarkers();
+        clearListDecorations();
         cleanupRowLinks();
     }
 
