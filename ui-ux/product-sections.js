@@ -52,8 +52,12 @@
         {
             id: 'skin-care',
             title: 'Уход за кожей',
-            fields: new Set(),
-            placeholder: true
+            fields: new Set([
+                'usage_time',
+                'age_group',
+                'product_segment',
+                'ingredients'
+            ])
         },
         {
             id: 'hair-care',
