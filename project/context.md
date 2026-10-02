@@ -6,7 +6,7 @@
 >
 > Для текущего code/version/manifest/Issue/API payload/Network/UI всегда проверять live source; изменяемое техническое состояние выше этого snapshot.
 
-**Последняя консолидация:** 2026-09-30  
+**Последняя консолидация:** 2026-10-02  
 **Repo:** `mbtema/strapi`  
 **Strapi backend:** `http://10.10.3.80:1337`  
 **Локали:** `ru`, `kk`
@@ -395,6 +395,27 @@ NOT_APPLICABLE: 11174
 ```
 
 Этот result — HISTORICAL evidence успешного workflow; при новом запуске объёмы получать заново.
+
+## CANONICAL — product filter enrichment workflow
+
+Подтверждено на production `shade_groups` 2026-10-02.
+
+```text
+определить target field / relation / dictionary / source
+→ полный dataset через Content Manager
+→ assigned / [] / review
+→ union на Product
+→ dry-run → PILOT
+→ additive partial write только target field
+→ verify → Publish → verify
+→ batches + result CSV
+```
+
+Правила: все pages/relations читать полностью; relation сравнивать по `documentId`, numeric CM `id` получать динамически; `review` одного attribute не блокирует уверенные значения других; `[]` = filter не нужен; existing relations сохранять и добавлять только missing; `disconnect` без отдельного требования не использовать; existing modified/draft Product skip; write не должен дублировать остальные поля карточки; rerun idempotent; фактический Network выше сохранённого примера.
+
+HISTORICAL `shade_groups`: makeup/`ru`, attribute-level dataset. Классификация: informative `shadeName` → `shadeHex` → secondary `color_variant1C/color_info` → product context. Nude только nude; clear только explicit transparent; multicolor может иметь несколько groups; недостаточно данных → `review`.
+
+Production V4: 10739 rows / 2584 products; 10219 assigned rows, 433 `[]`, 87 review; 2168 products with known groups, 352 not applicable, 64 review-only, 8 partial-review. V4 добавил 270 relations для 144 products; 0 errors/drafts/unexpected extras. Эти counts исторические, при новом run пересчитывать.
 
 ## Normalize `attributes.name_web`
 
