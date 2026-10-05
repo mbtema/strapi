@@ -30,6 +30,7 @@
 - Для `/api/...`: `filters`, `fields`, `populate`, `pagination`, `sort`; relations ограничивать нужными fields. `populate=*` — диагностика, рабочий запрос — точный populate. Учитывать Dynamic Zone, вложенность и локализацию.
 - Если Public API недостаточен: DevTools/Network → фактический internal request; endpoint/method/payload не угадывать. Диагностика: API query → Network → Console/Postman → internal API → n8n/Make → backend.
 - Массовые read: все страницы + progress/counters + auto output. Массовые write: dry-run/count → low concurrency/batches → при большом объёме pauses/checkpoint/resume → verify; десятки тысяч write агрессивно не запускать.
+- Текущую Strapi-среду считать фактически single-user: не блокировать Save/Publish из-за существующего `modified`/draft состояния и не трактовать его как признак чужих изменений; дополнительный слой такой защиты добавлять только по явному запросу пользователя.
 
 ## 5. Strapi Admin UI и review
 - Strapi Admin — React SPA: скрипты должны переживать hard reload/SPA-навигацию, быть идемпотентными и не дублировать DOM/listeners/styles.
