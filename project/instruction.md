@@ -57,7 +57,7 @@
 - Для `ru/kk` учитывать локализацию field, relation field и target entity.
 - RU → KK: использовать `translator/full.md`; HTML переводить только разрешённый текст, сохраняя structure/tags/attributes/CSS/classes/links; защищённые названия, латиницу и техконструкции не переводить. Rules перед merge извлекать через `translator/extractor.md`.
 - Bitrix → Strapi: отдельно очистка/перезапись, повторная загрузка, перевод и relations; identifiers/endpoints/workflows брать из context или актуального Network/API, не по памяти.
-- Новый product filter field: сначала определить source semantics (`product`/`attribute`/category/context), relation type и controlled dictionary. Для attribute-derived фильтра использовать CANONICAL filter-enrichment из context: dataset → `assigned`/`[]`/`review` → product union → additive partial write → verify → publish → verify. `review` одного attribute не блокирует уверенные значения других; existing relations сохранять, добавлять только missing; `disconnect` — только по отдельному подтверждённому требованию.
+- Новый product filter field: определить source (`product`/`attribute`/category/context), relation и controlled dictionary; затем CANONICAL filter-enrichment: dataset → classification → product union → additive partial write → verify → publish → verify. Финальные states зависят от поля; для `product_features` только `assigned`/`not_applicable`/`review`, `[]` лишь временный unresolved. `review` одного свойства не блокирует уверенные другие; existing relations сохранять, добавлять только missing; `disconnect` — только явно.
 
 ## 8. ТЗ, переписка и отчёты
 - ТЗ: короткое название → что сейчас → проблема → что изменить. Collection/component/field/API/UI — только если нужно для понимания.
