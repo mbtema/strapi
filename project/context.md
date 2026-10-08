@@ -6,7 +6,7 @@
 >
 > Для текущего code/version/manifest/Issue/API payload/Network/UI всегда проверять live source; изменяемое техническое состояние выше этого snapshot.
 
-**Последняя консолидация:** 2026-10-02  
+**Последняя консолидация:** 2026-10-08  
 **Repo:** `mbtema/strapi`  
 **Strapi backend:** `http://10.10.3.80:1337`  
 **Локали:** `ru`, `kk`
@@ -335,6 +335,32 @@ Body может быть partial, например:
 
 После write, если изменение должно быть опубликовано, одного успешного admin response недостаточно: нужна публикация и итоговая проверка опубликованного состояния подходящим API.
 
+## HISTORICAL — backfill `attribute.active` 2026-10-05
+
+После добавления boolean `active` у `attribute` legacy-данные оказались частично инициализированы. Перед миграцией Content Manager audit по всем `ru` attributes дал:
+
+```text
+total: 36622
+active=true: 26905
+active=false: 0
+active=null: 9717
+```
+
+Подтверждённая для этой миграции семантика: синхронизация из Bitrix явно записала `true` для активных offers, а оставшаяся legacy-группа сохранилась как `null` и должна была стать `false`.
+
+Рабочий workflow:
+
+```text
+все attributes через Content Manager
+→ выбрать только active === null
+→ PUT /content-manager/collection-types/api::attribute.attribute/<documentId>?locale=ru
+   {"active":false}
+→ POST .../<documentId>/actions/publish?locale=ru
+→ verify
+```
+
+В write payload передавался только `active`; никакие другие поля/relations не отправлялись. Уже обработанные records при rerun не попадали в выборку, поэтому операция идемпотентна. После production run пользователь подтвердил, что итоговые количества сошлись. Counts выше — HISTORICAL snapshot, при новом аудите получать заново.
+
 ---
 
 # 4. CANONICAL workflows
@@ -403,7 +429,7 @@ NOT_APPLICABLE: 11174
 ```text
 определить target field / relation / dictionary / source
 → полный dataset через Content Manager
-→ assigned / [] / review
+→ field-specific classification
 → union на Product
 → dry-run → PILOT
 → additive partial write только target field
@@ -411,11 +437,60 @@ NOT_APPLICABLE: 11174
 → batches + result CSV
 ```
 
-Правила: все pages/relations читать полностью; relation сравнивать по `documentId`, numeric CM `id` получать динамически; `review` одного attribute не блокирует уверенные значения других; `[]` = filter не нужен; existing relations сохранять и добавлять только missing; `disconnect` без отдельного требования не использовать; existing modified/draft Product skip; write не должен дублировать остальные поля карточки; rerun idempotent; фактический Network выше сохранённого примера.
+Правила: все pages/relations читать полностью; relation сравнивать по `documentId`, numeric CM `id` получать динамически; terminal states задаются семантикой конкретного field, не переносятся автоматически между workflows; `review` одного источника/свойства не блокирует уверенные значения других; existing relations сохранять и добавлять только missing; `disconnect` без отдельного требования не использовать; modified/draft сам по себе не blocker в текущей single-user среде; write не должен дублировать остальные поля карточки; rerun idempotent; фактический Network выше сохранённого примера.
 
 HISTORICAL `shade_groups`: makeup/`ru`, attribute-level dataset. Классификация: informative `shadeName` → `shadeHex` → secondary `color_variant1C/color_info` → product context. Nude только nude; clear только explicit transparent; multicolor может иметь несколько groups; недостаточно данных → `review`.
 
 Production V4: 10739 rows / 2584 products; 10219 assigned rows, 433 `[]`, 87 review; 2168 products with known groups, 352 not applicable, 64 review-only, 8 partial-review. V4 добавил 270 relations для 144 products; 0 errors/drafts/unexpected extras. Эти counts исторические, при новом run пересчитывать.
+
+## CANONICAL — `product_features` semantics
+
+`product_features` — multi-relation для товарных характеристик макияжа. Подтверждённый controlled dictionary:
+
+```text
+waterproof
+curling
+lengthening
+contact_lens_wearers
+volumizing
+hypoallergenic
+```
+
+Финальная классификация каждого Product допускает только три состояния:
+
+```text
+assigned
+not_applicable
+review
+```
+
+`[]` допустим только как временный unresolved во время анализа и не является финальным статусом для `product_features`.
+
+Категория помогает оценивать применимость, но не является whitelist: значение можно назначать товару из другой makeup-категории, если свойство явно подтверждено. Не использовать механический keyword mapping: `volume` как объём упаковки ≠ `volumizing`; «стойкий» ≠ `waterproof`; «для чувствительных глаз»/«офтальмологически протестировано» ≠ автоматически `hypoallergenic`. При недостатке локального Product-контекста использовать web-проверку, предпочтительно официальный источник бренда/товара, и не усиливать claim сверх источника.
+
+Один Product может получить несколько значений. Наличие спорного свойства не блокирует уверенные значения других. Write идёт через общий filter-enrichment workflow: additive connect только missing relations, только target field, затем publish и verify; `disconnect` без отдельного требования не использовать.
+
+### HISTORICAL — незавершённый анализ `product_features` 2026-10-05
+
+Scope был зафиксирован как 2584 active Products категории «Макияж». Последний достоверный промежуточный snapshot до ужесточения правила по `[]`:
+
+```text
+products with confirmed values: 751
+confirmed relations: 1039
+partial_review: 113
+review-only: 79
+not_applicable: 62
+legacy unresolved []: 1692
+
+volumizing: 492
+waterproof: 258
+lengthening: 114
+curling: 78
+contact_lens_wearers: 65
+hypoallergenic: 32
+```
+
+Эти цифры не являются финальным coverage: 1692 `[]` после этого были объявлены недопустимым финальным состоянием и должны быть переклассифицированы в `assigned` / `not_applicable` / `review`. Массовое присвоение на этом этапе не запускалось. Упоминались `product-features-analysis-v3.csv` и черновой `product-features-mass-assign.js`, но этот JS не считать production-verified без повторной проверки against current Network/API.
 
 ## Normalize `attributes.name_web`
 
@@ -583,6 +658,45 @@ shareUrl
 
 Остальное — `Контент`. Основной identifier поля — реальный API `name`; label/hint только fallback. UI logic должна работать с существующими React fields, не создавать их копии.
 
+## CANONICAL — makeup filter dictionaries
+
+`release_form` controlled values, подтверждённые в enrichment 2026-10-05:
+
+| key | label |
+|---|---|
+| `baked` | Запеченая |
+| `gel` | Гелевая |
+| `cream` | Кремовая |
+| `stick` | Стик |
+| `cushion` | Кушон |
+| `loose` | Рассыпчатая |
+| `liquid` | Жидкая |
+| `pearls` | В шариках |
+| `marker` | Маркер |
+| `pressed` | Прессованная |
+| `pencil` | Карандаш |
+
+Для `release_form` source semantics — Product context; attribute-level данные не являются обязательным источником классификации.
+
+`finish` controlled values:
+
+| key | label |
+|---|---|
+| `matte` | Матовый |
+| `glossy` | Глянцевый |
+| `metallic` | Металлический |
+| `satin` | Сатиновый |
+| `radiant` | Сияющий |
+| `velvet` | Бархатистый |
+| `glitter` | Глиттер |
+| `shimmer` | Шиммер |
+
+Для неоднозначных `finish` допустима внешняя проверка конкретного товара; назначение выполняется через общий безопасный filter-enrichment workflow.
+
+### HISTORICAL — category relation migration 2026-10-05
+
+Разовая миграция подтвердила практический паттерн: когда source category уже содержит нужный набор products, список можно получить через relation самой category и использовать как input для additive assignment в target category, не делая полный scan всех Products. Existing category relations сохраняются; после write — publish/verify. Конкретные category IDs были одноразовыми и не являются reusable current state.
+
 ### CANONICAL — Product card layout + sections
 
 `ui-ux/product-sections.js` отвечает только за вкладки `Контент / Фильтры / Системное`, show/hide полей и смысловые заголовки групп. Нативные React fields не перемещать между DOM-контейнерами: это конфликтует с внутренним SPA/focus Strapi. Для временного визуального порядка групп допустим CSS `order` на существующих top-level rows (без reparent): после этого `layout-sync.js` переносит тот же порядок в штатный `layouts.edit`.
@@ -725,6 +839,8 @@ CSV Strapi (barcode + productDocumentId)
 → карточка конкретного offer только если image нельзя получить из списка
 → checkpoint + mapping CSV
 ```
+
+Дополнительный HISTORICAL diagnostic 2026-10-05 для сверки `attribute.active`: из Strapi экспортировались `barcode + active`, затем планировался exact match в Bitrix offers. Первый DOM scraper ошибочно выбрал внешнюю layout-таблицу, потому что её `innerText` содержал текст вложенного grid; ручной поиск того же barcode в Bitrix при этом находил offer. При повторении такой сверки не идентифицировать grid по общему `innerText`: использовать отдельные header cells реальной таблицы либо фактический AJAX request из Network. Session/filter IDs и payload не хранить как постоянный contract — заново подтверждать через Network.
 
 Migration pipeline:
 
