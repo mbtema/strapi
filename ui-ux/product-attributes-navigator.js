@@ -311,6 +311,72 @@
         );
     }
 
+    function nativeRelationLabels(root) {
+        const list = nativeList(root);
+        if (!list) return [];
+
+        return [...list.children]
+            .map(row => {
+                const buttons = [...row.querySelectorAll('button')];
+
+                return buttons
+                    .map(button => String(button.textContent || '').trim())
+                    .find(text => text && !/^(remove|удалить)$/i.test(text)) || '';
+            })
+            .filter(Boolean);
+    }
+
+    function alignItemsWithNativeOrder(items, root) {
+        if (!Array.isArray(items) || items.length < 2) return items;
+
+        const labels = nativeRelationLabels(root)
+            .map(normalize)
+            .filter(Boolean);
+
+        if (labels.length < 2) return items;
+
+        const byLabel = new Map();
+
+        for (const item of items) {
+            const key = normalize(item.name_web || item.documentId);
+            if (!key) continue;
+
+            if (!byLabel.has(key)) byLabel.set(key, []);
+            byLabel.get(key).push(item);
+        }
+
+        const matched = [];
+
+        for (const label of labels) {
+            const queue = byLabel.get(label);
+            if (!queue?.length) continue;
+            matched.push(queue.shift());
+        }
+
+        if (matched.length < 2) return items;
+        if (matched.length === items.length) return matched;
+
+        const positions = new Map(items.map((item, index) => [item, index]));
+        const indexes = matched
+            .map(item => positions.get(item))
+            .filter(Number.isInteger);
+
+        const ascending = indexes.every(
+            (value, index) => index === 0 || indexes[index - 1] < value
+        );
+        if (ascending) return items;
+
+        const descending = indexes.every(
+            (value, index) => index === 0 || indexes[index - 1] > value
+        );
+        if (descending) return [...items].reverse();
+
+        console.warn(
+            '[product-attributes-navigator] Не удалось однозначно сопоставить порядок API и native relation'
+        );
+        return items;
+    }
+
     const pageCount = total => Math.max(1, Math.ceil(total / UI_PAGE_SIZE));
 
     function visiblePages(page, count) {
@@ -487,7 +553,7 @@
             }
 
             if (current !== state) return;
-            current.items = items;
+            current.items = alignItemsWithNativeOrder(items, current.root);
             current.page = 1;
         } catch (error) {
             if (error?.name === 'AbortError' || current !== state) return;
