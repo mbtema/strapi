@@ -2,9 +2,9 @@
 
 > Knowledge layer проекта. Здесь хранятся устойчивые факты, подтверждённые data/API contracts, архитектурные решения, CANONICAL workflows, доменная память, полезная история и эксперименты.
 >
-> Этот файл не задаёт стиль работы и operational rules — они живут в Project Instructions.
+> Использовать вместе с Project Instructions: Instructions — единственный operational layer, задают поведение/приоритеты/форматы и имеют приоритет при конфликте; `context.md` дополняет их конкретными contracts, workflows, архитектурой и доменной памятью.
 >
-> Для текущего code/version/manifest/Issue/API payload/Network/UI всегда проверять live source; изменяемое техническое состояние выше этого snapshot.
+> Для текущего code/version/manifest/Issue/API payload/Network/UI всегда проверять live source; mutable technical state выше snapshot context, но не заменяет operational rules из Instructions.
 
 **Последняя консолидация:** 2026-10-13  
 **Repo:** `mbtema/strapi`  
@@ -54,6 +54,8 @@ bitrix_id, xml_id, code_1c
 - нет свободного управления Public API roles/permissions;
 - `/api/auth/local` исторически мог возвращать `400`;
 - практические обходные пути: текущая admin-session, Network, internal API, browser scripts.
+
+Рабочая Strapi-среда фактически single-user: существующий `modified`/draft сам по себе не свидетельствует о чужих изменениях. Operational behavior для Save/Publish задаётся Instructions.
 
 ---
 
