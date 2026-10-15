@@ -1,5 +1,5 @@
 {
-  "name": "test v14",
+  "name": "test v15",
   "nodes": [
     {
       "parameters": {
@@ -87,10 +87,10 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -780,
-        760
+        -3456,
+        -80
       ],
-      "id": "4b47d6e1-4049-43cc-8cdd-1a30ad2a5469",
+      "id": "c94d4431-06be-42d0-80f4-6a08ae7d9df5",
       "name": "createProfile"
     },
     {
@@ -121,16 +121,16 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -520,
-        760
+        -3232,
+        -80
       ],
-      "id": "f0952577-4778-4b9b-b2af-bf7a2e231a47",
+      "id": "1ac02066-ea2c-43be-95cd-b1d67edd2cfa",
       "name": "welcomeNewUser",
       "webhookId": "a3a8ce49-4713-448d-bdef-4da8bd57115d",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -154,10 +154,10 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -780,
-        340
+        -3456,
+        -368
       ],
-      "id": "0bca18f1-042c-45f6-aaef-24894b08dfb1",
+      "id": "8b25b99c-1518-4efc-969b-aafee37f575c",
       "name": "getProfile"
     },
     {
@@ -377,10 +377,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -520,
-        340
+        -3232,
+        -464
       ],
-      "id": "78b54689-bd52-47a1-af81-b34b844e4aa1",
+      "id": "9d5791d9-aa92-4337-871c-ba9f90c41815",
       "name": "routeByState"
     },
     {
@@ -476,16 +476,16 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        120,
-        -160
+        -2784,
+        -1232
       ],
-      "id": "e620e995-f149-4095-a1c3-2dfe3fc945e1",
+      "id": "52ffd693-72bb-416d-bf44-f1a087cbe57c",
       "name": "saveFullName"
     },
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Укажите отдел или магазин, в котором вы работаете",
+        "text": "Напишите ваш отдел",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -493,16 +493,16 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        420,
-        -160
+        -2560,
+        -1232
       ],
-      "id": "430a0ad8-a8f0-44dc-a54d-d231126b9ff4",
+      "id": "9aca4777-81de-4779-9c9a-bb6b39d29f25",
       "name": "askDepartment",
       "webhookId": "3724efe6-c964-4d84-a9af-47eef3dda2f7",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -599,10 +599,10 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        120,
-        60
+        -2784,
+        -848
       ],
-      "id": "8918d2b8-5ff7-4691-843c-dd6da1d990aa",
+      "id": "824b86e0-0607-4ce8-aed6-afcfc211df97",
       "name": "saveDepartment"
     },
     {
@@ -633,23 +633,23 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        420,
-        60
+        -2560,
+        -848
       ],
-      "id": "83545beb-4d3d-4da9-8176-47ea702abb3b",
+      "id": "ed6f898e-d04a-488f-9be1-51c5fdfae669",
       "name": "sendProfileSavedMenu",
       "webhookId": "06911ff6-0558-454e-8aef-8971f311d520",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "=Здравствуйте, {{ $json.fullName }} 👋\n\nЕсли нужно что-то исправить, изменить или проверить, создайте обращение",
+        "text": "=Здравствуйте, {{ $json.fullName }} 👋\n\nЗдесь можно сообщить о проблеме, передать замечание или запросить изменение\n\nНажмите «Создать обращение», чтобы начать",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -674,16 +674,16 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -180,
-        460
+        -3008,
+        -272
       ],
-      "id": "6a0ff5ce-2e79-4fb6-be0e-7cf8f7baf831",
+      "id": "fe5f3dd8-fa97-417c-bed8-745afa513c6e",
       "name": "sendMainMenu",
       "webhookId": "a593a7f6-13ef-4bd3-8ae5-5bbd0a945d59",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -698,16 +698,16 @@
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.5,
       "position": [
-        -1260,
-        500
+        -3904,
+        -224
       ],
-      "id": "2991ab97-1ab4-4791-9219-449007950e04",
+      "id": "de3f2e45-cf87-4f4d-84af-e765905981d0",
       "name": "start",
       "webhookId": "e8cbba60-a78c-48d0-846c-025c87bf25a1",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -731,10 +731,10 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -1020,
-        760
+        -3680,
+        -80
       ],
-      "id": "f106df36-7c50-42bc-a453-68250bb5842c",
+      "id": "73f4cc5a-9ca2-420d-ba28-c6adbdbcde20",
       "name": "checkNewUser"
     },
     {
@@ -757,10 +757,10 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -1020,
-        340
+        -3680,
+        -368
       ],
-      "id": "5a52df27-b07d-47cc-aa6e-d2e9bd35b1b4",
+      "id": "6afc163e-3021-447d-bc5e-bb2cebed40c4",
       "name": "checkExistingUser"
     },
     {
@@ -855,19 +855,16 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -180,
-        320
+        -3008,
+        -464
       ],
-      "id": "877cee1f-92fa-437a-87dc-1e2e81c5a1a7",
+      "id": "28c28dec-6613-4d6e-833f-0970568679d0",
       "name": "setAwaitingIssueDescription"
     },
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Опишите обращение\n\nНапишите, что нужно исправить, изменить или проверить\n\nЕсли это ошибка, расскажите, что произошло\nЕсли речь о конкретном товаре или странице, укажите название, артикул или ссылку",
-        "additionalFields": {
-          "appendAttribution": false
-        },
+        "text": "Опишите проблему\n\nНапишите, что нужно исправить, изменить или проверить\n\nЕсли это ошибка, расскажите, что произошло\nЕсли речь о конкретном товаре или странице, укажите название, артикул или ссылку",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -884,21 +881,24 @@
               }
             }
           ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
         }
       },
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        120,
-        320
+        -2784,
+        -464
       ],
-      "id": "13eb674d-59a3-43d0-b495-d6b349c603d0",
+      "id": "847a05bc-4ecf-4c16-bbf3-af854f77bb0d",
       "name": "askIssueDescription",
       "webhookId": "1d651fe4-945e-443c-8ec7-bf7627561cf4",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -1005,16 +1005,16 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        120,
-        580
+        -2784,
+        -256
       ],
-      "id": "dc6ecae2-3754-4424-a45f-5cf3d3c1d7c5",
+      "id": "a7ab7ad6-28bd-4440-acb4-d7fa65c24eee",
       "name": "saveIssueDescription"
     },
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Описание сохранено ✅\n\nЕсли есть материалы, отправьте фото, видео или файл\n\nМожно добавить несколько вложений подряд\n\nКогда закончите, нажмите «Создать обращение»\nЕсли вложений нет, нажмите кнопку сразу",
+        "text": "Описание сохранено ✅\n\nЕсли есть фото, видео или файл, отправьте их следующим сообщением\n\nМожно добавить несколько вложений\n\nЕсли материалов нет, нажмите «Создать обращение»",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -1045,16 +1045,16 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        420,
-        580
+        -2560,
+        -256
       ],
-      "id": "84ca1e2e-5d94-4c0c-a20c-b45cd6ab43fd",
+      "id": "8b2d964b-b050-4286-afce-bd125b9fcb8c",
       "name": "askIssueMedia",
       "webhookId": "bc6cbf29-2ee8-46e0-b673-a423f0ee763d",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -1201,10 +1201,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -180,
-        900
+        -3008,
+        512
       ],
-      "id": "b24b047d-5a76-4b02-94c9-6da91cf5f767",
+      "id": "91d842f4-a060-49cd-b834-af1ccb4de5b9",
       "name": "routeMediaType"
     },
     {
@@ -1299,16 +1299,16 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -180,
-        -340
+        -3008,
+        -1424
       ],
-      "id": "ca9b4133-9b9b-4339-a97c-33cd8692cdf3",
+      "id": "e1f1284f-7240-4a0f-ba35-cc0bad0ca23b",
       "name": "setAwaitingName"
     },
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Напишите имя и фамилию",
+        "text": "Введите имя и фамилию",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -1316,23 +1316,23 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        120,
-        -340
+        -2784,
+        -1424
       ],
-      "id": "b0bcf706-1653-4f48-83c4-53137b74150f",
+      "id": "060ec37b-7bf1-49ff-b6df-aabe2d2f1524",
       "name": "askFullName",
       "webhookId": "422fdd81-119a-43a9-abf8-a86a98b67275",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Отправьте фото, видео или файл\n\nМожно добавить несколько вложений подряд\n\nКогда закончите, нажмите «Создать обращение»",
+        "text": "На этом шаге можно отправить фото, видео или файл\n\nЕсли вложений нет, нажмите «Создать обращение»",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -1363,16 +1363,16 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        140,
-        980
+        -2784,
+        656
       ],
-      "id": "99e31fa3-e28b-4b36-a093-9ef3cfe7feed",
+      "id": "71d1fc81-c8fe-4d80-bda3-2a18222f183a",
       "name": "sendInvalidMediaMessage",
       "webhookId": "f9fe421c-d146-42df-a4bc-3264b5e55887",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -1401,15 +1401,14 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        140,
-        900
+        -2784,
+        464
       ],
-      "id": "99873448-df7c-4a6b-92e4-0749dae6c616",
+      "id": "c6f0370a-8bd6-4c68-a068-32f5a830c5fb",
       "name": "checkMediaNotSaved"
     },
     {
       "parameters": {
-        "operation": "insert",
         "dataTableId": {
           "__rl": true,
           "value": "telegramIssueMedia",
@@ -1529,16 +1528,16 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        420,
-        900
+        -2560,
+        464
       ],
-      "id": "226d33b2-3faa-4318-83a0-61accc7c89a6",
+      "id": "efeeef4f-eba5-40c8-8270-c549a3d296b2",
       "name": "saveIssueMedia"
     },
     {
       "parameters": {
         "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Вложение добавлено ✅\n\nМожно отправить ещё фото, видео или файл\n\nКогда всё добавите, нажмите «Создать обращение»",
+        "text": "Вложение добавлено ✅\n\nЕсли нужно, отправьте ещё фото, видео или файл\n\nИли нажмите «Создать обращение»",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -1569,16 +1568,16 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        2660,
-        840
+        -768,
+        464
       ],
-      "id": "1e9aaa3d-a5a8-49d1-a8ef-7aa0403ddc3d",
+      "id": "fa5b7109-3a57-45e6-9dec-7a5b90255b4f",
       "name": "sendMediaSaved",
       "webhookId": "d0354f0e-fe03-44ea-a903-b973c76bb38a",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -1685,10 +1684,10 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        2820,
-        1080
+        -320,
+        848
       ],
-      "id": "f9aeb225-23f1-4e04-a93d-8b6a54ebb85f",
+      "id": "57e8f89d-f56c-4888-b75f-1fed0eeb8be8",
       "name": "resetIssueDraft"
     },
     {
@@ -1713,53 +1712,12 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        3060,
-        1080
+        -96,
+        848
       ],
-      "id": "6b2d8c00-7d01-4ede-a75e-a979785c4005",
+      "id": "6a0972ae-afea-4006-8d5f-9e81bfcc3b8f",
       "name": "clearSubmittedIssueMedia",
       "alwaysOutputData": true
-    },
-    {
-      "parameters": {
-        "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Обращение создано ✅\n\nОно передано команде интернет-магазина и добавлено в Helpdesk\n\nЕсли нужно передать ещё один запрос, создайте новое обращение",
-        "replyMarkup": "inlineKeyboard",
-        "inlineKeyboard": {
-          "rows": [
-            {
-              "row": {
-                "buttons": [
-                  {
-                    "text": "Создать ещё обращение",
-                    "additionalFields": {
-                      "callback_data": "createIssue"
-                    }
-                  }
-                ]
-              }
-            }
-          ]
-        },
-        "additionalFields": {
-          "appendAttribution": false
-        }
-      },
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        3300,
-        1080
-      ],
-      "id": "e881da03-7cf1-461b-a8bd-8bfce17cddc7",
-      "name": "sendIssueSubmitted",
-      "webhookId": "1f90d87c-32de-4f83-8aba-e94f19cfd97c",
-      "credentials": {
-        "telegramApi": {
-          "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
-        }
-      }
     },
     {
       "parameters": {
@@ -1816,10 +1774,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -180,
-        -120
+        -3008,
+        -1136
       ],
-      "id": "00304976-79fe-4007-beb0-dec425cb16b5",
+      "id": "bb196d02-3aea-4a19-9b8c-e782a3307395",
       "name": "validateNameInput"
     },
     {
@@ -1833,16 +1791,16 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        120,
-        -60
+        -2784,
+        -1040
       ],
-      "id": "4e2dd9c3-5423-4c21-8c6c-efbb7766a91d",
+      "id": "c51bd01d-44a8-43e3-b6d5-9fe9e6927bc1",
       "name": "sendInvalidName",
       "webhookId": "3e0975c8-6c2a-4182-b7ac-dbb564bc7d03",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -1901,10 +1859,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -180,
-        100
+        -3008,
+        -752
       ],
-      "id": "3bbac516-510c-4feb-a128-6e8610900e6c",
+      "id": "b5a772f7-6385-43ea-a459-01b38cc03f64",
       "name": "validateDepartmentInput"
     },
     {
@@ -1918,16 +1876,16 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        120,
-        160
+        -2784,
+        -656
       ],
-      "id": "b89f6a57-032d-4706-bc86-e36ef793eaa1",
+      "id": "e3ae8bd4-39cc-45ae-b419-aeb673d38fe3",
       "name": "sendInvalidDepartment",
       "webhookId": "58e78783-0b7a-40ad-87fe-603a54a2d5a6",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -2008,19 +1966,16 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -180,
-        620
+        -3008,
+        -64
       ],
-      "id": "c8b5d9de-3553-40d9-9e37-8a93e412acba",
+      "id": "14e1314e-4539-4f37-a778-e6c08f8e7367",
       "name": "validateIssueDescription"
     },
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
         "text": "Опишите обращение обычным текстовым сообщением\n\nФото, видео и файлы можно добавить на следующем шаге",
-        "additionalFields": {
-          "appendAttribution": false
-        },
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -2037,21 +1992,24 @@
               }
             }
           ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
         }
       },
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        120,
-        680
+        -2784,
+        -64
       ],
-      "id": "f3ede106-2071-4e0f-a7b8-9895657da3f2",
+      "id": "98699702-f9e3-407c-9e66-b06a1f5d3ecc",
       "name": "sendInvalidIssueDescription",
       "webhookId": "e31daea1-b0ce-4b4b-99da-473c352307d2",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -2158,16 +2116,16 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        140,
-        1400
+        -2784,
+        272
       ],
-      "id": "a339ff10-5f32-44d4-b81e-08e6a402c744",
+      "id": "fef5bf89-7db3-4556-b969-b866620b8cfd",
       "name": "cancelIssueDraft"
     },
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Обращение отменено ✅\n\nЧерновик и вложения удалены\n\nПри необходимости можно создать новое обращение",
+        "text": "Обращение отменено ✅\n\nПри необходимости можно создать новое обращение",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -2192,16 +2150,16 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        700,
-        1400
+        -2336,
+        272
       ],
-      "id": "540a399b-fb96-4c6e-ab40-2947be62ad48",
+      "id": "7074a3ce-ad47-42c9-915c-09aa6113be57",
       "name": "sendIssueCancelled",
       "webhookId": "c2399989-3491-42a0-9558-ec6c5af9cf5b",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -2227,10 +2185,10 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        420,
-        1400
+        -2560,
+        272
       ],
-      "id": "ac02dbec-5a6d-4bbd-8774-eb1714bfc4bc",
+      "id": "89ee42e6-eb89-4235-aec8-0652b98ebaa0",
       "name": "clearCancelledIssueMedia",
       "alwaysOutputData": true
     },
@@ -2336,26 +2294,23 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        140,
-        1080
+        -2784,
+        848
       ],
-      "id": "19615485-8f76-4b66-a4e1-95cfc4532098",
+      "id": "926e1adb-d8e4-463e-94f7-962488672efc",
       "name": "setSubmittingIssue"
     },
     {
       "parameters": {
-        "resume": "timeInterval",
-        "amount": 3,
-        "unit": "seconds",
-        "options": {}
+        "amount": 3
       },
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        380,
-        1080
+        -2560,
+        848
       ],
-      "id": "eda1d0b0-8f61-4f07-82d6-3c2a6fb202f9",
+      "id": "3e44d12a-ac51-4348-a279-2dfddc6888f0",
       "name": "waitForMediaWrites",
       "webhookId": "af0c7815-0eb9-4f4e-ae74-6992d1ac97c6"
     },
@@ -2377,18 +2332,16 @@
           ]
         },
         "returnAll": true,
-        "options": {},
         "orderBy": true,
-        "orderByColumn": "createdAt",
         "orderByDirection": "ASC"
       },
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        620,
-        1080
+        -2336,
+        848
       ],
-      "id": "8f144233-f2c7-48ca-a7ae-ea7047bf0550",
+      "id": "61f37f05-837c-4b12-a4a6-204d27bdb624",
       "name": "getIssueMedia",
       "alwaysOutputData": true
     },
@@ -2447,10 +2400,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        860,
-        1080
+        -2112,
+        848
       ],
-      "id": "bd913978-a7af-4672-951c-e5fa0d924bd8",
+      "id": "8684062e-25b6-4dd3-83a4-30f7c46204a7",
       "name": "routeSubmitMedia"
     },
     {
@@ -2468,18 +2421,18 @@
             }
           ]
         },
-        "options": {},
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { mode: 'single_part', filename: String($json.fileName || 'attachment'), content_type: String($json.mimeType || 'application/octet-stream') } }}"
+        "jsonBody": "={{ { mode: 'single_part', filename: String($json.fileName || 'attachment'), content_type: String($json.mimeType || 'application/octet-stream') } }}",
+        "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1100,
-        1220
+        -1888,
+        928
       ],
-      "id": "074c2cfd-c428-474c-aaa4-8d93af14c58e",
+      "id": "aab69c38-b6cc-4f49-bce1-761d0d79eb8e",
       "name": "createNotionFileUpload",
       "retryOnFail": true,
       "maxTries": 3,
@@ -2487,33 +2440,32 @@
       "credentials": {
         "notionApi": {
           "id": "aUPcxBs0MEDPXk7i",
-          "name": "Notion account"
+          "name": "MonAmie Notion Workspace"
         }
       }
     },
     {
       "parameters": {
         "resource": "file",
-        "operation": "get",
         "fileId": "={{ $('getIssueMedia').item.json.fileId }}",
-        "binaryProperty": "data",
-        "download": true
+        "additionalFields": {}
       },
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        1340,
-        1220
+        -1664,
+        928
       ],
-      "id": "96a80a1f-a18b-4b00-8681-8e76c3eb9618",
+      "id": "568313f5-4514-48e2-9bff-001c184cd62f",
       "name": "downloadTelegramFile",
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 1000,
+      "webhookId": "18b161da-aecc-4fc9-b89f-6134c5818543",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -2532,7 +2484,6 @@
             }
           ]
         },
-        "options": {},
         "sendBody": true,
         "contentType": "multipart-form-data",
         "bodyParameters": {
@@ -2543,15 +2494,16 @@
               "inputDataFieldName": "data"
             }
           ]
-        }
+        },
+        "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1580,
-        1220
+        -1440,
+        928
       ],
-      "id": "5d02faa4-e54f-45ce-8584-16b6b53da89f",
+      "id": "ff9fa7f2-ac27-4c40-baa8-916c6045e6bc",
       "name": "uploadNotionFile",
       "retryOnFail": true,
       "maxTries": 3,
@@ -2559,7 +2511,7 @@
       "credentials": {
         "notionApi": {
           "id": "aUPcxBs0MEDPXk7i",
-          "name": "Notion account"
+          "name": "MonAmie Notion Workspace"
         }
       }
     },
@@ -2572,10 +2524,10 @@
       "type": "n8n-nodes-base.aggregate",
       "typeVersion": 1,
       "position": [
-        1820,
-        1220
+        -1216,
+        928
       ],
-      "id": "0a605811-f14d-425a-abae-a51b46f505fa",
+      "id": "09c11629-773e-4eb4-af56-e6f5e5d0290a",
       "name": "aggregateUploadedFiles"
     },
     {
@@ -2595,17 +2547,15 @@
             }
           ]
         },
-        "returnAll": false,
-        "options": {},
         "limit": 1
       },
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        700,
-        860
+        -2336,
+        464
       ],
-      "id": "88d75bf9-2d91-4251-8de1-e9f5455ff191",
+      "id": "54870af7-a911-48c0-afc3-d89456b930b5",
       "name": "getProfileAfterMediaSave"
     },
     {
@@ -2663,10 +2613,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        980,
-        860
+        -2112,
+        464
       ],
-      "id": "0d9355dc-d150-4820-9428-617c114afa4d",
+      "id": "b9f89dd6-babc-4b6e-ac4c-e09881166831",
       "name": "routeMediaSaveState"
     },
     {
@@ -2724,26 +2674,23 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        1260,
-        820
+        -1888,
+        464
       ],
-      "id": "c0bff17b-bc7b-4421-842b-67ac49624aac",
+      "id": "fc15bd66-8d3f-4252-8a10-f46c78c36d0d",
       "name": "routeMediaConfirmation"
     },
     {
       "parameters": {
-        "resume": "timeInterval",
-        "amount": 2,
-        "unit": "seconds",
-        "options": {}
+        "amount": 2
       },
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1540,
-        760
+        -1664,
+        400
       ],
-      "id": "9213a100-63da-43c6-935a-250365200e0e",
+      "id": "ff9fa71c-fa9e-4b05-b451-9432bc5c52a9",
       "name": "waitAlbumBatch",
       "webhookId": "bc1d97c9-4d6d-4ba2-bfbf-4289fb2898c1"
     },
@@ -2768,20 +2715,17 @@
             }
           ]
         },
-        "returnAll": false,
-        "options": {},
         "limit": 1,
         "orderBy": true,
-        "orderByColumn": "messageId",
-        "orderByDirection": "DESC"
+        "orderByColumn": "messageId"
       },
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        1820,
-        760
+        -1440,
+        400
       ],
-      "id": "359043e4-bbda-417b-ac6d-8e32b4d82478",
+      "id": "f5a0aa85-5cdb-4b5b-b2c2-8360c1de12d4",
       "name": "getLatestMediaInGroup"
     },
     {
@@ -2817,10 +2761,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        2100,
-        760
+        -1216,
+        400
       ],
-      "id": "f35540b9-872c-4011-ae09-50e105ab43c3",
+      "id": "71d01b25-02d6-430d-8c96-40027a6bc51e",
       "name": "isLastAlbumItem"
     },
     {
@@ -2848,10 +2792,10 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        2380,
-        760
+        -992,
+        400
       ],
-      "id": "ddbe16c0-c6bd-4588-a702-6a07c89cf000",
+      "id": "e911605e-d27b-4986-99a2-65b6852452cd",
       "name": "checkStillAwaitingMedia"
     },
     {
@@ -2931,10 +2875,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -180,
-        1180
+        -3008,
+        1024
       ],
-      "id": "edc3986f-7829-4d23-96a6-e590e7d348a9",
+      "id": "1c05398f-7a81-4dc5-a5da-d4772ace2273",
       "name": "routeSubmittingInput"
     },
     {
@@ -2948,16 +2892,16 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        120,
-        1260
+        -2784,
+        1088
       ],
-      "id": "15c7321d-e2be-4397-b0f3-e73ef3657559",
+      "id": "3e51ff23-d114-4fb8-b6f2-0bb1bd94a9d7",
       "name": "sendIssueSubmitting",
       "webhookId": "2227df25-2080-4d5d-94da-f54c92000ab6",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
-          "name": "Telegram Bot"
+          "name": "MonAmie Helpdesk"
         }
       }
     },
@@ -2970,7 +2914,6 @@
           "mode": "id"
         },
         "title": "={{ String($('getProfile').first().json.draftDescription ?? 'Обращение').split('\\n').find(line => line.trim())?.trim().slice(0, 80) || 'Обращение' }}",
-        "simple": true,
         "propertiesUi": {
           "propertyValues": [
             {
@@ -3012,15 +2955,15 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        2100,
-        1080
+        -992,
+        848
       ],
-      "id": "c675d850-f5f7-49b5-ba89-e0d087ac1fa9",
+      "id": "f0e987ac-8d2a-495d-a93d-8563defd2480",
       "name": "createNotionIssue",
       "credentials": {
         "notionApi": {
           "id": "aUPcxBs0MEDPXk7i",
-          "name": "Notion account"
+          "name": "MonAmie Notion Workspace"
         }
       }
     },
@@ -3079,10 +3022,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        2340,
-        1080
+        -768,
+        848
       ],
-      "id": "695052df-1cce-4310-a2ee-3bc92d0ca7f4",
+      "id": "4ab6c6dd-b709-412f-ab16-4bba70cfe4cf",
       "name": "routeNotionMediaAttach"
     },
     {
@@ -3108,10 +3051,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2580,
-        1200
+        -544,
+        928
       ],
-      "id": "0a87c935-68d6-4e60-95ac-9bb8749be151",
+      "id": "505ca8b3-7dc5-456b-ba0c-147ea9b2c627",
       "name": "attachNotionMedia",
       "retryOnFail": true,
       "maxTries": 3,
@@ -3119,24 +3062,50 @@
       "credentials": {
         "notionApi": {
           "id": "aUPcxBs0MEDPXk7i",
-          "name": "Notion account"
+          "name": "MonAmie Notion Workspace"
         }
       }
     },
     {
       "parameters": {
-        "content": "### Загрузка медиа в Notion\nHTTP используется только здесь, потому что нода Notion не принимает в Files property загруженные `file_upload` ID.\n\nОсновная заявка создаётся через нативную ноду **createNotionIssue**.",
-        "height": 300,
-        "width": 1000
+        "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
+        "text": "Обращение отправлено ✅\n\nКоманда интернет-магазина получила ваш запрос",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Создать ещё обращение",
+                    "additionalFields": {
+                      "callback_data": "createIssue"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
       },
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
       "position": [
-        1040,
-        1150
+        128,
+        848
       ],
-      "id": "1095637a-465b-4829-8c1a-c9358cf89137",
-      "name": "notionMediaNote"
+      "id": "6bbd24ce-fe72-4568-a35f-f41924aa4077",
+      "name": "sendIssueSubmitted",
+      "webhookId": "1f90d87c-32de-4f83-8aba-e94f19cfd97c",
+      "credentials": {
+        "telegramApi": {
+          "id": "Rohp2ZGI9XYqS610",
+          "name": "MonAmie Helpdesk"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -3603,8 +3572,7 @@
             "type": "main",
             "index": 0
           }
-        ],
-        []
+        ]
       ]
     },
     "routeMediaConfirmation": {
@@ -3741,7 +3709,7 @@
     "binaryMode": "separate",
     "availableInMCP": true
   },
-  "versionId": "de2ae56b-8d35-424a-bd3a-0055c1a3b607",
+  "versionId": "f3867cb8-0ce1-4a21-afbe-c97a089b5782",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "ea049b752fff0b36381018de234bcc47f5191366b425a0198e79723a9fc3bbd7"
