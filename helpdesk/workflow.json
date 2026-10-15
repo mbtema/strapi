@@ -1,5 +1,5 @@
 {
-  "name": "test v15",
+  "name": "test v16",
   "nodes": [
     {
       "parameters": {
@@ -1073,28 +1073,6 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
-                    "rightValue": "submitIssue",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "e122f656-51e5-48f6-9347-97b0f286190e"
-                  }
-                ],
-                "combinator": "and"
-              }
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
                     "rightValue": "cancelIssue",
                     "operator": {
                       "type": "string",
@@ -1189,6 +1167,28 @@
                       "operation": "equals"
                     },
                     "id": "646d4dc5-e86c-4b87-97a4-5f25a8451077"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
+                    "rightValue": "submitIssue",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "e122f656-51e5-48f6-9347-97b0f286190e"
                   }
                 ],
                 "combinator": "and"
@@ -2360,12 +2360,12 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $json.fileId ? 'media' : 'none' }}",
-                    "rightValue": "media",
+                    "rightValue": "none",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "735fe83c-dcb9-4a00-bd5f-e8e0f1b7008f"
+                    "id": "441a0dc8-4755-4e76-b112-7d8ecc020214"
                   }
                 ],
                 "combinator": "and"
@@ -2382,12 +2382,12 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $json.fileId ? 'media' : 'none' }}",
-                    "rightValue": "none",
+                    "rightValue": "media",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "441a0dc8-4755-4e76-b112-7d8ecc020214"
+                    "id": "735fe83c-dcb9-4a00-bd5f-e8e0f1b7008f"
                   }
                 ],
                 "combinator": "and"
@@ -2583,28 +2583,6 @@
                 ],
                 "combinator": "and"
               }
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.state }}",
-                    "rightValue": "submittingIssue",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "cf719749-666f-4666-b2e8-6523b67747c4"
-                  }
-                ],
-                "combinator": "and"
-              }
             }
           ]
         },
@@ -2634,12 +2612,12 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $('start').item.json.message?.media_group_id ? 'album' : 'single' }}",
-                    "rightValue": "single",
+                    "rightValue": "album",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "06431fec-7466-429f-ac4d-432deec8e087"
+                    "id": "38832695-e04c-4ca2-a6ba-760619ed481c"
                   }
                 ],
                 "combinator": "and"
@@ -2656,12 +2634,12 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $('start').item.json.message?.media_group_id ? 'album' : 'single' }}",
-                    "rightValue": "album",
+                    "rightValue": "single",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "38832695-e04c-4ca2-a6ba-760619ed481c"
+                    "id": "06431fec-7466-429f-ac4d-432deec8e087"
                   }
                 ],
                 "combinator": "and"
@@ -2982,12 +2960,12 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $('getIssueMedia').all().some(i => i.json.fileId) ? 'media' : 'none' }}",
-                    "rightValue": "media",
+                    "rightValue": "none",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "a3cf324b-f5e7-42ca-aea0-9076e7a49a02"
+                    "id": "4f6e554a-fdc4-464b-a64b-5d5ccb789a6e"
                   }
                 ],
                 "combinator": "and"
@@ -3004,12 +2982,12 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $('getIssueMedia').all().some(i => i.json.fileId) ? 'media' : 'none' }}",
-                    "rightValue": "none",
+                    "rightValue": "media",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "4f6e554a-fdc4-464b-a64b-5d5ccb789a6e"
+                    "id": "a3cf324b-f5e7-42ca-aea0-9076e7a49a02"
                   }
                 ],
                 "combinator": "and"
@@ -3278,13 +3256,6 @@
       "main": [
         [
           {
-            "node": "setSubmittingIssue",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
             "node": "cancelIssueDraft",
             "type": "main",
             "index": 0
@@ -3314,6 +3285,13 @@
         [
           {
             "node": "sendInvalidMediaMessage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "setSubmittingIssue",
             "type": "main",
             "index": 0
           }
@@ -3495,14 +3473,14 @@
       "main": [
         [
           {
-            "node": "createNotionFileUpload",
+            "node": "createNotionIssue",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "createNotionIssue",
+            "node": "createNotionFileUpload",
             "type": "main",
             "index": 0
           }
@@ -3579,14 +3557,14 @@
       "main": [
         [
           {
-            "node": "sendMediaSaved",
+            "node": "waitAlbumBatch",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "waitAlbumBatch",
+            "node": "sendMediaSaved",
             "type": "main",
             "index": 0
           }
@@ -3677,14 +3655,14 @@
       "main": [
         [
           {
-            "node": "attachNotionMedia",
+            "node": "resetIssueDraft",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "resetIssueDraft",
+            "node": "attachNotionMedia",
             "type": "main",
             "index": 0
           }
