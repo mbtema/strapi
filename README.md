@@ -9,6 +9,7 @@
 | [`features/`](./features) | Функции: горячие клавиши, barcode и Parser Launcher |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
+| [`helpdesk/`](./helpdesk) | n8n workflow Telegram-бота MonAmie Helpdesk |
 | [`translator/`](./translator) | RU → KK переводчик: полная версия, compressed-версия и extractor для накопленного translation context |
 | [`project/`](./project) | Sync/staging copies для Project Instructions и источника `context.md` |
 
@@ -80,6 +81,14 @@ Loader валидирует каждый дочерний manifest и итого
 
 Рабочие группы: `products`, `offers`, `attributes`, `drafts`, `service`.
 
+## Helpdesk
+
+`helpdesk/workflow.json` — актуальный n8n workflow Telegram-бота MonAmie Helpdesk. Для импорта в n8n используй raw URL:
+
+`https://raw.githubusercontent.com/mbtema/strapi/main/helpdesk/workflow.json`
+
+После обновления workflow в n8n экспорт заменяется в этом же файле, чтобы URL оставался постоянным.
+
 ## Translator
 
 - `translator/full.md` — полный source of truth для RU → KK перевода: без искусственной экономии символов, с подробными правилами, приоритетами, глоссарием и самопроверкой.
@@ -130,6 +139,8 @@ README обновляется, когда меняются структура, �
 │   ├── products-missing-content.js
 │   ├── products-wrong-variants.js
 │   └── attributes-wrong-prices.js
+├── helpdesk/
+│   └── workflow.json
 ├── translator/
 │   ├── full.md
 │   ├── compressed.md
