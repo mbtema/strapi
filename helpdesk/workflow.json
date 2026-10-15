@@ -1,5 +1,5 @@
 {
-  "name": "test v16",
+  "name": "test v17",
   "nodes": [
     {
       "parameters": {
@@ -1095,6 +1095,28 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
+                    "rightValue": "other",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "646d4dc5-e86c-4b87-97a4-5f25a8451077"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
                     "rightValue": "photo",
                     "operator": {
                       "type": "string",
@@ -1145,28 +1167,6 @@
                       "operation": "equals"
                     },
                     "id": "d988f541-9234-47a2-9113-6b4db90464da"
-                  }
-                ],
-                "combinator": "and"
-              }
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
-                    "rightValue": "other",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "646d4dc5-e86c-4b87-97a4-5f25a8451077"
                   }
                 ],
                 "combinator": "and"
@@ -1364,7 +1364,7 @@
       "typeVersion": 1.2,
       "position": [
         -2784,
-        656
+        400
       ],
       "id": "71d1fc81-c8fe-4d80-bda3-2a18222f183a",
       "name": "sendInvalidMediaMessage",
@@ -1402,7 +1402,7 @@
       "typeVersion": 1.1,
       "position": [
         -2784,
-        464
+        560
       ],
       "id": "c6f0370a-8bd6-4c68-a068-32f5a830c5fb",
       "name": "checkMediaNotSaved"
@@ -1529,7 +1529,7 @@
       "typeVersion": 1.1,
       "position": [
         -2560,
-        464
+        560
       ],
       "id": "efeeef4f-eba5-40c8-8270-c549a3d296b2",
       "name": "saveIssueMedia"
@@ -1569,7 +1569,7 @@
       "typeVersion": 1.2,
       "position": [
         -768,
-        464
+        752
       ],
       "id": "fa5b7109-3a57-45e6-9dec-7a5b90255b4f",
       "name": "sendMediaSaved",
@@ -2430,7 +2430,7 @@
       "typeVersion": 4.4,
       "position": [
         -1888,
-        928
+        960
       ],
       "id": "aab69c38-b6cc-4f49-bce1-761d0d79eb8e",
       "name": "createNotionFileUpload",
@@ -2454,7 +2454,7 @@
       "typeVersion": 1.2,
       "position": [
         -1664,
-        928
+        960
       ],
       "id": "568313f5-4514-48e2-9bff-001c184cd62f",
       "name": "downloadTelegramFile",
@@ -2501,7 +2501,7 @@
       "typeVersion": 4.4,
       "position": [
         -1440,
-        928
+        960
       ],
       "id": "ff9fa7f2-ac27-4c40-baa8-916c6045e6bc",
       "name": "uploadNotionFile",
@@ -2525,7 +2525,7 @@
       "typeVersion": 1,
       "position": [
         -1216,
-        928
+        960
       ],
       "id": "09c11629-773e-4eb4-af56-e6f5e5d0290a",
       "name": "aggregateUploadedFiles"
@@ -2553,7 +2553,7 @@
       "typeVersion": 1.1,
       "position": [
         -2336,
-        464
+        560
       ],
       "id": "54870af7-a911-48c0-afc3-d89456b930b5",
       "name": "getProfileAfterMediaSave"
@@ -2592,7 +2592,7 @@
       "typeVersion": 3.4,
       "position": [
         -2112,
-        464
+        560
       ],
       "id": "b9f89dd6-babc-4b6e-ac4c-e09881166831",
       "name": "routeMediaSaveState"
@@ -2653,7 +2653,7 @@
       "typeVersion": 3.4,
       "position": [
         -1888,
-        464
+        560
       ],
       "id": "fc15bd66-8d3f-4252-8a10-f46c78c36d0d",
       "name": "routeMediaConfirmation"
@@ -2666,7 +2666,7 @@
       "typeVersion": 1.1,
       "position": [
         -1664,
-        400
+        656
       ],
       "id": "ff9fa71c-fa9e-4b05-b451-9432bc5c52a9",
       "name": "waitAlbumBatch",
@@ -2701,7 +2701,7 @@
       "typeVersion": 1.1,
       "position": [
         -1440,
-        400
+        656
       ],
       "id": "f5a0aa85-5cdb-4b5b-b2c2-8360c1de12d4",
       "name": "getLatestMediaInGroup"
@@ -2740,7 +2740,7 @@
       "typeVersion": 3.4,
       "position": [
         -1216,
-        400
+        656
       ],
       "id": "71d01b25-02d6-430d-8c96-40027a6bc51e",
       "name": "isLastAlbumItem"
@@ -2771,7 +2771,7 @@
       "typeVersion": 1.1,
       "position": [
         -992,
-        400
+        656
       ],
       "id": "e911605e-d27b-4986-99a2-65b6852452cd",
       "name": "checkStillAwaitingMedia"
@@ -3030,7 +3030,7 @@
       "typeVersion": 4.4,
       "position": [
         -544,
-        928
+        960
       ],
       "id": "505ca8b3-7dc5-456b-ba0c-147ea9b2c627",
       "name": "attachNotionMedia",
@@ -3263,28 +3263,28 @@
         ],
         [
           {
-            "node": "checkMediaNotSaved",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "checkMediaNotSaved",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "checkMediaNotSaved",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
             "node": "sendInvalidMediaMessage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "checkMediaNotSaved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "checkMediaNotSaved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "checkMediaNotSaved",
             "type": "main",
             "index": 0
           }
