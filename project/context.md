@@ -952,6 +952,29 @@ manual duplicate-barcode 5
 
 `Категории ухода` и `Гаммы ухода` в этом PoC считаются отдельными fields второго уровня, а не служебными nodes, потому что дерево тестово строится именно из tags, присвоенных products.
 
+
+---
+
+# 10A. CANONICAL — MonAmie Helpdesk status notifications
+
+Helpdesk uses two independent n8n workflows:
+
+- `helpdesk/workflow.json` — inbound Telegram → n8n → Notion: registration, issue draft, media upload and Notion page creation.
+- `helpdesk/status-notifications.json` — outbound Notion → n8n → Telegram: requester notifications after selected status changes.
+
+Outbound contract:
+- Notion database automation sends webhook only for status transitions to `В работе`, `Решено` or `Не по адресу`.
+- Webhook content must include `Обращение`, `Статус`, `Ответ`, `Telegram chat ID`.
+- `Новое` and `Архив` do not notify the requester.
+- `Ответственный` is internal and is never exposed to the requester.
+- `Ответ` is optional. For `Решено` and `Не по адресу`, when non-empty it is appended in the same Telegram message after a blank line; when empty, only the status line is sent.
+- `В работе` sends only the status line.
+- No history/state-machine/deduplication layer is added at this stage; the workflow reacts to the three target status events only.
+- Webhook uses Header Auth. The secret belongs in the n8n credential and matching Notion custom header; never commit it to repo.
+- Webhook responds immediately and Telegram send retries up to three times.
+- Current Notion date properties are named `Дата создания` and `Дата выполнения`.
+
+
 ---
 
 # 11. Security and repository decisions
