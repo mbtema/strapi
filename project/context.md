@@ -955,12 +955,12 @@ manual duplicate-barcode 5
 
 ---
 
-# 10A. CANONICAL — MonAmie Helpdesk status notifications
+# 10A. CANONICAL — MonAmie Helpdesk notifications
 
 Helpdesk uses two independent n8n workflows:
 
 - `helpdesk/workflow.json` — inbound Telegram → n8n → Notion: registration, issue draft, media upload and Notion page creation.
-- `helpdesk/status-notifications.json` — outbound Notion → n8n → Telegram: requester notifications after selected status changes.
+- `helpdesk/notifications.json` — outbound Notion → n8n → Telegram: requester notifications after selected status changes.
 
 Outbound contract:
 - Notion database automation sends webhook only for status transitions to `В работе`, `Решено` or `Не по адресу`.
@@ -968,14 +968,14 @@ Outbound contract:
 - `Новое` and `Архив` do not notify the requester.
 - `Ответственный` is internal and is never exposed to the requester.
 - `Ответ` is optional. For `Решено` and `Не по адресу`, when non-empty it is appended in the same Telegram message after a blank line; when empty, only the status line is sent.
-- `В работе` sends only the status line.
+- `В работе` sends `Принято в работу 🛠️` and the request title as the next paragraph.
 - No history/state-machine/deduplication layer is added at this stage; the workflow reacts to the three target status events only.
 - Webhook uses Header Auth. The secret belongs in the n8n credential and matching Notion custom header; never commit it to repo.
 - Webhook responds immediately and Telegram send retries up to three times.
 - Current Notion date properties are named `Дата создания` and `Дата выполнения`.
 - Production flow was verified end-to-end on 2026-10-16: Notion automation `statusNotifications` → n8n production webhook `/webhook/helpdesk-status-notification` → Telegram.
 - The Notion automation uses one status trigger with values `В работе`, `Решено`, `Не по адресу` and sends only `Обращение`, `Статус`, `Ответ`, `Telegram chat ID`.
-- Verified Telegram behavior: `В работе` sends a single status line; `Решено` and `Не по адресу` send the status line plus optional `Ответ` in the same message separated by a blank line.
+- Verified Telegram format: first paragraph is the status (`Принято в работу 🛠️`, `Решено ✅`, `Не по адресу ↪️`), second paragraph is `Обращение`, and for `Решено` / `Не по адресу` an optional third paragraph is `Ответ`. Messages follow the main bot style: no trailing periods, blank lines between semantic blocks.
 
 
 ---
