@@ -1,0 +1,92 @@
+{
+  "name": "Helpdesk — Status notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "helpdesk-status-notification",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -480,
+        0
+      ],
+      "id": "66ed5ce1-d853-4b06-b4ea-cdb01c8267ce",
+      "name": "notionStatusWebhook",
+      "webhookId": "8ff3ecf5-f801-407f-9f0c-0c4135763049"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\n\nfunction findByKey(value, targetKey, seen = new Set()) {\n  if (value === null || value === undefined) return undefined;\n  if (typeof value !== 'object') return undefined;\n  if (seen.has(value)) return undefined;\n  seen.add(value);\n\n  if (!Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, targetKey)) {\n    return value[targetKey];\n  }\n\n  const children = Array.isArray(value) ? value : Object.values(value);\n  for (const child of children) {\n    const found = findByKey(child, targetKey, seen);\n    if (found !== undefined) return found;\n  }\n\n  return undefined;\n}\n\nfunction toText(value) {\n  if (value === null || value === undefined) return '';\n\n  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {\n    return String(value).trim();\n  }\n\n  if (Array.isArray(value)) {\n    return value.map(toText).filter(Boolean).join(' ').trim();\n  }\n\n  if (typeof value === 'object') {\n    if (typeof value.plain_text === 'string') return value.plain_text.trim();\n    if (typeof value.name === 'string') return value.name.trim();\n    if (typeof value.content === 'string') return value.content.trim();\n\n    for (const key of ['status', 'title', 'rich_text', 'select', 'value']) {\n      if (value[key] !== undefined) {\n        const text = toText(value[key]);\n        if (text) return text;\n      }\n    }\n  }\n\n  return '';\n}\n\nconst status = toText(findByKey(body, 'Статус'));\nconst issue = toText(findByKey(body, 'Обращение')) || 'Обращение';\nconst answer = toText(findByKey(body, 'Ответ'));\nconst chatId = toText(findByKey(body, 'Telegram chat ID'));\n\nconst statusText = {\n  'В работе': `«${issue}» — заявка взята в работу.`,\n  'Решено': `«${issue}» — заявка решена.`,\n  'Не по адресу': `«${issue}» — обращение не по адресу.`,\n}[status];\n\nif (!statusText || !chatId) {\n  return [];\n}\n\nconst text = (status === 'Решено' || status === 'Не по адресу') && answer\n  ? `${statusText}\\n\\n${answer}`\n  : statusText;\n\nreturn [{\n  json: {\n    chatId,\n    text,\n    status,\n    issue,\n    hasAnswer: Boolean(answer)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ],
+      "id": "03a715ca-c254-448e-9d0e-5f950e3f4744",
+      "name": "buildStatusNotification"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "526eeff9-19af-4b90-8623-d54316ea738f",
+      "name": "sendStatusNotification",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "telegramApi": {
+          "id": "Rohp2ZGI9XYqS610",
+          "name": "MonAmie Helpdesk"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "notionStatusWebhook": {
+      "main": [
+        [
+          {
+            "node": "buildStatusNotification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "buildStatusNotification": {
+      "main": [
+        [
+          {
+            "node": "sendStatusNotification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
