@@ -1685,10 +1685,10 @@
       "typeVersion": 1.1,
       "position": [
         -320,
-        848
+        960
       ],
       "id": "57e8f89d-f56c-4888-b75f-1fed0eeb8be8",
-      "name": "resetIssueDraft"
+      "name": "resetIssueDraftWithMedia"
     },
     {
       "parameters": {
@@ -1713,10 +1713,10 @@
       "typeVersion": 1.1,
       "position": [
         -96,
-        848
+        960
       ],
       "id": "6a0972ae-afea-4006-8d5f-9e81bfcc3b8f",
-      "name": "clearSubmittedIssueMedia",
+      "name": "clearSubmittedIssueMediaWithMedia",
       "alwaysOutputData": true
     },
     {
@@ -3054,10 +3054,10 @@
       "typeVersion": 1,
       "position": [
         128,
-        848
+        960
       ],
       "id": "d51a75d9-97c9-4a73-8dd0-2b57af5a0346",
-      "name": "aggregateSubmittedCleanup"
+      "name": "aggregateSubmittedCleanupWithMedia"
     },
     {
       "parameters": {
@@ -3088,10 +3088,10 @@
       "typeVersion": 1.2,
       "position": [
         352,
-        848
+        960
       ],
       "id": "6bbd24ce-fe72-4568-a35f-f41924aa4077",
-      "name": "sendIssueSubmitted",
+      "name": "sendIssueSubmittedWithMedia",
       "webhookId": "1f90d87c-32de-4f83-8aba-e94f19cfd97c",
       "credentials": {
         "telegramApi": {
@@ -3140,6 +3140,200 @@
       "id": "2fb475d4-9085-4f1a-b5e7-8f28a5a8e62b",
       "name": "sendSingleMediaSaved",
       "webhookId": "f8f7d1f0-2b7d-45a2-a174-33f6d56a3b31",
+      "credentials": {
+        "telegramApi": {
+          "id": "Rohp2ZGI9XYqS610",
+          "name": "MonAmie Helpdesk"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "telegramProfiles",
+          "mode": "name"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "userId",
+              "keyValue": "={{ String($('getProfile').first().json.userId ?? '') }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "state": "ready",
+            "draftDescription": ""
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "userId",
+              "displayName": "userId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "chatId",
+              "displayName": "chatId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "username",
+              "displayName": "username",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "fullName",
+              "displayName": "fullName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "department",
+              "displayName": "department",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "state",
+              "displayName": "state",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "draftDescription",
+              "displayName": "draftDescription",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -544,
+        736
+      ],
+      "id": "a4c3d8f2-5c36-4bc7-9575-f75e9b6c2e11",
+      "name": "resetIssueDraftNoMedia"
+    },
+    {
+      "parameters": {
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "value": "telegramIssueMedia",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "userId",
+              "keyValue": "={{ ($('start').item.json.message?.from?.id ?? $('start').item.json.callback_query?.from?.id).toString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -320,
+        736
+      ],
+      "id": "c812c5a1-e6dc-4a72-b13f-fd79a1f5b3a2",
+      "name": "clearSubmittedIssueMediaNoMedia",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "deletedMedia",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        736
+      ],
+      "id": "e9449238-55d9-4a24-9d67-0614e90bb8d1",
+      "name": "aggregateSubmittedCleanupNoMedia"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
+        "text": "Обращение отправлено ✅\n\nКоманда интернет-магазина получила ваш запрос",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Создать ещё обращение",
+                    "additionalFields": {
+                      "callback_data": "createIssue"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        128,
+        736
+      ],
+      "id": "7ab91d9c-4178-49f5-a6f9-0dc2d5e605c9",
+      "name": "sendIssueSubmittedNoMedia",
+      "webhookId": "6dbbb0d7-5a96-4fef-8a07-049b0d43a9ad",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
@@ -3382,17 +3576,6 @@
         ]
       ]
     },
-    "resetIssueDraft": {
-      "main": [
-        [
-          {
-            "node": "clearSubmittedIssueMedia",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "setAwaitingName": {
       "main": [
         [
@@ -3470,17 +3653,6 @@
         [
           {
             "node": "clearCancelledIssueMedia",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "clearSubmittedIssueMedia": {
-      "main": [
-        [
-          {
-            "node": "aggregateSubmittedCleanup",
             "type": "main",
             "index": 0
           }
@@ -3717,7 +3889,7 @@
       "main": [
         [
           {
-            "node": "resetIssueDraft",
+            "node": "resetIssueDraftNoMedia",
             "type": "main",
             "index": 0
           }
@@ -3735,18 +3907,73 @@
       "main": [
         [
           {
-            "node": "resetIssueDraft",
+            "node": "resetIssueDraftWithMedia",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "aggregateSubmittedCleanup": {
+    "resetIssueDraftWithMedia": {
       "main": [
         [
           {
-            "node": "sendIssueSubmitted",
+            "node": "clearSubmittedIssueMediaWithMedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "clearSubmittedIssueMediaWithMedia": {
+      "main": [
+        [
+          {
+            "node": "aggregateSubmittedCleanupWithMedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aggregateSubmittedCleanupWithMedia": {
+      "main": [
+        [
+          {
+            "node": "sendIssueSubmittedWithMedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "resetIssueDraftNoMedia": {
+      "main": [
+        [
+          {
+            "node": "clearSubmittedIssueMediaNoMedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "clearSubmittedIssueMediaNoMedia": {
+      "main": [
+        [
+          {
+            "node": "aggregateSubmittedCleanupNoMedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aggregateSubmittedCleanupNoMedia": {
+      "main": [
+        [
+          {
+            "node": "sendIssueSubmittedNoMedia",
             "type": "main",
             "index": 0
           }
