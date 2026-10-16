@@ -85,13 +85,13 @@ Loader валидирует каждый дочерний manifest и итого
 
 `helpdesk/workflow.json` — основной n8n workflow Telegram-бота MonAmie Helpdesk: регистрация сотрудника, создание обращения, загрузка медиа и создание карточки в Notion.
 
-`helpdesk/status-notifications.json` — отдельный outbound workflow Notion → n8n → Telegram для уведомлений по статусам `В работе`, `Решено` и `Не по адресу`. Он принимает webhook от Notion, собирает текст уведомления из `Обращение`, `Статус`, `Ответ` и `Telegram chat ID`, затем отправляет сообщение через тот же Telegram credential. Webhook настроен на Header Auth; секрет хранится только в n8n credential и Notion custom header, не в repo.
+`helpdesk/notifications.json` — отдельный outbound workflow Notion → n8n → Telegram для уведомлений по статусам `В работе`, `Решено` и `Не по адресу`. Он принимает webhook от Notion, собирает текст уведомления из `Обращение`, `Статус`, `Ответ` и `Telegram chat ID`, затем отправляет сообщение через тот же Telegram credential. Webhook настроен на Header Auth; секрет хранится только в n8n credential и Notion custom header, не в repo.
 
 Raw URL для импорта:
 
 `https://raw.githubusercontent.com/mbtema/strapi/main/helpdesk/workflow.json`
 
-`https://raw.githubusercontent.com/mbtema/strapi/main/helpdesk/status-notifications.json`
+`https://raw.githubusercontent.com/mbtema/strapi/main/helpdesk/notifications.json`
 
 После обновления workflow в n8n экспорт заменяется в соответствующем файле, чтобы raw URL оставался постоянным.
 
@@ -147,7 +147,7 @@ README обновляется, когда меняются структура, �
 │   └── attributes-wrong-prices.js
 ├── helpdesk/
 │   ├── workflow.json
-│   └── status-notifications.json
+│   └── notifications.json
 ├── translator/
 │   ├── full.md
 │   ├── compressed.md
