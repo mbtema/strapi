@@ -22,7 +22,7 @@
     {
       "id": "home-page-publish-repair",
       "path": "features/home-page-publish-repair.js",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "enabled": true
     }
   ]
