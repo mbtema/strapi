@@ -46,6 +46,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
+- `home-page-publish-repair.js` — на Home page в Draft добавляет кнопку `Пересобрать Published`: проверяет расхождения `products` между Draft и Published, выполняет `Unpublish → Publish` без удаления Draft и после публикации повторно сверяет relations.
 - `parser-launcher.js` — `Alt+P`, открывает список парсеров из `manifests/parsers.json` вертикальными колонками по группам, строго валидирует `file` / semver `version` / `group` и дубли файлов; блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 
 ## UI/UX
@@ -124,6 +125,7 @@ README обновляется, когда меняются структура, �
 ├── features/
 │   ├── barcode-extractor.js
 │   ├── ctrl-enter-publisher.js
+│   ├── home-page-publish-repair.js
 │   └── parser-launcher.js
 ├── ui-ux/
 │   ├── sidebar.js
