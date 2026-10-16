@@ -46,7 +46,6 @@ Loader валидирует каждый дочерний manifest и итого
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `home-page-publish-repair.js` — на Home page в Draft добавляет кнопку `Исправить ghost relations`: сравнивает текущие `products` из Content Manager с Public API, пересоздаёт только проблемные product-компоненты Dynamic Zone без ручного заполнения, публикует Home page и повторно проверяет результат; дополнительно показывает версию Strapi и предупреждает, если backend старее официального prevention-fix `5.23.3`.
 - `parser-launcher.js` — `Alt+P`, открывает список парсеров из `manifests/parsers.json` вертикальными колонками по группам, строго валидирует `file` / semver `version` / `group` и дубли файлов; блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 
 ## UI/UX
@@ -125,7 +124,6 @@ README обновляется, когда меняются структура, �
 ├── features/
 │   ├── barcode-extractor.js
 │   ├── ctrl-enter-publisher.js
-│   ├── home-page-publish-repair.js
 │   └── parser-launcher.js
 ├── ui-ux/
 │   ├── sidebar.js
