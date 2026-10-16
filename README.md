@@ -9,7 +9,7 @@
 | [`features/`](./features) | Функции: горячие клавиши, barcode и Parser Launcher |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
-| [`helpdesk/`](./helpdesk) | n8n workflow Telegram-бота MonAmie Helpdesk |
+| [`helpdesk/`](./helpdesk) | n8n workflows Telegram-бота MonAmie Helpdesk |
 | [`translator/`](./translator) | RU → KK переводчик: полная версия, compressed-версия и extractor для накопленного translation context |
 | [`project/`](./project) | Sync/staging copies для Project Instructions и источника `context.md` |
 
@@ -83,11 +83,17 @@ Loader валидирует каждый дочерний manifest и итого
 
 ## Helpdesk
 
-`helpdesk/workflow.json` — актуальный n8n workflow Telegram-бота MonAmie Helpdesk. Для импорта в n8n используй raw URL:
+`helpdesk/workflow.json` — основной n8n workflow Telegram-бота MonAmie Helpdesk: регистрация сотрудника, создание обращения, загрузка медиа и создание карточки в Notion.
+
+`helpdesk/status-notifications.json` — отдельный outbound workflow Notion → n8n → Telegram для уведомлений по статусам `В работе`, `Решено` и `Не по адресу`. Он принимает webhook от Notion, собирает текст уведомления из `Обращение`, `Статус`, `Ответ` и `Telegram chat ID`, затем отправляет сообщение через тот же Telegram credential. Webhook настроен на Header Auth; секрет хранится только в n8n credential и Notion custom header, не в repo.
+
+Raw URL для импорта:
 
 `https://raw.githubusercontent.com/mbtema/strapi/main/helpdesk/workflow.json`
 
-После обновления workflow в n8n экспорт заменяется в этом же файле, чтобы URL оставался постоянным.
+`https://raw.githubusercontent.com/mbtema/strapi/main/helpdesk/status-notifications.json`
+
+После обновления workflow в n8n экспорт заменяется в соответствующем файле, чтобы raw URL оставался постоянным.
 
 ## Translator
 
@@ -140,7 +146,8 @@ README обновляется, когда меняются структура, �
 │   ├── products-wrong-variants.js
 │   └── attributes-wrong-prices.js
 ├── helpdesk/
-│   └── workflow.json
+│   ├── workflow.json
+│   └── status-notifications.json
 ├── translator/
 │   ├── full.md
 │   ├── compressed.md
