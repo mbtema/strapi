@@ -3046,6 +3046,21 @@
     },
     {
       "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "deletedMedia",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        128,
+        848
+      ],
+      "id": "d51a75d9-97c9-4a73-8dd0-2b57af5a0346",
+      "name": "aggregateSubmittedCleanup"
+    },
+    {
+      "parameters": {
         "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
         "text": "Обращение отправлено ✅\n\nКоманда интернет-магазина получила ваш запрос",
         "replyMarkup": "inlineKeyboard",
@@ -3072,7 +3087,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        128,
+        352,
         848
       ],
       "id": "6bbd24ce-fe72-4568-a35f-f41924aa4077",
@@ -3418,7 +3433,7 @@
       "main": [
         [
           {
-            "node": "sendIssueSubmitted",
+            "node": "aggregateSubmittedCleanup",
             "type": "main",
             "index": 0
           }
@@ -3674,6 +3689,17 @@
         [
           {
             "node": "resetIssueDraft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aggregateSubmittedCleanup": {
+      "main": [
+        [
+          {
+            "node": "sendIssueSubmitted",
             "type": "main",
             "index": 0
           }
