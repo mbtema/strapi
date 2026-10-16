@@ -973,6 +973,9 @@ Outbound contract:
 - Webhook uses Header Auth. The secret belongs in the n8n credential and matching Notion custom header; never commit it to repo.
 - Webhook responds immediately and Telegram send retries up to three times.
 - Current Notion date properties are named `Дата создания` and `Дата выполнения`.
+- Production flow was verified end-to-end on 2026-10-16: Notion automation `statusNotifications` → n8n production webhook `/webhook/helpdesk-status-notification` → Telegram.
+- The Notion automation uses one status trigger with values `В работе`, `Решено`, `Не по адресу` and sends only `Обращение`, `Статус`, `Ответ`, `Telegram chat ID`.
+- Verified Telegram behavior: `В работе` sends a single status line; `Решено` and `Не по адресу` send the status line plus optional `Ответ` in the same message separated by a blank line.
 
 
 ---
