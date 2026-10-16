@@ -1569,10 +1569,10 @@
       "typeVersion": 1.2,
       "position": [
         -768,
-        752
+        464
       ],
       "id": "fa5b7109-3a57-45e6-9dec-7a5b90255b4f",
-      "name": "sendMediaSaved",
+      "name": "sendAlbumMediaSaved",
       "webhookId": "d0354f0e-fe03-44ea-a903-b973c76bb38a",
       "credentials": {
         "telegramApi": {
@@ -2666,7 +2666,7 @@
       "typeVersion": 1.1,
       "position": [
         -1664,
-        656
+        464
       ],
       "id": "ff9fa71c-fa9e-4b05-b451-9432bc5c52a9",
       "name": "waitAlbumBatch",
@@ -2701,7 +2701,7 @@
       "typeVersion": 1.1,
       "position": [
         -1440,
-        656
+        464
       ],
       "id": "f5a0aa85-5cdb-4b5b-b2c2-8360c1de12d4",
       "name": "getLatestMediaInGroup"
@@ -2740,7 +2740,7 @@
       "typeVersion": 3.4,
       "position": [
         -1216,
-        656
+        464
       ],
       "id": "71d01b25-02d6-430d-8c96-40027a6bc51e",
       "name": "isLastAlbumItem"
@@ -2771,7 +2771,7 @@
       "typeVersion": 1.1,
       "position": [
         -992,
-        656
+        464
       ],
       "id": "e911605e-d27b-4986-99a2-65b6852452cd",
       "name": "checkStillAwaitingMedia"
@@ -3093,6 +3093,53 @@
       "id": "6bbd24ce-fe72-4568-a35f-f41924aa4077",
       "name": "sendIssueSubmitted",
       "webhookId": "1f90d87c-32de-4f83-8aba-e94f19cfd97c",
+      "credentials": {
+        "telegramApi": {
+          "id": "Rohp2ZGI9XYqS610",
+          "name": "MonAmie Helpdesk"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
+        "text": "Вложение добавлено ✅\n\nЕсли нужно, отправьте ещё фото, видео или файл\n\nИли нажмите «Создать обращение»",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Создать обращение",
+                    "additionalFields": {
+                      "callback_data": "submitIssue"
+                    }
+                  },
+                  {
+                    "text": "Отменить",
+                    "additionalFields": {
+                      "callback_data": "cancelIssue"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -1664,
+        656
+      ],
+      "id": "2fb475d4-9085-4f1a-b5e7-8f28a5a8e62b",
+      "name": "sendSingleMediaSaved",
+      "webhookId": "f8f7d1f0-2b7d-45a2-a174-33f6d56a3b31",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
@@ -3579,7 +3626,7 @@
         ],
         [
           {
-            "node": "sendMediaSaved",
+            "node": "sendSingleMediaSaved",
             "type": "main",
             "index": 0
           }
@@ -3623,7 +3670,7 @@
       "main": [
         [
           {
-            "node": "sendMediaSaved",
+            "node": "sendAlbumMediaSaved",
             "type": "main",
             "index": 0
           }
