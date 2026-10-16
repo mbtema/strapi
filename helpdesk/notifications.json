@@ -1,0 +1,92 @@
+{
+  "name": "Helpdesk — Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "helpdesk-status-notification",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -480,
+        0
+      ],
+      "id": "66ed5ce1-d853-4b06-b4ea-cdb01c8267ce",
+      "name": "notionStatusWebhook",
+      "webhookId": "8ff3ecf5-f801-407f-9f0c-0c4135763049"
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\nconst properties = payload.body?.data?.properties ?? {};\n\nconst getTitle = (property) =>\n  property?.title?.map(item => item?.plain_text ?? '').join('').trim() ?? '';\n\nconst getRichText = (property) =>\n  property?.rich_text?.map(item => item?.plain_text ?? '').join('').trim() ?? '';\n\nconst issue = getTitle(properties['Обращение']) || 'Обращение';\nconst status = properties['Статус']?.status?.name ?? '';\nconst answer = getRichText(properties['Ответ']);\nconst chatId = getRichText(properties['Telegram chat ID']);\n\nconst statusLine = {\n  'В работе': 'Принято в работу 🛠️',\n  'Решено': 'Решено ✅',\n  'Не по адресу': 'Не по адресу ↪️',\n}[status];\n\nif (!statusLine || !chatId) {\n  return [];\n}\n\nconst parts = [statusLine, issue];\n\nif ((status === 'Решено' || status === 'Не по адресу') && answer) {\n  parts.push(answer);\n}\n\nreturn [{\n  json: {\n    chatId,\n    text: parts.join('\\n\\n'),\n    status,\n    issue,\n    hasAnswer: Boolean(answer),\n    notionPageId: payload.body?.data?.id ?? '',\n    notionEventId: payload.body?.source?.event_id ?? ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ],
+      "id": "03a715ca-c254-448e-9d0e-5f950e3f4744",
+      "name": "buildStatusNotification"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "526eeff9-19af-4b90-8623-d54316ea738f",
+      "name": "sendStatusNotification",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "telegramApi": {
+          "id": "Rohp2ZGI9XYqS610",
+          "name": "MonAmie Helpdesk"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "notionStatusWebhook": {
+      "main": [
+        [
+          {
+            "node": "buildStatusNotification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "buildStatusNotification": {
+      "main": [
+        [
+          {
+            "node": "sendStatusNotification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
