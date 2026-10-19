@@ -7,9 +7,15 @@
   const PAGE_SIZE = 100;
 
   const NORMALIZATION_GROUPS = [
-    // Добавляй группы source → target сюда:
+    {
+      name: 'Питание и увлажнение',
+      source: 'r4mskoxq9sf8x4kbmxos84v2',
+      target: 'bp1hq8n7b9px82t2i8p4f7zj'
+    }
+
+    // Добавляй следующие группы source → target сюда:
     // {
-    //   name: 'Кремы для лица',
+    //   name: 'Название группы',
     //   source: 'asianCareCategoryDocumentId',
     //   target: 'mainCatalogCategoryDocumentId'
     // }
