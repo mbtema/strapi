@@ -95,6 +95,11 @@
       // Группа: Наборы по уходу за волосами (М)
       'sj4ug9485b1it7ccxs8grfva',
       'bml9vy58rjoekruo3kel9wie'
+    ],
+    [
+      // Группа: Наборы по уходу за лицом (Ж)
+      'nrbgr3jjygcwpsswf4u276u4',
+      'xtunbkgbi1yaihwm3mvi5ifq'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
