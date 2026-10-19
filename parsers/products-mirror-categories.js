@@ -10,6 +10,10 @@
     [
       'yiydsm3f7bh2pfxh18jhnwr5',
       'ojpi51144amf8wfk2fj85go9'
+    ],
+    [
+      'k37blstm44sz9x1pib51b4s6',
+      'v08z42zs9vwx8dxx3kzkr93o'
     ]
     // Добавляй следующие пары сюда:
     // ['categoryDocumentIdA', 'categoryDocumentIdB']
