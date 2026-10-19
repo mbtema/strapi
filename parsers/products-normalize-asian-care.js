@@ -21,6 +21,11 @@
       name: 'Уход за кожей вокруг глаз',
       source: 'uvbntzls7ou3ixdkzcexgb5m',
       target: 'l7eg3exlskpsngjli7415l8z'
+    },
+    {
+      name: 'Антивозрастной уход',
+      source: 'to6qf40s4aeh9g8zw5p1anrx',
+      target: 'qgb4mkvanvvs24chnjkkdzst'
     }
 
     // Добавляй следующие группы source → target сюда:
