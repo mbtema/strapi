@@ -36,6 +36,12 @@
       'cs1pn1fsfgnccbzeybf6m93b',
       'dkt914987gaoa4k85ro5nqub',
       'bk1oxriqa9uv9ayztf96xh0g'
+    ],
+    [
+      // Группа: BB CC крема
+      'wlaptimja0i6obm3bp1kd01v',
+      'rcdjq59axctxbwlgxonekvsl',
+      's9s5o9pc2grmazelvp9t4lol'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
