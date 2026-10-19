@@ -78,6 +78,11 @@
       // Группа: Точилки
       'kz95bqjiih1wez27az8c9h7j',
       'v7dxsm3b1gqvc27e6yxq0qwh'
+    ],
+    [
+      // Группа: Щипцы для завивки
+      'rcvdcahqvj9r2zc8n5yyzmcp',
+      'xz5onwixhlsxycob2gavl7f4'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
