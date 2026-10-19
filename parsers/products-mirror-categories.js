@@ -90,6 +90,11 @@
       // Группа: Наборы для бритья
       'p4mlbvnmv54t13yhmuhz2qwa',
       'zf9c9knukrboxq5wqbtzsp99'
+    ],
+    [
+      // Группа: Наборы по уходу за волосами (М)
+      'sj4ug9485b1it7ccxs8grfva',
+      'bml9vy58rjoekruo3kel9wie'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
