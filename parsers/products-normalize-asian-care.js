@@ -46,6 +46,11 @@
       name: 'Очищение',
       source: 'ik2jvqljb6hebv0qigkpue66',
       target: 'skcrmqztdt90uvuxjixjon12'
+    },
+    {
+      name: 'Питание и увлажнение',
+      source: 'mek0fsgegv52s9q9z2nymto4',
+      target: 'wggtl2k14x05etlu8fyes6zk'
     }
 
     // Добавляй следующие группы source → target сюда:
