@@ -75,6 +75,11 @@
       // Группа: Щипцы для завивки
       'rcvdcahqvj9r2zc8n5yyzmcp',
       'xz5onwixhlsxycob2gavl7f4'
+    ],
+    [
+      // Группа: Наборы по уходу за лицом (М)
+      'r80pm3gk1n5a9panxahra78r',
+      'guuddnd684zilyxygrbnz6zx'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
