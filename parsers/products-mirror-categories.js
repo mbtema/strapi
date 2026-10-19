@@ -80,6 +80,11 @@
       // Группа: Наборы по уходу за лицом (М)
       'r80pm3gk1n5a9panxahra78r',
       'guuddnd684zilyxygrbnz6zx'
+    ],
+    [
+      // Группа: Наборы по уходу за телом (М)
+      'uenx7ueeq7pebj1c4m2xr7dj',
+      'urr31xq3jdt7tkcfnchkowke'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
