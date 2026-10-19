@@ -41,6 +41,11 @@
       name: 'Маски',
       source: 'fyzb2kdqgwhyv7iglqxvw2na',
       target: 'e6ydbzikuhrmfci9fe8yn7fg'
+    },
+    {
+      name: 'Очищение',
+      source: 'ik2jvqljb6hebv0qigkpue66',
+      target: 'skcrmqztdt90uvuxjixjon12'
     }
 
     // Добавляй следующие группы source → target сюда:
