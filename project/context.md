@@ -996,16 +996,18 @@ Outbound contract:
 
 ## CANONICAL — зеркальные категории Products
 
-Назначение: поддерживать одинаковый набор Product relations у явно настроенных пар Category в разных ветках каталога. Пары задаются вручную внутри browser parser `parsers/products-mirror-categories.js` через `MIRROR_PAIRS`; рабочая locale только `ru`.
+Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser parser `parsers/products-mirror-categories.js` через `MIRROR_GROUPS`; рабочая locale только `ru`.
 
-Бизнес-правило для пары A ↔ B:
-- если Product есть только в A — добавить B;
-- если Product есть только в B — добавить A;
-- если Product есть в обеих — no-op;
-- остальные `Product.categories` не менять;
+Бизнес-правило для одной mirror group:
+- собрать union Products всех Category группы;
+- каждая Category группы должна в итоге содержать весь union;
+- если Product отсутствует сразу в нескольких Category этой группы, добавить все missing Category одним `actions/publish`;
+- остальные `Product.categories`, не входящие в текущую группу, не менять;
 - только additive `connect`, без `disconnect` и без пересборки полного relation списка;
-- если Product действительно не должен входить в зеркальную группу, Content Manager удаляет его из обеих Category;
+- если Product действительно не должен входить в зеркальную группу, Content Manager удаляет его из всех Category этой группы;
 - Product публикуется parser'ом независимо от исходного draft/modified/published состояния.
+
+Группы изолированы друг от друга и обрабатываются строго последовательно. Изменения одной группы не объединяются с другой и не формируют transitive graph. Если один Product встречается в нескольких mirror groups, каждая группа обрабатывает его отдельно только в своём scope.
 
 Подтверждённый write contract:
 
@@ -1013,7 +1015,7 @@ Outbound contract:
 POST /content-manager/collection-types/api::product.product/<productDocumentId>/actions/publish?locale=ru
 ```
 
-Минимальный body:
+Минимальный body для одного или нескольких missing Category текущей группы:
 
 ```json
 {
@@ -1030,7 +1032,7 @@ POST /content-manager/collection-types/api::product.product/<productDocumentId>/
 }
 ```
 
-Отдельный Save не нужен: UI/Network test подтвердил, что relation можно добавить и сразу опубликовать одним `actions/publish`. `isTemporary` для этого минимального payload не требуется. Numeric Category `id` не хардкодить — получать через Content Manager detail по configured `documentId`.
+`categories.connect` может содержать несколько missing Category одной группы. Отдельный Save не нужен: UI/Network test подтвердил, что relation можно добавить и сразу опубликовать одним `actions/publish`. `isTemporary` для минимального payload не требуется. Numeric Category `id` не хардкодить — получать через Content Manager detail по configured `documentId`.
 
 Read:
 ```text
@@ -1039,37 +1041,45 @@ GET /content-manager/relations/api::category.category/<categoryDocumentId>/produ
 ```
 
 CANONICAL run:
-1. Проверить все configured Category и fail-fast до write, если хотя бы один `documentId` не читается.
-2. Прочитать все страницы relation `product` обеих Category каждой пары.
-3. Общий dry-run по всем парам; показать counts/diff. Если изменений 0 — закончить без confirm/write.
+1. Проверить все configured Category всех групп и fail-fast до write, если хотя бы один `documentId` не читается.
+2. Прочитать все страницы relation `product` всех Category каждой группы.
+3. Общий dry-run по всем группам; показать counts, union, missing relations и количество Products к publish. Если изменений 0 — закончить без confirm/write.
 4. Одно подтверждение на весь run.
-5. Обрабатывать пары последовательно. Перед write каждой пары снова сделать live-read и пересчитать diff.
-6. Для каждого missing Product выполнить один минимальный `actions/publish` с одной недостающей Category. Пары не агрегировать в общий Product payload.
+5. Обрабатывать группы строго последовательно. Перед write каждой группы снова сделать live-read и пересчитать union/diff.
+6. Для каждого Product с missing Category выполнить один минимальный `actions/publish`, содержащий все missing Category только текущей группы.
 7. Write ошибки одного Product не останавливают run; failed фиксировать и продолжать.
-8. После всех writes текущей пары заново прочитать обе Category и verify равенство Product documentId sets. Verify mismatch не останавливает следующие пары.
-9. После всех пар вывести summary; при failed/read/verify проблемах автоматически скачать CSV `pair,productDocumentId,direction,error,verifyStatus`.
+8. После всех writes текущей группы заново прочитать все её Category и verify, что их Product documentId sets равны union. Verify mismatch не останавливает следующие группы.
+9. После всех групп вывести summary; при failed/read/verify проблемах автоматически скачать CSV `group,productDocumentId,targetCategories,error,verifyStatus`.
 
 Concurrency:
 - adaptive worker waves;
 - стартовать с умеренного значения и повышать ступенями;
 - оценивать не только отсутствие ошибок, но и фактический throughput ступени;
 - новая ступень считается лучше предыдущего best только при приросте throughput минимум на 3%;
-- если две следующие ступени подряд не улучшают best throughput, откатиться к best concurrency и зафиксировать его для дальнейших pairs;
-- переносить найденный concurrency между парами;
+- если две следующие ступени подряд не улучшают best throughput, откатиться к best concurrency и зафиксировать его для дальнейших groups;
+- переносить найденный concurrency между группами;
 - на `429`, `5xx` или network error снижать concurrency и заново разрешать benchmark от нового безопасного уровня;
 - `POST actions/publish` автоматически не ретраить;
 - постоянные `4xx` не ретраить;
-- сохранять benchmark по waves: concurrency, avg latency, throughput, stage throughput, best concurrency/throughput, tuning action, success/failed.
+- сохранять benchmark по waves: group, concurrency, avg latency, throughput, stage throughput, best concurrency/throughput, tuning action, success/failed.
 
-HISTORICAL live benchmark 2026-10-19 для первой mirror pair: 308 Products были опубликованы без ошибок, verify дал A=317/B=317/missing=0 за 37.7 сек. Throughput вырос до ~9.23 req/s на concurrency 20, а ступени 25–40 не дали улучшения и увеличили latency; это подтвердило необходимость throughput-aware rollback вместо роста только по отсутствию ошибок.
+HISTORICAL live benchmark 2026-10-19 для первой mirror group из двух Category: 308 Products были опубликованы без ошибок, verify дал C1=317/C2=317/missing=0 за 37.7 сек. Throughput вырос до ~9.23 req/s на concurrency 20, а ступени 25–40 не дали улучшения и увеличили latency; это подтвердило throughput-aware rollback вместо роста только по отсутствию ошибок.
 
-Configured pair на момент создания workflow:
+Configured groups:
+
 ```js
-[
-  "yiydsm3f7bh2pfxh18jhnwr5",
-  "ojpi51144amf8wfk2fj85go9"
-]
+const MIRROR_GROUPS = [
+  [
+    "yiydsm3f7bh2pfxh18jhnwr5",
+    "ojpi51144amf8wfk2fj85go9"
+  ],
+  [
+    "k37blstm44sz9x1pib51b4s6",
+    "pybua20raonlmbtk8grtc81p",
+    "v08z42zs9vwx8dxx3kzkr93o"
+  ]
+];
 ```
 
-Пересечение Category между разными mirror pairs сейчас не запрещается и специально не обрабатывается как transitive graph. Если реальный каталог выявит сценарий A ↔ B и B ↔ C, сначала отдельно определить бизнес-семантику, затем менять workflow.
+Пересечение Category между разными mirror groups сейчас не запрещается и специально не объединяется. Если реальный каталог выявит пересекающиеся группы, сначала отдельно определить бизнес-семантику такого сценария, затем менять workflow.
 
