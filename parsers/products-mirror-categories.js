@@ -73,6 +73,11 @@
       // Группа: Спонжи и пуфы
       'q9sj5patwtfwqyxvqdh60xr9',
       'k9v6199z48mqux3urhk3slwr'
+    ],
+    [
+      // Группа: Точилки
+      'kz95bqjiih1wez27az8c9h7j',
+      'v7dxsm3b1gqvc27e6yxq0qwh'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
