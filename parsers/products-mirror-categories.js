@@ -676,6 +676,20 @@
         error: message
       });
 
+      const readErrorRow = {
+        pair: pairInfo.number,
+        productDocumentId: '',
+        direction: '',
+        error: message,
+        verifyStatus: 'pair-read-error'
+      };
+
+      const readErrorKey = issueKey(readErrorRow);
+      if (!issueRowKeys.has(readErrorKey)) {
+        issueRowKeys.add(readErrorKey);
+        issueRows.push(readErrorRow);
+      }
+
       console.error(
         '[products-mirror-categories] Pair ' +
         pairInfo.number + ': read error, перехожу к следующей паре',
@@ -749,6 +763,20 @@
         verifyMissing: null,
         error: message
       });
+
+      const verifyReadErrorRow = {
+        pair: pairInfo.number,
+        productDocumentId: '',
+        direction: '',
+        error: message,
+        verifyStatus: 'verify-read-error'
+      };
+
+      const verifyReadErrorKey = issueKey(verifyReadErrorRow);
+      if (!issueRowKeys.has(verifyReadErrorKey)) {
+        issueRowKeys.add(verifyReadErrorKey);
+        issueRows.push(verifyReadErrorRow);
+      }
 
       for (const failure of writeResult.failures) {
         const row = {
