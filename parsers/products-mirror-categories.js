@@ -99,6 +99,11 @@
       // Группа: Наборы по уходу за лицом (Ж)
       'nrbgr3jjygcwpsswf4u276u4',
       'xtunbkgbi1yaihwm3mvi5ifq'
+    ],
+    [
+      // Группа: Наборы по уходу за телом (Ж)
+      'kqxpeb7abzyhlle224w3jfdw',
+      'w5oulzst4bv7kxnktfdo3znu'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
