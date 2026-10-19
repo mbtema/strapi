@@ -8,16 +8,30 @@
 
   const MIRROR_GROUPS = [
     [
+      // Парфюмерия / Для нее / Парфюмерные наборы для нее
       'yiydsm3f7bh2pfxh18jhnwr5',
+
+      // Наборы / Для нее / Парфюмерные наборы для нее
       'ojpi51144amf8wfk2fj85go9'
     ],
     [
+      // Парфюмерия / Для него / Парфюмерные наборы для него
       'k37blstm44sz9x1pib51b4s6',
+
+      // Для мужчин / Наборы / Парфюмерные наборы для него
       'pybua20raonlmbtk8grtc81p',
+
+      // Наборы / Для него / Парфюмерные наборы для него
       'v08z42zs9vwx8dxx3kzkr93o'
     ]
-    // Добавляй следующие группы сюда:
-    // ['categoryDocumentIdA', 'categoryDocumentIdB', 'categoryDocumentIdC']
+
+    // Добавляй следующие группы сюда по тому же принципу:
+    // [
+    //   // Полный путь / Название category
+    //   'categoryDocumentIdA',
+    //   // Полный путь / Название category
+    //   'categoryDocumentIdB'
+    // ]
   ];
 
   const ADAPTIVE = {
