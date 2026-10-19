@@ -85,6 +85,11 @@
       // Группа: Наборы по уходу за телом (М)
       'uenx7ueeq7pebj1c4m2xr7dj',
       'urr31xq3jdt7tkcfnchkowke'
+    ],
+    [
+      // Группа: Наборы для бритья
+      'p4mlbvnmv54t13yhmuhz2qwa',
+      'zf9c9knukrboxq5wqbtzsp99'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
