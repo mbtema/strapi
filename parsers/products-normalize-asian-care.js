@@ -49,8 +49,8 @@
     },
     {
       name: 'Питание и увлажнение',
-      source: 'mek0fsgegv52s9q9z2nymto4',
-      target: 'wggtl2k14x05etlu8fyes6zk'
+      source: 'wggtl2k14x05etlu8fyes6zk',
+      target: 'mek0fsgegv52s9q9z2nymto4'
     }
 
     // Добавляй следующие группы source → target сюда:
