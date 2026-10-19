@@ -20,7 +20,9 @@
     start: 10,
     max: 40,
     step: 5,
-    growAfterSuccesses: 20
+    growAfterSuccesses: 20,
+    minThroughputGainRatio: 0.03,
+    underperformingLevelsBeforeLock: 2
   };
 
   const CSV_HEADERS = [
@@ -394,13 +396,113 @@
     let cursor = 0;
     let wave = 0;
 
+    const resetStage = () => {
+      adaptiveState.stageRequests = 0;
+      adaptiveState.stageSuccesses = 0;
+      adaptiveState.stageWallMs = 0;
+    };
+
+    const resetBenchmarkFromCurrent = () => {
+      resetStage();
+      adaptiveState.bestConcurrency = adaptiveState.current;
+      adaptiveState.bestThroughput = 0;
+      adaptiveState.underperformingLevels = 0;
+      adaptiveState.tuned = false;
+    };
+
+    const evaluateStage = () => {
+      if (
+        adaptiveState.tuned ||
+        adaptiveState.stageSuccesses < ADAPTIVE.growAfterSuccesses ||
+        adaptiveState.stageRequests <= 0 ||
+        adaptiveState.stageWallMs <= 0
+      ) {
+        return {
+          evaluated: false,
+          action: '',
+          stageThroughput: null
+        };
+      }
+
+      const stageThroughput = Number(
+        (
+          adaptiveState.stageRequests /
+          (adaptiveState.stageWallMs / 1000)
+        ).toFixed(2)
+      );
+
+      const currentLevel = adaptiveState.current;
+      let action = '';
+
+      if (adaptiveState.bestThroughput === 0) {
+        adaptiveState.bestThroughput = stageThroughput;
+        adaptiveState.bestConcurrency = currentLevel;
+        adaptiveState.underperformingLevels = 0;
+        action = 'baseline';
+      } else {
+        const required =
+          adaptiveState.bestThroughput *
+          (1 + ADAPTIVE.minThroughputGainRatio);
+
+        if (stageThroughput >= required) {
+          adaptiveState.bestThroughput = stageThroughput;
+          adaptiveState.bestConcurrency = currentLevel;
+          adaptiveState.underperformingLevels = 0;
+          action = 'new-best';
+        } else {
+          adaptiveState.underperformingLevels++;
+
+          const shouldLock =
+            adaptiveState.underperformingLevels >=
+              ADAPTIVE.underperformingLevelsBeforeLock ||
+            currentLevel >= ADAPTIVE.max;
+
+          if (shouldLock) {
+            adaptiveState.current = adaptiveState.bestConcurrency;
+            adaptiveState.tuned = true;
+            action = 'lock-best';
+            resetStage();
+
+            return {
+              evaluated: true,
+              action,
+              stageThroughput
+            };
+          }
+
+          action = 'probe-next';
+        }
+      }
+
+      if (adaptiveState.current < ADAPTIVE.max) {
+        adaptiveState.current = Math.min(
+          ADAPTIVE.max,
+          adaptiveState.current + ADAPTIVE.step
+        );
+      } else {
+        adaptiveState.tuned = true;
+        action = action || 'lock-max';
+      }
+
+      resetStage();
+
+      return {
+        evaluated: true,
+        action,
+        stageThroughput
+      };
+    };
+
     while (cursor < tasks.length) {
       wave++;
+
+      const configuredConcurrency = adaptiveState.current;
       const concurrency = Math.min(
-        adaptiveState.current,
+        configuredConcurrency,
         tasks.length - cursor
       );
       const batch = tasks.slice(cursor, cursor + concurrency);
+      const fullWave = batch.length === configuredConcurrency;
       const waveStartedAt = performance.now();
 
       const results = await Promise.all(
@@ -447,34 +549,37 @@
         globalProgress.completed++;
       }
 
-      const avgMs = Math.round(totalRequestMs / Math.max(1, results.length));
+      const avgMs = Math.round(
+        totalRequestMs / Math.max(1, results.length)
+      );
       const throughput = Number(
         (results.length / (wallMs / 1000)).toFixed(2)
       );
 
       const before = adaptiveState.current;
+      let tuning = {
+        evaluated: false,
+        action: '',
+        stageThroughput: null
+      };
 
       if (transientFailures > 0) {
         adaptiveState.current = Math.max(
           ADAPTIVE.min,
           Math.floor(adaptiveState.current / 2)
         );
-        adaptiveState.stableSuccesses = 0;
+        resetBenchmarkFromCurrent();
+        tuning.action = 'backoff-transient';
       } else if (waveFailures === 0) {
-        adaptiveState.stableSuccesses += waveSuccesses;
-
-        if (
-          adaptiveState.stableSuccesses >= ADAPTIVE.growAfterSuccesses &&
-          adaptiveState.current < ADAPTIVE.max
-        ) {
-          adaptiveState.current = Math.min(
-            ADAPTIVE.max,
-            adaptiveState.current + ADAPTIVE.step
-          );
-          adaptiveState.stableSuccesses = 0;
+        if (!adaptiveState.tuned && fullWave) {
+          adaptiveState.stageRequests += results.length;
+          adaptiveState.stageSuccesses += waveSuccesses;
+          adaptiveState.stageWallMs += wallMs;
+          tuning = evaluateStage();
         }
       } else {
-        adaptiveState.stableSuccesses = 0;
+        resetStage();
+        tuning.action = 'hold-on-error';
       }
 
       adaptiveState.waves.push({
@@ -488,6 +593,10 @@
         avgMs,
         wallMs,
         throughput,
+        stageThroughput: tuning.stageThroughput,
+        bestConcurrency: adaptiveState.bestConcurrency,
+        bestThroughput: adaptiveState.bestThroughput || null,
+        tuningAction: tuning.action,
         nextConcurrency: adaptiveState.current
       });
 
@@ -500,7 +609,19 @@
         ' → ' + adaptiveState.current +
         ' | avg ' + avgMs + ' ms' +
         ' | ' + throughput + ' req/s' +
-        (before !== adaptiveState.current ? ' | adjusted' : '')
+        (tuning.stageThroughput != null
+          ? ' | stage ' + tuning.stageThroughput + ' req/s'
+          : '') +
+        (adaptiveState.bestThroughput
+          ? ' | best ' +
+            adaptiveState.bestConcurrency + ' @ ' +
+            adaptiveState.bestThroughput + ' req/s'
+          : '') +
+        (tuning.action ? ' | ' + tuning.action : '') +
+        (before !== adaptiveState.current &&
+          !tuning.action
+            ? ' | adjusted'
+            : '')
       );
 
       cursor += batch.length;
@@ -637,7 +758,13 @@
   const startedAt = performance.now();
   const adaptiveState = {
     current: ADAPTIVE.start,
-    stableSuccesses: 0,
+    bestConcurrency: ADAPTIVE.start,
+    bestThroughput: 0,
+    underperformingLevels: 0,
+    tuned: false,
+    stageRequests: 0,
+    stageSuccesses: 0,
+    stageWallMs: 0,
     waves: []
   };
 
@@ -895,6 +1022,8 @@
     issueRows: issueRows.length,
     mismatchPairs,
     finalConcurrency: adaptiveState.current,
+    bestConcurrency: adaptiveState.bestConcurrency,
+    bestThroughput: adaptiveState.bestThroughput || null,
     elapsedMs,
     pairResults,
     benchmark: adaptiveState.waves
@@ -918,6 +1047,11 @@
     ' | failed ' + globalProgress.failed +
     ' | problem rows ' + issueRows.length +
     ' | final concurrency ' + adaptiveState.current +
+    (adaptiveState.bestThroughput
+      ? ' | best ' +
+        adaptiveState.bestConcurrency + ' @ ' +
+        adaptiveState.bestThroughput + ' req/s'
+      : '') +
     ' | ' + (elapsedMs / 1000).toFixed(1) + ' sec'
   );
 
