@@ -993,3 +993,78 @@ Outbound contract:
 
 - Folder-local manifests вида `extension/manifest.json`, `features/manifest.json`, `ui-ux/manifest.json`, `parsers/manifest.json` были заменены централизованным `manifests/` 2026-09-23. Не использовать старые paths как default.
 - В 2026-09-23 папки `migrator/` и `postman/` были удалены при упрощении repo. Исторические workflows выше сохранены как knowledge, но наличие текущей реализации всегда проверять в live repo.
+
+## CANONICAL — зеркальные категории Products
+
+Назначение: поддерживать одинаковый набор Product relations у явно настроенных пар Category в разных ветках каталога. Пары задаются вручную внутри browser parser `parsers/products-mirror-categories.js` через `MIRROR_PAIRS`; рабочая locale только `ru`.
+
+Бизнес-правило для пары A ↔ B:
+- если Product есть только в A — добавить B;
+- если Product есть только в B — добавить A;
+- если Product есть в обеих — no-op;
+- остальные `Product.categories` не менять;
+- только additive `connect`, без `disconnect` и без пересборки полного relation списка;
+- если Product действительно не должен входить в зеркальную группу, Content Manager удаляет его из обеих Category;
+- Product публикуется parser'ом независимо от исходного draft/modified/published состояния.
+
+Подтверждённый write contract:
+
+```text
+POST /content-manager/collection-types/api::product.product/<productDocumentId>/actions/publish?locale=ru
+```
+
+Минимальный body:
+
+```json
+{
+  "categories": {
+    "connect": [
+      {
+        "id": "<numeric category id resolved at runtime>",
+        "documentId": "<targetCategoryDocumentId>",
+        "locale": "ru"
+      }
+    ],
+    "disconnect": []
+  }
+}
+```
+
+Отдельный Save не нужен: UI/Network test подтвердил, что relation можно добавить и сразу опубликовать одним `actions/publish`. `isTemporary` для этого минимального payload не требуется. Numeric Category `id` не хардкодить — получать через Content Manager detail по configured `documentId`.
+
+Read:
+```text
+GET /content-manager/collection-types/api::category.category/<categoryDocumentId>?locale=ru
+GET /content-manager/relations/api::category.category/<categoryDocumentId>/product?locale=ru&page=<N>&pageSize=<N>
+```
+
+CANONICAL run:
+1. Проверить все configured Category и fail-fast до write, если хотя бы один `documentId` не читается.
+2. Прочитать все страницы relation `product` обеих Category каждой пары.
+3. Общий dry-run по всем парам; показать counts/diff. Если изменений 0 — закончить без confirm/write.
+4. Одно подтверждение на весь run.
+5. Обрабатывать пары последовательно. Перед write каждой пары снова сделать live-read и пересчитать diff.
+6. Для каждого missing Product выполнить один минимальный `actions/publish` с одной недостающей Category. Пары не агрегировать в общий Product payload.
+7. Write ошибки одного Product не останавливают run; failed фиксировать и продолжать.
+8. После всех writes текущей пары заново прочитать обе Category и verify равенство Product documentId sets. Verify mismatch не останавливает следующие пары.
+9. После всех пар вывести summary; при failed/read/verify проблемах автоматически скачать CSV `pair,productDocumentId,direction,error,verifyStatus`.
+
+Concurrency:
+- adaptive worker waves;
+- стартовать с умеренного значения и повышать при стабильных успешных publish;
+- переносить найденный concurrency между парами;
+- на `429`, `5xx` или network error снижать concurrency;
+- `POST actions/publish` автоматически не ретраить;
+- постоянные `4xx` не ретраить;
+- сохранять benchmark по waves: concurrency, avg latency, throughput, success/failed.
+
+Configured pair на момент создания workflow:
+```js
+[
+  "yiydsm3f7bh2pfxh18jhnwr5",
+  "ojpi51144amf8wfk2fj85go9"
+]
+```
+
+Пересечение Category между разными mirror pairs сейчас не запрещается и специально не обрабатывается как transitive graph. Если реальный каталог выявит сценарий A ↔ B и B ↔ C, сначала отдельно определить бизнес-семантику, затем менять workflow.
+
