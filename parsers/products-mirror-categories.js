@@ -8,6 +8,7 @@
 
   const MIRROR_GROUPS = [
     [
+      // Группа: Парфюмерные наборы для нее
       // Парфюмерия / Для нее / Парфюмерные наборы для нее
       'yiydsm3f7bh2pfxh18jhnwr5',
 
@@ -15,6 +16,7 @@
       'ojpi51144amf8wfk2fj85go9'
     ],
     [
+      // Группа: Парфюмерные наборы для него
       // Парфюмерия / Для него / Парфюмерные наборы для него
       'k37blstm44sz9x1pib51b4s6',
 
@@ -25,18 +27,21 @@
       'v08z42zs9vwx8dxx3kzkr93o'
     ],
     [
-      // TODO: добавить полный путь / название category
+      // Группа: Накладные ресницы
       'z6any10eysps8lq87zi41kuv',
-
-      // TODO: добавить полный путь / название category
       'xknqvho95grwz8g8oq2knqie'
+    ],
+    [
+      // Группа: Мужские ароматы
+      'cs1pn1fsfgnccbzeybf6m93b',
+      'dkt914987gaoa4k85ro5nqub',
+      'bk1oxriqa9uv9ayztf96xh0g'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
     // [
-    //   // Полный путь / Название category
+    //   // Группа: Название группы
     //   'categoryDocumentIdA',
-    //   // Полный путь / Название category
     //   'categoryDocumentIdB'
     // ]
   ];
