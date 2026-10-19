@@ -31,6 +31,11 @@
       name: 'Специальный уход',
       source: 'a6xmudit8u5kivwa0ztrt1p4',
       target: 'p6pkrxo0tlwedvov0e36yo68'
+    },
+    {
+      name: 'BB CC крема',
+      source: 'wlaptimja0i6obm3bp1kd01v',
+      target: 'rcdjq59axctxbwlgxonekvsl'
     }
 
     // Добавляй следующие группы source → target сюда:
