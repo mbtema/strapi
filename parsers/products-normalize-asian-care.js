@@ -11,6 +11,11 @@
       name: 'Питание и увлажнение',
       source: 'r4mskoxq9sf8x4kbmxos84v2',
       target: 'bp1hq8n7b9px82t2i8p4f7zj'
+    },
+    {
+      name: 'Очищение',
+      source: 's1oepjnv5is7lwdo2blauyjk',
+      target: 'x6yjqk3pcqo04px1njwkzai5'
     }
 
     // Добавляй следующие группы source → target сюда:
