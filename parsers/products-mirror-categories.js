@@ -62,6 +62,12 @@
       // Группа: Пинцеты
       'pwvwb9fs0hrnw4j2zm58jg17',
       'myskvjdzzdf9uw5xwrqrougm'
+    ],
+    [
+      // Группа: Прочее
+      'rssbmhycuxxf2lptllo4wmgw',
+      's9gy1g4fjfnclh4g5bonstka',
+      'o2rh7h558cshdud8vipu39tl'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
