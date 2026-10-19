@@ -1069,3 +1069,51 @@ Current configured groups не дублировать в context: source of trut
 
 Пересечение Category между разными mirror groups сейчас не запрещается и специально не объединяется. Если реальный каталог выявит пересекающиеся группы, сначала отдельно определить бизнес-семантику такого сценария, затем менять workflow.
 
+## CANONICAL — нормализация Products из дерева «Азиатский уход»
+
+Назначение: поддерживать одностороннее включение Products из категорий дерева «Азиатский уход» в соответствующие категории основного каталога. Runtime parser: `parsers/products-normalize-asian-care.js`; рабочая locale только `ru`.
+
+Группы задаются вручную через `NORMALIZATION_GROUPS` по контракту:
+
+```js
+{
+  name: 'Название группы',
+  source: '<documentId Category внутри Азиатского ухода>',
+  target: '<documentId соответствующей Category основного каталога>'
+}
+```
+
+Текущий бизнес-контракт — строго `1 source → 1 target`:
+- `source` — Category внутри дерева «Азиатский уход»;
+- `target` — соответствующая Category основного каталога;
+- все Products из `source.product` должны присутствовать в `target.product`;
+- Products, которые есть только в `target`, никогда не добавлять обратно в `source`;
+- source relation не менять;
+- только additive `categories.connect`, без `disconnect` и без полной пересборки `Product.categories`;
+- Product публикуется через `actions/publish` независимо от исходного draft/modified/published состояния.
+
+Read/write contract тот же, что у mirror parser:
+```text
+GET /content-manager/collection-types/api::category.category/<categoryDocumentId>?locale=ru
+GET /content-manager/relations/api::category.category/<categoryDocumentId>/product?locale=ru&page=<N>&pageSize=<N>
+POST /content-manager/collection-types/api::product.product/<productDocumentId>/actions/publish?locale=ru
+```
+
+Для write в `categories.connect` передаётся только target Category текущей normalization group с numeric `id`, полученным runtime по её `documentId`; `disconnect: []`.
+
+CANONICAL run:
+1. Валидировать `NORMALIZATION_GROUPS` и проверить все configured source/target Category; если хотя бы одна не читается, остановиться до любых write.
+2. Общий dry-run по всем группам: прочитать все страницы `source.product` и `target.product`, посчитать `source - target` и количество Products к publish.
+3. Если изменений 0 — закончить без confirm/write.
+4. Одно подтверждение на весь run.
+5. Обрабатывать группы строго последовательно. Перед write каждой группы сделать live re-check source/target и заново посчитать `source - target`.
+6. Для каждого отсутствующего Product выполнить один `actions/publish`, добавляя только target Category.
+7. Write ошибка одного Product не останавливает run; failed фиксировать и продолжать.
+8. После writes группы снова прочитать source/target и verify, что `source - target = 0`. Verify/read error не останавливает следующие группы.
+9. Финальный summary всегда; при failed/read/verify проблемах автоматически скачать CSV `group,productDocumentId,sourceCategory,targetCategory,error,verifyStatus`.
+10. Report сохраняется в `window.productsNormalizeAsianCareReport`.
+
+Concurrency полностью наследует подтверждённый throughput-aware adaptive механизм mirror parser: старт 10, шаг 5, min 5, max 40, оценка ступени после 20 успешных requests, новая ступень должна улучшить best throughput минимум на 3%, после двух подряд неулучшающих ступеней rollback/lock на best concurrency; найденный уровень переносится между groups. На `429`/`5xx`/network error concurrency снижается и benchmark перезапускается. `POST actions/publish` автоматически не ретраить.
+
+Current configured normalization groups не дублировать в context: source of truth — live `NORMALIZATION_GROUPS` в `parsers/products-normalize-asian-care.js`.
+
