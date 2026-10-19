@@ -52,6 +52,11 @@
       // Группа: Зеркала
       'i54m20lo1pumrx32he9856c7',
       'lyw5la9cjdmqua8blaxmjp4l'
+    ],
+    [
+      // Группа: Кисти и аппликаторы
+      'zkxi0kay7okxiifqewspza06',
+      'v0w0bfafqb57ccdj2dzcbilj'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
