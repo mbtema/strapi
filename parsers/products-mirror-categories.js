@@ -42,6 +42,11 @@
       'wlaptimja0i6obm3bp1kd01v',
       'rcdjq59axctxbwlgxonekvsl',
       's9s5o9pc2grmazelvp9t4lol'
+    ],
+    [
+      // Группа: Декоративные наборы
+      'tpu6an49hhza41r6nf8v1ozb',
+      'q3dy0xlgvxqq0ag2rah2ar8h'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
