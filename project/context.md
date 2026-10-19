@@ -1051,12 +1051,17 @@ CANONICAL run:
 
 Concurrency:
 - adaptive worker waves;
-- стартовать с умеренного значения и повышать при стабильных успешных publish;
+- стартовать с умеренного значения и повышать ступенями;
+- оценивать не только отсутствие ошибок, но и фактический throughput ступени;
+- новая ступень считается лучше предыдущего best только при приросте throughput минимум на 3%;
+- если две следующие ступени подряд не улучшают best throughput, откатиться к best concurrency и зафиксировать его для дальнейших pairs;
 - переносить найденный concurrency между парами;
-- на `429`, `5xx` или network error снижать concurrency;
+- на `429`, `5xx` или network error снижать concurrency и заново разрешать benchmark от нового безопасного уровня;
 - `POST actions/publish` автоматически не ретраить;
 - постоянные `4xx` не ретраить;
-- сохранять benchmark по waves: concurrency, avg latency, throughput, success/failed.
+- сохранять benchmark по waves: concurrency, avg latency, throughput, stage throughput, best concurrency/throughput, tuning action, success/failed.
+
+HISTORICAL live benchmark 2026-10-19 для первой mirror pair: 308 Products были опубликованы без ошибок, verify дал A=317/B=317/missing=0 за 37.7 сек. Throughput вырос до ~9.23 req/s на concurrency 20, а ступени 25–40 не дали улучшения и увеличили latency; это подтвердило необходимость throughput-aware rollback вместо роста только по отсутствию ошибок.
 
 Configured pair на момент создания workflow:
 ```js
