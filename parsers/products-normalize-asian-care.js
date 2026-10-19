@@ -26,6 +26,11 @@
       name: 'Антивозрастной уход',
       source: 'to6qf40s4aeh9g8zw5p1anrx',
       target: 'qgb4mkvanvvs24chnjkkdzst'
+    },
+    {
+      name: 'Специальный уход',
+      source: 'a6xmudit8u5kivwa0ztrt1p4',
+      target: 'p6pkrxo0tlwedvov0e36yo68'
     }
 
     // Добавляй следующие группы source → target сюда:
