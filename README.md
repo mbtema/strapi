@@ -71,6 +71,7 @@ Loader валидирует каждый дочерний manifest и итого
 - `attributes-wrong-prices.js` — attributes активных товаров в текущем состоянии CMS с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
 - `products-missing-content.js` — проверяет критичные контентные поля активных товаров с учётом `categories.active`: товары только в отключённых категориях пропускаются, а товары без categories или со смешанными active/inactive categories всегда попадают в отчёт как edge cases.
 - `products-wrong-variants.js` — проверяет варианты `shade`/`volume` у attributes активных товаров и формирует компактный отчёт `documentId` + `errorType`.
+- `products-mirror-categories.js` — синхронизирует Products внутри настроенных пар зеркальных categories: сначала общий dry-run, затем после одного подтверждения последовательно обрабатывает пары через additive `categories.connect` + `actions/publish`, использует adaptive concurrency без auto-retry POST, делает verify каждой пары и скачивает CSV только при ошибках/расхождениях.
 - `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
 - `style-stealer.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
@@ -144,6 +145,7 @@ README обновляется, когда меняются структура, �
 │   ├── layout-sync.js
 │   ├── products-missing-content.js
 │   ├── products-wrong-variants.js
+│   ├── products-mirror-categories.js
 │   └── attributes-wrong-prices.js
 ├── helpdesk/
 │   ├── workflow.json
