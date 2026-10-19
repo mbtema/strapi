@@ -31,7 +31,6 @@
     ],
     [
       // Группа: BB CC крема
-      'wlaptimja0i6obm3bp1kd01v',
       'rcdjq59axctxbwlgxonekvsl',
       's9s5o9pc2grmazelvp9t4lol'
     ],
