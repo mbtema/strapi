@@ -68,6 +68,11 @@
       'rssbmhycuxxf2lptllo4wmgw',
       's9gy1g4fjfnclh4g5bonstka',
       'o2rh7h558cshdud8vipu39tl'
+    ],
+    [
+      // Группа: Спонжи и пуфы
+      'q9sj5patwtfwqyxvqdh60xr9',
+      'k9v6199z48mqux3urhk3slwr'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
