@@ -1065,21 +1065,7 @@ Concurrency:
 
 HISTORICAL live benchmark 2026-10-19 для первой mirror group из двух Category: 308 Products были опубликованы без ошибок, verify дал C1=317/C2=317/missing=0 за 37.7 сек. Throughput вырос до ~9.23 req/s на concurrency 20, а ступени 25–40 не дали улучшения и увеличили latency; это подтвердило throughput-aware rollback вместо роста только по отсутствию ошибок.
 
-Configured groups:
-
-```js
-const MIRROR_GROUPS = [
-  [
-    "yiydsm3f7bh2pfxh18jhnwr5",
-    "ojpi51144amf8wfk2fj85go9"
-  ],
-  [
-    "k37blstm44sz9x1pib51b4s6",
-    "pybua20raonlmbtk8grtc81p",
-    "v08z42zs9vwx8dxx3kzkr93o"
-  ]
-];
-```
+Current configured groups не дублировать в context: source of truth — live `MIRROR_GROUPS` в `parsers/products-mirror-categories.js`.
 
 Пересечение Category между разными mirror groups сейчас не запрещается и специально не объединяется. Если реальный каталог выявит пересекающиеся группы, сначала отдельно определить бизнес-семантику такого сценария, затем менять workflow.
 
