@@ -16,6 +16,11 @@
       name: 'Очищение',
       source: 's1oepjnv5is7lwdo2blauyjk',
       target: 'x6yjqk3pcqo04px1njwkzai5'
+    },
+    {
+      name: 'Уход за кожей вокруг глаз',
+      source: 'uvbntzls7ou3ixdkzcexgb5m',
+      target: 'l7eg3exlskpsngjli7415l8z'
     }
 
     // Добавляй следующие группы source → target сюда:
