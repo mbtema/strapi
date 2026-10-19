@@ -36,6 +36,11 @@
       name: 'BB CC крема',
       source: 'wlaptimja0i6obm3bp1kd01v',
       target: 'rcdjq59axctxbwlgxonekvsl'
+    },
+    {
+      name: 'Маски',
+      source: 'fyzb2kdqgwhyv7iglqxvw2na',
+      target: 'e6ydbzikuhrmfci9fe8yn7fg'
     }
 
     // Добавляй следующие группы source → target сюда:
