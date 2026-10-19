@@ -57,6 +57,11 @@
       // Группа: Кисти и аппликаторы
       'zkxi0kay7okxiifqewspza06',
       'v0w0bfafqb57ccdj2dzcbilj'
+    ],
+    [
+      // Группа: Пинцеты
+      'pwvwb9fs0hrnw4j2zm58jg17',
+      'myskvjdzzdf9uw5xwrqrougm'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
