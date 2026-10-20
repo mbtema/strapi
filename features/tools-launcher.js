@@ -11,11 +11,9 @@
   const ACTIVE_RUNS_KEY = '__tmToolsLauncherActiveRuns';
 
   const TOOL_GROUPS = [
-    { id: 'products', title: 'products' },
-    { id: 'offers', title: 'attributes' },
-    { id: 'attributes', title: 'attributes' },
-    { id: 'drafts', title: 'drafts' },
-    { id: 'service', title: 'service' }
+    { id: 'audits', title: 'audits' },
+    { id: 'sync', title: 'sync' },
+    { id: 'diagnostics', title: 'diagnostics' }
   ];
 
   const KNOWN_GROUP_IDS = new Set(TOOL_GROUPS.map(group => group.id));
@@ -87,6 +85,13 @@
 
       if (!ALLOWED_GROUP_IDS.has(normalized.group)) {
         throw new Error(`${label}: неизвестная группа ${normalized.group}`);
+      }
+
+      const pathGroup = normalized.file.split('/')[0];
+      if (normalized.group !== pathGroup) {
+        throw new Error(
+          `${label}: group ${normalized.group} не совпадает с папкой ${pathGroup}`
+        );
       }
 
       if (files.has(normalized.file)) {
@@ -358,7 +363,7 @@
       const tools = await loadManifest();
 
       if (!document.body.contains(overlay)) return;
-      if (!tools.length) throw new Error('В manifests/tools.json нет парсеров');
+      if (!tools.length) throw new Error('В manifests/tools.json нет tools');
 
       const grouped = splitTools(tools);
 
