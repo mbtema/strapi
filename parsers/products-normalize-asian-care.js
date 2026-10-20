@@ -51,6 +51,16 @@
       name: 'Питание и увлажнение (Тело)',
       source: 'wggtl2k14x05etlu8fyes6zk',
       target: 'mek0fsgegv52s9q9z2nymto4'
+    },
+    {
+      name: 'Шампуни и кондиционеры',
+      source: 'qqks8jws6e1kyfo2ga0hwr63',
+      target: 'jofup78lsu49kc4phmq8f93q'
+    },
+    {
+      name: 'Маски и сыворотки',
+      source: 'owkukl3n90u8g6fypglqjbkj',
+      target: 'm8p4q9aosbbv9gczghycx0f6'
     }
 
     // Добавляй следующие группы source → target сюда:

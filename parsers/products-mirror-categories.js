@@ -29,11 +29,11 @@
       'dkt914987gaoa4k85ro5nqub',
       'bk1oxriqa9uv9ayztf96xh0g'
     ],
-    [
-      // Группа: BB CC крема
+    /*[
+      // Группа: BB CC крема (?)
       'rcdjq59axctxbwlgxonekvsl',
       's9s5o9pc2grmazelvp9t4lol'
-    ],
+    ]*/
     [
       // Группа: Декоративные наборы
       'tpu6an49hhza41r6nf8v1ozb',
@@ -104,6 +104,16 @@
       // Группа: Наборы по уходу за телом (Ж)
       'kqxpeb7abzyhlle224w3jfdw',
       'w5oulzst4bv7kxnktfdo3znu'
+    ],
+    [
+      // Группа: Расчески
+      'ppg02oir0j3m82nt44xte6zv',
+      'jj4kjryw9a80emyhsmc8enyd'
+    ],
+    [
+      // Группа: Наборы по уходу за волосами (Ж)
+      'z20lqspttx2u4bp8z4ryocpc',
+      'ce192gec9vkw4c4t7baallyq'
     ]
 
     // Добавляй следующие группы сюда по тому же принципу:
