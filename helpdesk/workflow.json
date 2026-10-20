@@ -2410,15 +2410,13 @@
       ],
       "id": "ff9fa7f2-ac27-4c40-baa8-916c6045e6bc",
       "name": "uploadNotionFile",
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 1000,
       "credentials": {
         "notionApi": {
           "id": "aUPcxBs0MEDPXk7i",
           "name": "MonAmie Notion Workspace"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -3135,8 +3133,8 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        -992,
-        960
+        -880,
+        912
       ],
       "id": "31c0ea6c-1fb6-49df-95c7-4d4c6e46ea31",
       "name": "createNotionIssueWithMedia",
@@ -3557,6 +3555,67 @@
       ],
       "id": "55101a8e-8e9f-4ed1-baad-82d49a9537b5",
       "name": "routeUserProfile"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ Array.isArray($json.uploadedFiles) && $json.uploadedFiles.length > 0 && $json.uploadedFiles.every(file => file?.id && String(file?.status ?? '').toLowerCase() === 'uploaded') ? 'success' : 'failed' }}",
+                    "rightValue": "success",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "4c5207fb-acde-4d72-b0af-7f5f0d7219a1"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ Array.isArray($json.uploadedFiles) && $json.uploadedFiles.length > 0 && $json.uploadedFiles.every(file => file?.id && String(file?.status ?? '').toLowerCase() === 'uploaded') ? 'success' : 'failed' }}",
+                    "rightValue": "failed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "762df910-f48a-4535-b3bc-83ea735d13be"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "db67ab4d-b9e5-49f6-83e3-30ccbdc6cf6c",
+      "name": "routeUploadedFiles",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -1104,
+        960
+      ]
     }
   ],
   "pinData": {},
@@ -3934,7 +3993,7 @@
       "main": [
         [
           {
-            "node": "createNotionIssueWithMedia",
+            "node": "routeUploadedFiles",
             "type": "main",
             "index": 0
           }
@@ -4186,6 +4245,24 @@
         [
           {
             "node": "createProfile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "routeUploadedFiles": {
+      "main": [
+        [
+          {
+            "node": "createNotionIssueWithMedia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "recoverSubmitBeforeNotion",
             "type": "main",
             "index": 0
           }
