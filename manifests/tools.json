@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "file": "audits/attributes-wrong-prices.js",
+      "version": "1.4.0",
+      "group": "attributes"
+    },
+    {
+      "file": "audits/products-missing-content.js",
+      "version": "1.3.2",
+      "group": "products"
+    },
+    {
+      "file": "audits/products-wrong-variants.js",
+      "version": "1.2.0",
+      "group": "products"
+    },
+    {
+      "file": "sync/products-category-mirror-sync.js",
+      "version": "1.1.22",
+      "group": "products"
+    },
+    {
+      "file": "sync/products-category-forward-sync.js",
+      "version": "1.0.12",
+      "group": "products"
+    },
+    {
+      "file": "diagnostics/dom-stealer.js",
+      "version": "1.0.1",
+      "group": "service"
+    },
+    {
+      "file": "diagnostics/network-recorder.js",
+      "version": "1.0.2",
+      "group": "service"
+    },
+    {
+      "file": "diagnostics/style-stealer.js",
+      "version": "1.1.0",
+      "group": "service"
+    },
+    {
+      "file": "sync/layout-sync.js",
+      "version": "1.1.1",
+      "group": "service"
+    }
+  ]
+}
