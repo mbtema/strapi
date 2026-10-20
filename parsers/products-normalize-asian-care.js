@@ -8,12 +8,12 @@
 
   const NORMALIZATION_GROUPS = [
     {
-      name: 'Питание и увлажнение',
+      name: 'Питание и увлажнение (Лицо)',
       source: 'r4mskoxq9sf8x4kbmxos84v2',
       target: 'bp1hq8n7b9px82t2i8p4f7zj'
     },
     {
-      name: 'Очищение',
+      name: 'Очищение (Лицо)',
       source: 's1oepjnv5is7lwdo2blauyjk',
       target: 'x6yjqk3pcqo04px1njwkzai5'
     },
@@ -43,12 +43,12 @@
       target: 'e6ydbzikuhrmfci9fe8yn7fg'
     },
     {
-      name: 'Очищение',
+      name: 'Очищение (Тело)',
       source: 'ik2jvqljb6hebv0qigkpue66',
       target: 'skcrmqztdt90uvuxjixjon12'
     },
     {
-      name: 'Питание и увлажнение',
+      name: 'Питание и увлажнение (Тело)',
       source: 'wggtl2k14x05etlu8fyes6zk',
       target: 'mek0fsgegv52s9q9z2nymto4'
     }
