@@ -72,6 +72,11 @@
       source: 'arfksuoh23h2arbbkpomkyj0',
       target: 'tlsueik73oho5duwf0ylttsh'
     },
+    {
+      name: 'Уход за губами',
+      source: 'hva81vfsppwgan6tn5rblyyw',
+      target: 'x7z70pjwjjqmhsql4bsgfkle'
+    }
 
     // Добавляй следующие группы source → target сюда:
     // {
