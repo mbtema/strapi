@@ -23,12 +23,12 @@
       target: 'l7eg3exlskpsngjli7415l8z'
     },
     {
-      name: 'Антивозрастной уход',
+      name: 'Антивозрастной уход (Лицо)',
       source: 'to6qf40s4aeh9g8zw5p1anrx',
       target: 'qgb4mkvanvvs24chnjkkdzst'
     },
     {
-      name: 'Специальный уход',
+      name: 'Специальный уход (Лицо)',
       source: 'a6xmudit8u5kivwa0ztrt1p4',
       target: 'p6pkrxo0tlwedvov0e36yo68'
     },
