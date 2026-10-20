@@ -61,7 +61,17 @@
       name: 'Маски и сыворотки',
       source: 'owkukl3n90u8g6fypglqjbkj',
       target: 'm8p4q9aosbbv9gczghycx0f6'
-    }
+    },
+    {
+      name: 'Солнечная линия',
+      source: 'noiowyj4fpy9vo6sdctixh28',
+      target: 'tlsueik73oho5duwf0ylttsh'
+    },
+    {
+      name: 'Защита от солнца',
+      source 'arfksuoh23h2arbbkpomkyj0',
+      target 'tlsueik73oho5duwf0ylttsh'
+    },
 
     // Добавляй следующие группы source → target сюда:
     // {
