@@ -96,7 +96,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Добро пожаловать в MonAmie Helpdesk 👋\n\nЗдесь можно сообщить о проблеме, попросить внести изменение или оставить замечание по сайту, мобильному приложению или контенту\n\nПеред первым обращением заполните короткий профиль\n\nУкажите имя, фамилию и отдел или магазин\n\nЭто займёт меньше минуты",
+        "text": "Добро пожаловать в MonAmie Helpdesk 👋\n\nЭто бот для сотрудников компании. Через него можно отправить обращение команде Интернет-магазина:\n\n• запросить изменение контента на сайте, в мобильном приложении или на маркетплейсе\n• сообщить об ошибке или некорректной работе этих каналов\n• оставить замечание по контенту или отображению\n\nПеред первым обращением нужно один раз заполнить профиль: указать имя, фамилию и отдел или магазин.\n\nЭти данные нужны, чтобы команда знала автора запроса, могла при необходимости уточнить детали, а бот — отправлять вам статусы по обращению 🔔\n\nЗаполнение займёт меньше минуты.",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -104,7 +104,7 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Начать",
+                    "text": "Заполнить профиль 👤",
                     "additionalFields": {
                       "callback_data": "startRegistration"
                     }
@@ -486,7 +486,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Напишите ваш отдел",
+        "text": "Укажите отдел или магазин 🏢",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -609,7 +609,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Готово ✅\n\nПрофиль сохранён\n\nЧерез Helpdesk можно:\n• сообщить об ошибке или некорректной работе\n• попросить изменить фото товара или контент\n• передать замечание по сайту или мобильному приложению\n\nНажмите «Создать обращение», чтобы начать",
+        "text": "Профиль сохранён ✅\n\nТеперь можно отправлять обращения команде Интернет-магазина.\n\nБот будет присылать сюда статусы по вашим обращениям 🔔",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -617,7 +617,7 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Создать обращение",
+                    "text": "Создать обращение 📝",
                     "additionalFields": {
                       "callback_data": "createIssue"
                     }
@@ -650,7 +650,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "=Здравствуйте, {{ $json.fullName }} 👋\n\nЗдесь можно сообщить о проблеме, передать замечание или запросить изменение\n\nНажмите «Создать обращение», чтобы начать",
+        "text": "=Здравствуйте, {{ $json.fullName }} 👋\n\nЧерез MonAmie Helpdesk можно отправить обращение команде Интернет-магазина:\n\n• изменить контент на сайте, в мобильном приложении или на маркетплейсе\n• сообщить об ошибке или некорректной работе\n• оставить замечание по контенту или отображению\n\nСтатусы по обращению будут приходить сюда 🔔",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -658,7 +658,7 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Создать обращение",
+                    "text": "Создать обращение 📝",
                     "additionalFields": {
                       "callback_data": "createIssue"
                     }
@@ -813,7 +813,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Опишите проблему\n\nНапишите, что нужно исправить, изменить или проверить\n\nЕсли это ошибка, расскажите, что произошло\nЕсли речь о конкретном товаре или странице, укажите название, артикул или ссылку",
+        "text": "Опишите обращение 📝\n\nНапишите, что нужно изменить, исправить или проверить.\n\nЕсли речь о товаре или странице, добавьте название, артикул или ссылку.\n\nЕсли это ошибка, кратко опишите, что произошло.",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -821,7 +821,7 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Отменить",
+                    "text": "Отменить ✖️",
                     "additionalFields": {
                       "callback_data": "cancelIssue"
                     }
@@ -963,7 +963,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Описание сохранено ✅\n\nЕсли есть фото, видео или файл, отправьте их следующим сообщением\n\nМожно добавить несколько вложений\n\nЕсли материалов нет, нажмите «Создать обращение»",
+        "text": "Описание сохранено ✅\n\nПри необходимости добавьте фото, видео или файл. Можно отправить несколько вложений.\n\nКогда всё готово, нажмите «Создать обращение».",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -971,13 +971,13 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Создать обращение",
+                    "text": "Создать обращение 📝",
                     "additionalFields": {
                       "callback_data": "submitIssue"
                     }
                   },
                   {
-                    "text": "Отменить",
+                    "text": "Отменить ✖️",
                     "additionalFields": {
                       "callback_data": "cancelIssue"
                     }
@@ -1213,7 +1213,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Введите имя и фамилию",
+        "text": "Укажите имя и фамилию 👤",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -1237,7 +1237,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "На этом шаге можно отправить фото, видео или файл\n\nЕсли вложений нет, нажмите «Создать обращение»",
+        "text": "На этом шаге можно отправить фото, видео или файл.\n\nКогда всё готово, нажмите «Создать обращение».",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -1245,13 +1245,13 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Создать обращение",
+                    "text": "Создать обращение 📝",
                     "additionalFields": {
                       "callback_data": "submitIssue"
                     }
                   },
                   {
-                    "text": "Отменить",
+                    "text": "Отменить ✖️",
                     "additionalFields": {
                       "callback_data": "cancelIssue"
                     }
@@ -1442,7 +1442,7 @@
     {
       "parameters": {
         "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Вложение добавлено ✅\n\nЕсли нужно, отправьте ещё фото, видео или файл\n\nИли нажмите «Создать обращение»",
+        "text": "Вложения добавлены ✅\n\nМожно отправить ещё фото, видео или файл.\n\nКогда всё готово, нажмите «Создать обращение».",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -1450,13 +1450,13 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Создать обращение",
+                    "text": "Создать обращение 📝",
                     "additionalFields": {
                       "callback_data": "submitIssue"
                     }
                   },
                   {
-                    "text": "Отменить",
+                    "text": "Отменить ✖️",
                     "additionalFields": {
                       "callback_data": "cancelIssue"
                     }
@@ -1688,7 +1688,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Пожалуйста, отправьте имя и фамилию обычным текстовым сообщением",
+        "text": "Отправьте имя и фамилию обычным текстовым сообщением",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -1773,7 +1773,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Укажите отдел или магазин обычным текстовым сообщением",
+        "text": "Отправьте название отдела или магазина обычным текстовым сообщением",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -1880,7 +1880,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Опишите обращение обычным текстовым сообщением\n\nФото, видео и файлы можно добавить на следующем шаге",
+        "text": "Опишите обращение обычным текстовым сообщением.\n\nФото, видео и файлы можно добавить на следующем шаге.",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -1888,7 +1888,7 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Отменить",
+                    "text": "Отменить ✖️",
                     "additionalFields": {
                       "callback_data": "cancelIssue"
                     }
@@ -2030,7 +2030,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Обращение отменено ✅\n\nПри необходимости можно создать новое обращение",
+        "text": "Обращение отменено ✖️\n\nЧерновик удалён.",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -2038,7 +2038,7 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Создать обращение",
+                    "text": "Создать обращение 📝",
                     "additionalFields": {
                       "callback_data": "createIssue"
                     }
@@ -2709,7 +2709,7 @@
     {
       "parameters": {
         "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Обращение уже создаётся ⏳\n\nПодождите несколько секунд",
+        "text": "Обращение создаётся ⏳\n\nЭто займёт несколько секунд.",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -2850,7 +2850,7 @@
     {
       "parameters": {
         "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Обращение отправлено ✅\n\nКоманда интернет-магазина получила ваш запрос",
+        "text": "Обращение отправлено ✅\n\nКоманда Интернет-магазина получила его.\n\nБот сообщит, когда обращение возьмут в работу и когда его решат 🔔",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -2858,7 +2858,7 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Создать ещё обращение",
+                    "text": "Создать ещё обращение 📝",
                     "additionalFields": {
                       "callback_data": "createIssue"
                     }
@@ -2891,7 +2891,7 @@
     {
       "parameters": {
         "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Вложение добавлено ✅\n\nЕсли нужно, отправьте ещё фото, видео или файл\n\nИли нажмите «Создать обращение»",
+        "text": "Вложение добавлено ✅\n\nМожно отправить ещё фото, видео или файл.\n\nКогда всё готово, нажмите «Создать обращение».",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -2899,13 +2899,13 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Создать обращение",
+                    "text": "Создать обращение 📝",
                     "additionalFields": {
                       "callback_data": "submitIssue"
                     }
                   },
                   {
-                    "text": "Отменить",
+                    "text": "Отменить ✖️",
                     "additionalFields": {
                       "callback_data": "cancelIssue"
                     }
@@ -3047,7 +3047,7 @@
     {
       "parameters": {
         "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Обращение отправлено ✅\n\nКоманда интернет-магазина получила ваш запрос",
+        "text": "Обращение отправлено ✅\n\nКоманда Интернет-магазина получила его.\n\nБот сообщит, когда обращение возьмут в работу и когда его решат 🔔",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -3055,7 +3055,7 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Создать ещё обращение",
+                    "text": "Создать ещё обращение 📝",
                     "additionalFields": {
                       "callback_data": "createIssue"
                     }
@@ -3259,7 +3259,7 @@
     {
       "parameters": {
         "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Не удалось создать обращение ⚠️\n\nОписание и вложения сохранены\n\nНажмите «Создать обращение», чтобы попробовать ещё раз",
+        "text": "Не удалось создать обращение ⚠️\n\nДанные обращения сохранены.\n\nПопробуйте отправить его ещё раз.",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -3267,13 +3267,13 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Создать обращение",
+                    "text": "Попробовать снова 🔄",
                     "additionalFields": {
                       "callback_data": "submitIssue"
                     }
                   },
                   {
-                    "text": "Отменить",
+                    "text": "Отменить ✖️",
                     "additionalFields": {
                       "callback_data": "cancelIssue"
                     }
@@ -3459,7 +3459,7 @@
     {
       "parameters": {
         "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Обращение отправлено ✅\n\nКоманда интернет-магазина получила ваш запрос\n\nНе удалось прикрепить вложения ⚠️",
+        "text": "Обращение отправлено ✅\n\nКоманда Интернет-магазина получила его.\n\nНе удалось прикрепить вложения ⚠️\nКоманда получила обращение без файлов.\n\nСтатусы по обращению будут приходить сюда 🔔",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -3467,7 +3467,7 @@
               "row": {
                 "buttons": [
                   {
-                    "text": "Создать ещё обращение",
+                    "text": "Создать ещё обращение 📝",
                     "additionalFields": {
                       "callback_data": "createIssue"
                     }
