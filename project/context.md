@@ -97,6 +97,8 @@ semver version
 group
 ```
 
+`group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `audits`, `sync`, `diagnostics`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
+
 Tool-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `manifests/tools.json`. Userscript metadata используется только в `extension/loader.js`, потому что только loader устанавливается напрямую в Tampermonkey.
 
 Managed regular tools получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
