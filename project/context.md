@@ -63,7 +63,7 @@ bitrix_id, xml_id, code_1c
 
 ## CANONICAL — repo как набор независимых сервисов
 
-Ментальная модель repo: отдельный folder/script — маленький функциональный сервис. Ошибка в одном extension/parser обычно влияет только на него и его output. Не считать локальную проблему архитектурной без фактической общей зависимости.
+Ментальная модель repo: отдельный folder/script — маленький функциональный сервис. Ошибка в одном extension/tool обычно влияет только на него и его output. Не считать локальную проблему архитектурной без фактической общей зависимости.
 
 Общая инфраструктура extensions:
 - единый Tampermonkey loader;
@@ -74,17 +74,22 @@ Registry разделён по зонам ответственности, а н�
 - `manifests/extensions.json` — root registry extension manifests;
 - `manifests/features.json` — registry feature extensions;
 - `manifests/ui-ux.json` — registry UI/UX extensions;
-- `manifests/parsers.json` — registry parsers.
+- `manifests/tools.json` — registry browser tools.
 
 Сами сервисы остаются в своих папках; manifests — только регистрация/версии.
 
 Loader использует cached extensions для быстрого старта, затем сверяет registry с GitHub. При изменении manifest signature скачиваются изменившиеся extensions, а новая cached версия применяется после reload. `checkUpdates()` вручную проверяет loader/extensions. Обновление самого userscript loader происходит через Tampermonkey.
 
-## CANONICAL — Parser Launcher
+## CANONICAL — Tools Launcher
 
-Parser Launcher получает registry из `manifests/parsers.json`, а код parser — из `parsers/`.
+Tools Launcher получает registry из `manifests/tools.json`, а код tools — из `tools/`. `file` в manifest хранит относительный путь внутри `tools/`, включая подпапку назначения.
 
-Manifest parser содержит:
+Физическая структура tools:
+- `tools/audits/` — массовые проверки и отчёты;
+- `tools/sync/` — синхронизации и управляемые write-инструменты;
+- `tools/diagnostics/` — диагностические utilities.
+
+Manifest tool содержит:
 
 ```text
 file
@@ -92,17 +97,17 @@ semver version
 group
 ```
 
-Parser-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `manifests/parsers.json`. Userscript metadata используется только в `extension/loader.js`, потому что только loader устанавливается напрямую в Tampermonkey.
+Tool-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `manifests/tools.json`. Userscript metadata используется только в `extension/loader.js`, потому что только loader устанавливается напрямую в Tampermonkey.
 
-Managed regular parsers получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
+Managed regular tools получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
 
 
 ## CANONICAL — Network Recorder
 
-`network-recorder.js` — отдельный service parser для быстрого Network-контекста Strapi; `dom-stealer.js` остаётся только DOM snapshot utility.
+`tools/diagnostics/network-recorder.js` — отдельный diagnostics tool для быстрого Network-контекста Strapi; `tools/diagnostics/dom-stealer.js` остаётся только DOM snapshot utility.
 
 Workflow:
-- первый запуск через Parser Launcher → Start;
+- первый запуск через Tools Launcher → Start;
 - выполнить нужное действие в Strapi;
 - повторный запуск → Stop;
 - recorder собирает same-origin `fetch` и XHR для `/api/...`, `/content-manager/...`, `/upload`;
@@ -170,9 +175,9 @@ Internal Content Manager namespace:
 
 Admin JWT доступен в LocalStorage как `jwtToken`.
 
-## CANONICAL — source для массовых data-audit parsers
+## CANONICAL — source для массовых data-audit tools
 
-Массовые audit parsers проверяют фактическое текущее состояние CMS только через Content Manager API. Public REST `/api/...` не используется как source для таких проверок, потому что published view не отражает draft/modified current state; Public API проверяется отдельно через Postman/client/API diagnostics.
+Массовые audit tools из `tools/audits/` проверяют фактическое текущее состояние CMS только через Content Manager API. Public REST `/api/...` не используется как source для таких проверок, потому что published view не отражает draft/modified current state; Public API проверяется отдельно через Postman/client/API diagnostics.
 
 Базовый read pattern:
 - list/detail: `/content-manager/collection-types/api::...`;
@@ -180,7 +185,7 @@ Admin JWT доступен в LocalStorage как `jwtToken`.
 - `Authorization: Bearer <jwtToken>` + `credentials: include`;
 - для текущих catalog audits используется `locale=ru`;
 - все страницы читаются полностью, relation checks идут через native Content Manager relation endpoint;
-- при несовпадении ожидаемого Content Manager response parser должен остановиться с явной ошибкой, а не формировать потенциально ложный CSV.
+- при несовпадении ожидаемого Content Manager response tool должен остановиться с явной ошибкой, а не формировать потенциально ложный CSV.
 
 Практическая трактовка ошибок:
 
@@ -742,13 +747,13 @@ shareUrl
 GET/PUT /content-manager/content-types/api::product.product/configuration
 ```
 
-Source of truth для физического порядка — `layouts.edit`. Service `parsers/layout-sync.js` используется после layout-изменений: читает текущий UI; для вкладки `Фильтры` учитывает `data-tm-product-filter-group-order`, выставленный `product-sections`, поэтому смысловые группы сохраняются в заданном порядке; делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
+Source of truth для физического порядка — `layouts.edit`. Service `tools/sync/layout-sync.js` используется после layout-изменений: читает текущий UI; для вкладки `Фильтры` учитывает `data-tm-product-filter-group-order`, выставленный `product-sections`, поэтому смысловые группы сохраняются в заданном порядке; делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
 
 ## Style-stealer UI origin semantics
 
 **Статус:** CANONICAL.
 
-Для design snapshot страницы `parsers/style-stealer.js` делит UI на три происхождения:
+Для design snapshot страницы `tools/diagnostics/style-stealer.js` делит UI на три происхождения:
 
 - `native` — нативный Strapi без наших маркеров;
 - `modified` — нативный DOM-узел, изменённый extension; обычные `data-tm-*` / `tm-*` на самом элементе означают modified;
@@ -756,10 +761,10 @@ Source of truth для физического порядка — `layouts.edit`.
 
 Если нативный Strapi-узел перемещён внутрь custom-контейнера, ставить на сам узел `data-tm-modified="<extension-id>"`: этот marker создаёт native/modified boundary и не даёт считать перемещённый React element custom. Нативные React elements перемещать, не копировать.
 
-## Parser health semantics
+## Tool health semantics
 
 Полезные смысловые проверки каталога:
-- active products без attributes / brand / categories — ad hoc checks, при необходимости выполнять через Postman/internal API вместо отдельных runtime parsers;
+- active products без attributes / brand / categories — ad hoc checks, при необходимости выполнять через Postman/internal API вместо отдельных runtime tools;
 - duplicate technical fields `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`; null/empty не считать duplicate value;
 - wrong prices у offers active products: отдельный CANONICAL workflow выше; `missing`, `invalid`, `zero`, `negative`, `fractional`, output `documentId`, `barcode`, `price`, `errorType`;
 - missing content: отдельный CANONICAL workflow выше; active product проверяется по `name1`, `name2`, `detail_picture`, `detail_text` с дополнительным слоем `categories.active`, без hardcoded category IDs;
@@ -984,7 +989,7 @@ Outbound contract:
 
 - Реальные tokens/cookies не хранить в repo, документации или shared snippets.
 - Strapi Admin JWT используется как локальный credential для admin requests.
-- Public status `mbtema/strapi` — сознательное решение для прямой загрузки loader/Parser Launcher из GitHub. Сам по себе public repo не является дефектом; пересматривать это решение только при реальной утечке credentials/secrets или новом требовании.
+- Public status `mbtema/strapi` — сознательное решение для прямой загрузки loader/Tools Launcher из GitHub. Сам по себе public repo не является дефектом; пересматривать это решение только при реальной утечке credentials/secrets или новом требовании.
 - Live code-review backlog живёт в GitHub Issues; context хранит только устойчивые решения/workflows/history, а не список открытых тикетов.
 
 ---
@@ -996,7 +1001,7 @@ Outbound contract:
 
 ## CANONICAL — зеркальная синхронизация категорий Products
 
-Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser parser `parsers/products-category-mirror-sync.js` через `MIRROR_SYNC_GROUPS`; рабочая locale только `ru`.
+Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser tool `tools/sync/products-category-mirror-sync.js` через `MIRROR_SYNC_GROUPS`; рабочая locale только `ru`.
 
 Бизнес-правило для одной mirror group:
 - собрать union Products всех Category группы;
@@ -1005,7 +1010,7 @@ Outbound contract:
 - остальные `Product.categories`, не входящие в текущую группу, не менять;
 - только additive `connect`, без `disconnect` и без пересборки полного relation списка;
 - если Product действительно не должен входить в зеркальную группу, Content Manager удаляет его из всех Category этой группы;
-- Product публикуется parser'ом независимо от исходного draft/modified/published состояния.
+- Product публикуется tool'ом независимо от исходного draft/modified/published состояния.
 
 Группы изолированы друг от друга и обрабатываются строго последовательно. Изменения одной группы не объединяются с другой и не формируют transitive graph. Если один Product встречается в нескольких mirror groups, каждая группа обрабатывает его отдельно только в своём scope.
 
@@ -1065,13 +1070,13 @@ Concurrency:
 
 HISTORICAL live benchmark 2026-10-19 для первой mirror group из двух Category: 308 Products были опубликованы без ошибок, verify дал C1=317/C2=317/missing=0 за 37.7 сек. Throughput вырос до ~9.23 req/s на concurrency 20, а ступени 25–40 не дали улучшения и увеличили latency; это подтвердило throughput-aware rollback вместо роста только по отсутствию ошибок.
 
-Current configured groups не дублировать в context: source of truth — live `MIRROR_SYNC_GROUPS` в `parsers/products-category-mirror-sync.js`.
+Current configured groups не дублировать в context: source of truth — live `MIRROR_SYNC_GROUPS` в `tools/sync/products-category-mirror-sync.js`.
 
 Пересечение Category между разными mirror groups сейчас не запрещается и специально не объединяется. Если реальный каталог выявит пересекающиеся группы, сначала отдельно определить бизнес-семантику такого сценария, затем менять workflow.
 
 ## CANONICAL — односторонняя синхронизация категорий Products
 
-Назначение: поддерживать одностороннее включение Products из настроенной source Category в соответствующую target Category. Runtime parser: `parsers/products-category-forward-sync.js`; рабочая locale только `ru`.
+Назначение: поддерживать одностороннее включение Products из настроенной source Category в соответствующую target Category. Runtime tool: `tools/sync/products-category-forward-sync.js`; рабочая locale только `ru`.
 
 Группы задаются вручную через `FORWARD_SYNC_GROUPS` по контракту:
 
@@ -1092,7 +1097,7 @@ Current configured groups не дублировать в context: source of trut
 - только additive `categories.connect`, без `disconnect` и без полной пересборки `Product.categories`;
 - Product публикуется через `actions/publish` независимо от исходного draft/modified/published состояния.
 
-Read/write contract тот же, что у mirror parser:
+Read/write contract тот же, что у mirror-sync tool:
 ```text
 GET /content-manager/collection-types/api::category.category/<categoryDocumentId>?locale=ru
 GET /content-manager/relations/api::category.category/<categoryDocumentId>/product?locale=ru&page=<N>&pageSize=<N>
@@ -1115,5 +1120,5 @@ CANONICAL run:
 
 Concurrency полностью наследует подтверждённый throughput-aware adaptive механизм mirror-sync parser: старт 10, шаг 5, min 5, max 40, оценка ступени после 20 успешных requests, новая ступень должна улучшить best throughput минимум на 3%, после двух подряд неулучшающих ступеней rollback/lock на best concurrency; найденный уровень переносится между groups. На `429`/`5xx`/network error concurrency снижается и benchmark перезапускается. `POST actions/publish` автоматически не ретраить.
 
-Current configured forward-sync groups не дублировать в context: source of truth — live `FORWARD_SYNC_GROUPS` в `parsers/products-category-forward-sync.js`.
+Current configured forward-sync groups не дублировать в context: source of truth — live `FORWARD_SYNC_GROUPS` в `tools/sync/products-category-forward-sync.js`.
 
