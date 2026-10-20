@@ -87,7 +87,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -3456,
+        -3232,
         -80
       ],
       "id": "c94d4431-06be-42d0-80f4-6a08ae7d9df5",
@@ -121,7 +121,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -3232,
+        -3008,
         -80
       ],
       "id": "1ac02066-ea2c-43be-95cd-b1d67edd2cfa",
@@ -154,11 +154,12 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -3456,
-        -368
+        -3680,
+        -224
       ],
       "id": "8b25b99c-1518-4efc-969b-aafee37f575c",
-      "name": "getProfile"
+      "name": "getProfile",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -713,58 +714,6 @@
     },
     {
       "parameters": {
-        "operation": "rowNotExists",
-        "dataTableId": {
-          "__rl": true,
-          "value": "telegramProfiles",
-          "mode": "name"
-        },
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "userId",
-              "keyValue": "={{ ($('start').item.json.message?.from?.id ?? $('start').item.json.callback_query?.from?.id).toString() }}"
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
-      "position": [
-        -3680,
-        -80
-      ],
-      "id": "73f4cc5a-9ca2-420d-ba28-c6adbdbcde20",
-      "name": "checkNewUser"
-    },
-    {
-      "parameters": {
-        "operation": "rowExists",
-        "dataTableId": {
-          "__rl": true,
-          "value": "telegramProfiles",
-          "mode": "name"
-        },
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "userId",
-              "keyValue": "={{ ($('start').item.json.message?.from?.id ?? $('start').item.json.callback_query?.from?.id).toString() }}"
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
-      "position": [
-        -3680,
-        -368
-      ],
-      "id": "6afc163e-3021-447d-bc5e-bb2cebed40c4",
-      "name": "checkExistingUser"
-    },
-    {
-      "parameters": {
         "operation": "update",
         "dataTableId": {
           "__rl": true,
@@ -1072,7 +1021,7 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
+                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : 'other')) }}",
                     "rightValue": "cancelIssue",
                     "operator": {
                       "type": "string",
@@ -1094,7 +1043,7 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
+                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : 'other')) }}",
                     "rightValue": "other",
                     "operator": {
                       "type": "string",
@@ -1116,8 +1065,8 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
-                    "rightValue": "photo",
+                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : 'other')) }}",
+                    "rightValue": "media",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
@@ -1138,57 +1087,13 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
-                    "rightValue": "video",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "f968905c-819b-47b8-a8fe-5cf0fdfb5f8a"
-                  }
-                ],
-                "combinator": "and"
-              }
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
-                    "rightValue": "document",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "d988f541-9234-47a2-9113-6b4db90464da"
-                  }
-                ],
-                "combinator": "and"
-              }
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo ? 'photo' : $('start').item.json.message?.video ? 'video' : $('start').item.json.message?.document ? 'document' : 'other')) }}",
+                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : 'other')) }}",
                     "rightValue": "submitIssue",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "e122f656-51e5-48f6-9347-97b0f286190e"
+                    "id": "e122f656-51e-48f6-9347-97b0f286190e"
                   }
                 ],
                 "combinator": "and"
@@ -1568,7 +1473,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -768,
+        -992,
         464
       ],
       "id": "fa5b7109-3a57-45e6-9dec-7a5b90255b4f",
@@ -1684,7 +1589,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -320,
+        -544,
         960
       ],
       "id": "57e8f89d-f56c-4888-b75f-1fed0eeb8be8",
@@ -1712,7 +1617,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -96,
+        -320,
         960
       ],
       "id": "6a0972ae-afea-4006-8d5f-9e81bfcc3b8f",
@@ -2532,7 +2437,7 @@
     },
     {
       "parameters": {
-        "operation": "get",
+        "operation": "rowExists",
         "dataTableId": {
           "__rl": true,
           "value": "telegramProfiles",
@@ -2544,10 +2449,13 @@
             {
               "keyName": "userId",
               "keyValue": "={{ String($('start').item.json.message?.from?.id ?? '') }}"
+            },
+            {
+              "keyName": "state",
+              "keyValue": "awaitingIssueMedia"
             }
           ]
-        },
-        "limit": 1
+        }
       },
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
@@ -2556,46 +2464,7 @@
         560
       ],
       "id": "54870af7-a911-48c0-afc3-d89456b930b5",
-      "name": "getProfileAfterMediaSave"
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.state }}",
-                    "rightValue": "awaitingIssueMedia",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "f6c5abdc-6191-41ec-a48a-c6c6b3bc31a7"
-                  }
-                ],
-                "combinator": "and"
-              }
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.4,
-      "position": [
-        -2112,
-        560
-      ],
-      "id": "b9f89dd6-babc-4b6e-ac4c-e09881166831",
-      "name": "routeMediaSaveState"
+      "name": "checkAwaitingMediaAfterSave"
     },
     {
       "parameters": {
@@ -2652,7 +2521,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -1888,
+        -2112,
         560
       ],
       "id": "fc15bd66-8d3f-4252-8a10-f46c78c36d0d",
@@ -2665,7 +2534,7 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        -1664,
+        -1888,
         464
       ],
       "id": "ff9fa71c-fa9e-4b05-b451-9432bc5c52a9",
@@ -2700,7 +2569,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -1440,
+        -1664,
         464
       ],
       "id": "f5a0aa85-5cdb-4b5b-b2c2-8360c1de12d4",
@@ -2739,7 +2608,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -1216,
+        -1440,
         464
       ],
       "id": "71d01b25-02d6-430d-8c96-40027a6bc51e",
@@ -2770,7 +2639,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -992,
+        -1216,
         464
       ],
       "id": "e911605e-d27b-4986-99a2-65b6852452cd",
@@ -2790,7 +2659,7 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : (($('start').item.json.callback_query?.data === 'cancelIssue') ? 'cancelIssue' : (($('start').item.json.callback_query?.data === 'submitIssue') ? 'duplicateSubmit' : 'other')) }}",
+                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : 'busy' }}",
                     "rightValue": "media",
                     "operator": {
                       "type": "string",
@@ -2812,57 +2681,13 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : (($('start').item.json.callback_query?.data === 'cancelIssue') ? 'cancelIssue' : (($('start').item.json.callback_query?.data === 'submitIssue') ? 'duplicateSubmit' : 'other')) }}",
-                    "rightValue": "duplicateSubmit",
+                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : 'busy' }}",
+                    "rightValue": "busy",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
                     "id": "44986ef3-a404-416d-a4a1-17a2329a4488"
-                  }
-                ],
-                "combinator": "and"
-              }
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : (($('start').item.json.callback_query?.data === 'cancelIssue') ? 'cancelIssue' : (($('start').item.json.callback_query?.data === 'submitIssue') ? 'duplicateSubmit' : 'other')) }}",
-                    "rightValue": "cancelIssue",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "6cbd43e5-8f4b-4b4b-9be1-73890c3e28b7"
-                  }
-                ],
-                "combinator": "and"
-              }
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : (($('start').item.json.callback_query?.data === 'cancelIssue') ? 'cancelIssue' : (($('start').item.json.callback_query?.data === 'submitIssue') ? 'duplicateSubmit' : 'other')) }}",
-                    "rightValue": "other",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "8d3b0fbf-96ff-4c35-befe-4a037d27219b"
                   }
                 ],
                 "combinator": "and"
@@ -2887,23 +2712,6 @@
         "text": "Обращение уже создаётся ⏳\n\nПодождите несколько секунд",
         "additionalFields": {
           "appendAttribution": false
-        },
-        "replyMarkup": "inlineKeyboard",
-        "inlineKeyboard": {
-          "rows": [
-            {
-              "row": {
-                "buttons": [
-                  {
-                    "text": "Отменить",
-                    "additionalFields": {
-                      "callback_data": "cancelIssue"
-                    }
-                  }
-                ]
-              }
-            }
-          ]
         }
       },
       "type": "n8n-nodes-base.telegram",
@@ -2987,67 +2795,6 @@
     },
     {
       "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('getIssueMedia').all().some(i => i.json.fileId) ? 'media' : 'none' }}",
-                    "rightValue": "none",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "4f6e554a-fdc4-464b-a64b-5d5ccb789a6e"
-                  }
-                ],
-                "combinator": "and"
-              }
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('getIssueMedia').all().some(i => i.json.fileId) ? 'media' : 'none' }}",
-                    "rightValue": "media",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "a3cf324b-f5e7-42ca-aea0-9076e7a49a02"
-                  }
-                ],
-                "combinator": "and"
-              }
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.4,
-      "position": [
-        -768,
-        848
-      ],
-      "id": "4ab6c6dd-b709-412f-ab16-4bba70cfe4cf",
-      "name": "routeNotionMediaAttach"
-    },
-    {
-      "parameters": {
         "method": "PATCH",
         "url": "={{ 'https://api.notion.com/v1/pages/' + $json.id }}",
         "authentication": "predefinedCredentialType",
@@ -3069,7 +2816,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -544,
+        -768,
         960
       ],
       "id": "505ca8b3-7dc5-456b-ba0c-147ea9b2c627",
@@ -3094,7 +2841,7 @@
       "type": "n8n-nodes-base.aggregate",
       "typeVersion": 1,
       "position": [
-        128,
+        -96,
         960
       ],
       "id": "d51a75d9-97c9-4a73-8dd0-2b57af5a0346",
@@ -3128,7 +2875,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        352,
+        128,
         960
       ],
       "id": "6bbd24ce-fe72-4568-a35f-f41924aa4077",
@@ -3175,7 +2922,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -1664,
+        -1888,
         656
       ],
       "id": "2fb475d4-9085-4f1a-b5e7-8f28a5a8e62b",
@@ -3291,55 +3038,11 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -544,
+        -768,
         736
       ],
       "id": "a4c3d8f2-5c36-4bc7-9575-f75e9b6c2e11",
       "name": "resetIssueDraftNoMedia"
-    },
-    {
-      "parameters": {
-        "operation": "deleteRows",
-        "dataTableId": {
-          "__rl": true,
-          "value": "telegramIssueMedia",
-          "mode": "name"
-        },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "userId",
-              "keyValue": "={{ ($('start').item.json.message?.from?.id ?? $('start').item.json.callback_query?.from?.id).toString() }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
-      "position": [
-        -320,
-        736
-      ],
-      "id": "c812c5a1-e6dc-4a72-b13f-fd79a1f5b3a2",
-      "name": "clearSubmittedIssueMediaNoMedia",
-      "alwaysOutputData": true
-    },
-    {
-      "parameters": {
-        "aggregate": "aggregateAllItemData",
-        "destinationFieldName": "deletedMedia",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.aggregate",
-      "typeVersion": 1,
-      "position": [
-        -96,
-        736
-      ],
-      "id": "e9449238-55d9-4a24-9d67-0614e90bb8d1",
-      "name": "aggregateSubmittedCleanupNoMedia"
     },
     {
       "parameters": {
@@ -3369,7 +3072,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        128,
+        -544,
         736
       ],
       "id": "7ab91d9c-4178-49f5-a6f9-0dc2d5e605c9",
@@ -3547,8 +3250,8 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -768,
-        1184
+        -992,
+        1280
       ],
       "id": "553f651a-7618-46b0-8593-8813c873823c",
       "name": "recoverSubmitBeforeNotion"
@@ -3587,8 +3290,8 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -544,
-        1184
+        -768,
+        1280
       ],
       "id": "3ce80558-af06-4489-ae1f-2a5b1c48b8fe",
       "name": "sendSubmitRetry",
@@ -3703,7 +3406,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -320,
+        -544,
         1184
       ],
       "id": "80d0d06b-e7b2-4f10-88fe-2afe5979a57e",
@@ -3731,7 +3434,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -96,
+        -320,
         1184
       ],
       "id": "ac6161e6-87b4-4126-9cc2-cefa01d0f609",
@@ -3747,7 +3450,7 @@
       "type": "n8n-nodes-base.aggregate",
       "typeVersion": 1,
       "position": [
-        128,
+        -96,
         1184
       ],
       "id": "3446578e-4864-4f0b-a834-584610a47bbb",
@@ -3781,7 +3484,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        352,
+        128,
         1184
       ],
       "id": "59ee3a89-82d2-42d0-a066-19622c17afc1",
@@ -3793,6 +3496,67 @@
           "name": "MonAmie Helpdesk"
         }
       }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.userId ? 'existing' : 'new' }}",
+                    "rightValue": "existing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "ab8db904-d8de-4582-b630-78669aa5030c"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.userId ? 'existing' : 'new' }}",
+                    "rightValue": "new",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "090a1c17-6242-40bd-97c9-54f92faadcc4"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -3456,
+        -224
+      ],
+      "id": "55101a8e-8e9f-4ed1-baad-82d49a9537b5",
+      "name": "routeUserProfile"
     }
   ],
   "pinData": {},
@@ -3801,34 +3565,7 @@
       "main": [
         [
           {
-            "node": "checkExistingUser",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "checkNewUser",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "checkExistingUser": {
-      "main": [
-        [
-          {
             "node": "getProfile",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "checkNewUser": {
-      "main": [
-        [
-          {
-            "node": "createProfile",
             "type": "main",
             "index": 0
           }
@@ -3850,7 +3587,7 @@
       "main": [
         [
           {
-            "node": "routeByState",
+            "node": "routeUserProfile",
             "type": "main",
             "index": 0
           }
@@ -3986,20 +3723,6 @@
         ],
         [
           {
-            "node": "checkMediaNotSaved",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "checkMediaNotSaved",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
             "node": "setSubmittingIssue",
             "type": "main",
             "index": 0
@@ -4022,7 +3745,7 @@
       "main": [
         [
           {
-            "node": "getProfileAfterMediaSave",
+            "node": "checkAwaitingMediaAfterSave",
             "type": "main",
             "index": 0
           }
@@ -4218,28 +3941,6 @@
         ]
       ]
     },
-    "getProfileAfterMediaSave": {
-      "main": [
-        [
-          {
-            "node": "routeMediaSaveState",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "routeMediaSaveState": {
-      "main": [
-        [
-          {
-            "node": "routeMediaConfirmation",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "routeMediaConfirmation": {
       "main": [
         [
@@ -4317,38 +4018,6 @@
             "type": "main",
             "index": 0
           }
-        ],
-        [
-          {
-            "node": "cancelIssueDraft",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "sendIssueSubmitting",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "routeNotionMediaAttach": {
-      "main": [
-        [
-          {
-            "node": "resetIssueDraftNoMedia",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "attachNotionMedia",
-            "type": "main",
-            "index": 0
-          }
         ]
       ]
     },
@@ -4407,28 +4076,6 @@
       "main": [
         [
           {
-            "node": "clearSubmittedIssueMediaNoMedia",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "clearSubmittedIssueMediaNoMedia": {
-      "main": [
-        [
-          {
-            "node": "aggregateSubmittedCleanupNoMedia",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "aggregateSubmittedCleanupNoMedia": {
-      "main": [
-        [
-          {
             "node": "sendIssueSubmittedNoMedia",
             "type": "main",
             "index": 0
@@ -4440,7 +4087,7 @@
       "main": [
         [
           {
-            "node": "routeNotionMediaAttach",
+            "node": "resetIssueDraftNoMedia",
             "type": "main",
             "index": 0
           }
@@ -4458,7 +4105,7 @@
       "main": [
         [
           {
-            "node": "routeNotionMediaAttach",
+            "node": "attachNotionMedia",
             "type": "main",
             "index": 0
           }
@@ -4510,6 +4157,35 @@
         [
           {
             "node": "sendIssueSubmittedWithoutMedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "checkAwaitingMediaAfterSave": {
+      "main": [
+        [
+          {
+            "node": "routeMediaConfirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "routeUserProfile": {
+      "main": [
+        [
+          {
+            "node": "routeByState",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "createProfile",
             "type": "main",
             "index": 0
           }
