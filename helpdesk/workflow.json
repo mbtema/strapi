@@ -2790,7 +2790,7 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : (($('start').item.json.callback_query?.data === 'submitIssue') ? 'duplicateSubmit' : 'other') }}",
+                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : (($('start').item.json.callback_query?.data === 'cancelIssue') ? 'cancelIssue' : (($('start').item.json.callback_query?.data === 'submitIssue') ? 'duplicateSubmit' : 'other')) }}",
                     "rightValue": "media",
                     "operator": {
                       "type": "string",
@@ -2812,7 +2812,7 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : (($('start').item.json.callback_query?.data === 'submitIssue') ? 'duplicateSubmit' : 'other') }}",
+                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : (($('start').item.json.callback_query?.data === 'cancelIssue') ? 'cancelIssue' : (($('start').item.json.callback_query?.data === 'submitIssue') ? 'duplicateSubmit' : 'other')) }}",
                     "rightValue": "duplicateSubmit",
                     "operator": {
                       "type": "string",
@@ -2834,7 +2834,29 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : (($('start').item.json.callback_query?.data === 'submitIssue') ? 'duplicateSubmit' : 'other') }}",
+                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : (($('start').item.json.callback_query?.data === 'cancelIssue') ? 'cancelIssue' : (($('start').item.json.callback_query?.data === 'submitIssue') ? 'duplicateSubmit' : 'other')) }}",
+                    "rightValue": "cancelIssue",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "6cbd43e5-8f4b-4b4b-9be1-73890c3e28b7"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : (($('start').item.json.callback_query?.data === 'cancelIssue') ? 'cancelIssue' : (($('start').item.json.callback_query?.data === 'submitIssue') ? 'duplicateSubmit' : 'other')) }}",
                     "rightValue": "other",
                     "operator": {
                       "type": "string",
@@ -2865,6 +2887,23 @@
         "text": "Обращение уже создаётся ⏳\n\nПодождите несколько секунд",
         "additionalFields": {
           "appendAttribution": false
+        },
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Отменить",
+                    "additionalFields": {
+                      "callback_data": "cancelIssue"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
         }
       },
       "type": "n8n-nodes-base.telegram",
@@ -2943,7 +2982,8 @@
           "id": "aUPcxBs0MEDPXk7i",
           "name": "MonAmie Notion Workspace"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -3042,7 +3082,8 @@
           "id": "aUPcxBs0MEDPXk7i",
           "name": "MonAmie Notion Workspace"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -3400,6 +3441,356 @@
         "notionApi": {
           "id": "aUPcxBs0MEDPXk7i",
           "name": "MonAmie Notion Workspace"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "telegramProfiles",
+          "mode": "name"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "userId",
+              "keyValue": "={{ String($('getProfile').first().json.userId ?? '') }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "state": "awaitingIssueMedia"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "userId",
+              "displayName": "userId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "chatId",
+              "displayName": "chatId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "username",
+              "displayName": "username",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "fullName",
+              "displayName": "fullName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "department",
+              "displayName": "department",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "state",
+              "displayName": "state",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "draftDescription",
+              "displayName": "draftDescription",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -768,
+        1184
+      ],
+      "id": "553f651a-7618-46b0-8593-8813c873823c",
+      "name": "recoverSubmitBeforeNotion"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
+        "text": "Не удалось создать обращение ⚠️\n\nОписание и вложения сохранены\n\nНажмите «Создать обращение», чтобы попробовать ещё раз",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Создать обращение",
+                    "additionalFields": {
+                      "callback_data": "submitIssue"
+                    }
+                  },
+                  {
+                    "text": "Отменить",
+                    "additionalFields": {
+                      "callback_data": "cancelIssue"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -544,
+        1184
+      ],
+      "id": "3ce80558-af06-4489-ae1f-2a5b1c48b8fe",
+      "name": "sendSubmitRetry",
+      "webhookId": "80c8ec31-246b-46ec-9636-a1683f39ae18",
+      "credentials": {
+        "telegramApi": {
+          "id": "Rohp2ZGI9XYqS610",
+          "name": "MonAmie Helpdesk"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "telegramProfiles",
+          "mode": "name"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "userId",
+              "keyValue": "={{ String($('getProfile').first().json.userId ?? '') }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "state": "ready",
+            "draftDescription": ""
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "userId",
+              "displayName": "userId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "chatId",
+              "displayName": "chatId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "username",
+              "displayName": "username",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "fullName",
+              "displayName": "fullName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "department",
+              "displayName": "department",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "state",
+              "displayName": "state",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "draftDescription",
+              "displayName": "draftDescription",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -320,
+        1184
+      ],
+      "id": "80d0d06b-e7b2-4f10-88fe-2afe5979a57e",
+      "name": "resetIssueDraftAfterAttachFailure"
+    },
+    {
+      "parameters": {
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "value": "telegramIssueMedia",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "userId",
+              "keyValue": "={{ ($('start').item.json.message?.from?.id ?? $('start').item.json.callback_query?.from?.id).toString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -96,
+        1184
+      ],
+      "id": "ac6161e6-87b4-4126-9cc2-cefa01d0f609",
+      "name": "clearSubmittedIssueMediaAfterAttachFailure",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "deletedMedia",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        128,
+        1184
+      ],
+      "id": "3446578e-4864-4f0b-a834-584610a47bbb",
+      "name": "aggregateCleanupAfterAttachFailure"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
+        "text": "Обращение отправлено ✅\n\nКоманда интернет-магазина получила ваш запрос\n\nНе удалось прикрепить вложения ⚠️",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Создать ещё обращение",
+                    "additionalFields": {
+                      "callback_data": "createIssue"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        352,
+        1184
+      ],
+      "id": "59ee3a89-82d2-42d0-a066-19622c17afc1",
+      "name": "sendIssueSubmittedWithoutMedia",
+      "webhookId": "c0c4dce3-f84e-4b20-82b0-6aaab94766be",
+      "credentials": {
+        "telegramApi": {
+          "id": "Rohp2ZGI9XYqS610",
+          "name": "MonAmie Helpdesk"
         }
       }
     }
@@ -3929,6 +4320,13 @@
         ],
         [
           {
+            "node": "cancelIssueDraft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "sendIssueSubmitting",
             "type": "main",
             "index": 0
@@ -3959,6 +4357,13 @@
         [
           {
             "node": "resetIssueDraftWithMedia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "resetIssueDraftAfterAttachFailure",
             "type": "main",
             "index": 0
           }
@@ -4039,6 +4444,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "recoverSubmitBeforeNotion",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -4047,6 +4459,57 @@
         [
           {
             "node": "routeNotionMediaAttach",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "recoverSubmitBeforeNotion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "recoverSubmitBeforeNotion": {
+      "main": [
+        [
+          {
+            "node": "sendSubmitRetry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "resetIssueDraftAfterAttachFailure": {
+      "main": [
+        [
+          {
+            "node": "clearSubmittedIssueMediaAfterAttachFailure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "clearSubmittedIssueMediaAfterAttachFailure": {
+      "main": [
+        [
+          {
+            "node": "aggregateCleanupAfterAttachFailure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aggregateCleanupAfterAttachFailure": {
+      "main": [
+        [
+          {
+            "node": "sendIssueSubmittedWithoutMedia",
             "type": "main",
             "index": 0
           }
