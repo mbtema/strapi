@@ -69,8 +69,8 @@
     },
     {
       name: 'Защита от солнца',
-      source 'arfksuoh23h2arbbkpomkyj0',
-      target 'tlsueik73oho5duwf0ylttsh'
+      source: 'arfksuoh23h2arbbkpomkyj0',
+      target: 'tlsueik73oho5duwf0ylttsh'
     },
 
     // Добавляй следующие группы source → target сюда:
