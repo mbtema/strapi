@@ -14,9 +14,9 @@
       "enabled": true
     },
     {
-      "id": "parser-launcher",
-      "path": "features/parser-launcher.js",
-      "version": "1.6.8",
+      "id": "tools-launcher",
+      "path": "features/tools-launcher.js",
+      "version": "1.7.0",
       "enabled": true
     }
   ]
