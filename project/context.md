@@ -983,6 +983,7 @@ Outbound contract:
 - Production flow was verified end-to-end on 2026-10-16: Notion automation `statusNotifications` → n8n production webhook `/webhook/helpdesk-status-notification` → Telegram.
 - The Notion automation uses one status trigger with values `В работе`, `Решено`, `Не по адресу` and sends only `Обращение`, `Статус`, `Ответ`, `Telegram chat ID`.
 - Verified Telegram format: first paragraph is the status (`Принято в работу 🛠️`, `Решено ✅`, `Не по адресу ↪️`), second paragraph is `Обращение`, and for `Решено` / `Не по адресу` an optional third paragraph is `Ответ`. Messages follow the main bot style: no trailing periods, blank lines between semantic blocks.
+- Inbound submit recovery: while `state=submittingIssue`, `cancelIssue` is always accepted so a failed execution cannot permanently lock the user. If `createNotionIssueNoMedia` / `createNotionIssueWithMedia` fails before a page is confirmed, state returns to `awaitingIssueMedia`; `draftDescription` and `telegramIssueMedia` are preserved and the bot offers `Создать обращение` / `Отменить`. `createNotionIssue*` is not auto-retried to avoid duplicate pages on ambiguous POST failures. If the Notion page was created but `attachNotionMedia` fails after retries, the draft is finalized to `ready`, saved media rows are cleared, and the user is told that the request was created but attachments could not be attached.
 
 
 ---
