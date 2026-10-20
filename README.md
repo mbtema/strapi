@@ -46,7 +46,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `tools-launcher.js` — `Alt+P`, открывает список browser tools из `manifests/tools.json` вертикальными колонками по группам, поддерживает вложенные пути `audits/`, `sync/`, `diagnostics/`, строго валидирует `file` / semver `version` / `group` и дубли файлов; блокирует повторный параллельный запуск async tool и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
+- `tools-launcher.js` — `Alt+P`, открывает browser tools из `manifests/tools.json` колонками `audits`, `sync`, `diagnostics`; `group` обязан совпадать с первой папкой в `file`, валидируются path / semver / group и дубли файлов; блокирует повторный параллельный запуск async tool и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 
 ## UI/UX
 
@@ -77,11 +77,11 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 - `diagnostics/network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
 - `diagnostics/style-stealer.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
 - `sync/layout-sync.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, во вкладке `Фильтры` учитывает порядок смысловых групп, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
-- `manifests/tools.json` — runtime-источник `file`, semver `version` и `group` для Tools Launcher; `file` хранит путь относительно `tools/`, `group` задаётся только здесь.
+- `manifests/tools.json` — runtime-источник `file`, semver `version` и `group` для Tools Launcher; `file` хранит путь относительно `tools/`, а `group` обязан совпадать с первой папкой пути (`audits`, `sync`, `diagnostics`).
 
 Для нового tool добавь файл в подходящую подпапку `tools/` (`audits/`, `sync/` или `diagnostics/`) и зарегистрируй его в `manifests/tools.json` через `file`, `version` и `group`. `version` и `group` внутри tool-файла не дублируются.
 
-Рабочие группы: `products`, `offers`, `attributes`, `drafts`, `service`.
+Рабочие группы: `audits`, `sync`, `diagnostics`.
 
 ## Helpdesk
 
