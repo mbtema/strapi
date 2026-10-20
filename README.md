@@ -1,14 +1,14 @@
-Набор рабочих инструментов для админки Strapi: постоянные extensions, UI/UX-кастомы, парсеры, универсальный RU → KK переводчик и backup/sync snapshot Project Instructions и Project Context.
+Набор рабочих инструментов для админки Strapi: постоянные extensions, UI/UX-кастомы, browser tools, универсальный RU → KK переводчик и backup/sync snapshot Project Instructions и Project Context.
 
 ## Структура
 
 | Папка | Назначение |
 |---|---|
 | [`extension/`](./extension) | Единый Tampermonkey loader |
-| [`manifests/`](./manifests) | Централизованные реестры extensions и parsers |
-| [`features/`](./features) | Функции: горячие клавиши, barcode и Parser Launcher |
+| [`manifests/`](./manifests) | Централизованные реестры extensions и tools |
+| [`features/`](./features) | Функции: горячие клавиши, barcode и Tools Launcher |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
-| [`parsers/`](./parsers) | Массовые проверки данных и вспомогательные browser parsers |
+| [`tools/`](./tools) | Browser tools по назначению: `audits/`, `sync/`, `diagnostics/` |
 | [`helpdesk/`](./helpdesk) | n8n workflows Telegram-бота MonAmie Helpdesk |
 | [`translator/`](./translator) | RU → KK переводчик: полная версия, compressed-версия и extractor для накопленного translation context |
 | [`project/`](./project) | Sync/staging copies для Project Instructions и источника `context.md` |
@@ -19,7 +19,7 @@
 
 `extension/loader.js`
 
-Userscript metadata (`==UserScript==`, `@name`, `@version`, `@match` и т.д.) нужна только этому loader. Дочерние extensions и parsers загружаются через manifests и не содержат собственные metadata-блоки.
+Userscript metadata (`==UserScript==`, `@name`, `@version`, `@match` и т.д.) нужна только этому loader. Дочерние extensions и tools загружаются через manifests и не содержат собственные metadata-блоки.
 
 Loader при открытии Strapi:
 
@@ -46,7 +46,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `parser-launcher.js` — `Alt+P`, открывает список парсеров из `manifests/parsers.json` вертикальными колонками по группам, строго валидирует `file` / semver `version` / `group` и дубли файлов; блокирует повторный параллельный запуск async parser и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
+- `tools-launcher.js` — `Alt+P`, открывает список browser tools из `manifests/tools.json` вертикальными колонками по группам, поддерживает вложенные пути `audits/`, `sync/`, `diagnostics/`, строго валидирует `file` / semver `version` / `group` и дубли файлов; блокирует повторный параллельный запуск async tool и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 
 ## UI/UX
 
@@ -64,22 +64,22 @@ Loader валидирует каждый дочерний manifest и итого
 
 Версия extension независима от версии loader. Единственный источник версии для extension — его запись в `manifests/features.json` или `manifests/ui-ux.json`; отдельные metadata-блоки и `@version` внутри этих файлов не используются.
 
-## Parsers
+## Tools
 
-Парсеры запускаются через `Alt+P`. Массовые data-audit parsers проверяют текущее состояние CMS только через Content Manager API, включая draft/modified записи; Public API `/api/...` для этих проверок не используется. Парсеры проходят данные постранично, показывают progress/counters и автоматически скачивают CSV. При запуске через Parser Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация parser'а и его версия (`file`, semver `version`, `group`) хранятся только в `manifests/parsers.json`; metadata-блоки внутри parser-файлов не используются.
+Browser tools запускаются через `Alt+P`. `audits/` содержит массовые проверки данных, `sync/` — инструменты синхронизации/изменения данных, `diagnostics/` — диагностические утилиты. Data-audit tools проверяют текущее состояние CMS только через Content Manager API, включая draft/modified записи; Public API `/api/...` для этих проверок не используется. Массовые tools проходят данные постранично, показывают progress/counters и при необходимости автоматически скачивают CSV. При запуске через Tools Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация tool и его версия (`file`, semver `version`, `group`) хранятся только в `manifests/tools.json`; metadata-блоки внутри tool-файлов не используются.
 
-- `attributes-wrong-prices.js` — attributes активных товаров в текущем состоянии CMS с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
-- `products-missing-content.js` — проверяет критичные контентные поля активных товаров с учётом `categories.active`: товары только в отключённых категориях пропускаются, а товары без categories или со смешанными active/inactive categories всегда попадают в отчёт как edge cases.
-- `products-wrong-variants.js` — проверяет варианты `shade`/`volume` у attributes активных товаров и формирует компактный отчёт `documentId` + `errorType`.
-- `products-category-mirror-sync.js` — зеркально синхронизирует Products внутри настроенных групп из 2+ categories: для каждой группы строит union Products, одним `actions/publish` добавляет Product все недостающие categories этой группы, обрабатывает группы последовательно с live re-check/verify, использует throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
-- `products-category-forward-sync.js` — односторонне синхронизирует Products по настроенным группам `source → target`: добавляет в target только отсутствующие там Products из source, обратно из target в source ничего не добавляет, выполняет общий dry-run, live re-check/verify по группам, использует тот же throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
-- `dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
-- `network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
-- `style-stealer.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
-- `layout-sync.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, во вкладке `Фильтры` учитывает порядок смысловых групп, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
-- `manifests/parsers.json` — runtime-источник `file`, semver `version` и `group` для Parser Launcher; `group` задаётся только здесь.
+- `audits/attributes-wrong-prices.js` — attributes активных товаров в текущем состоянии CMS с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
+- `audits/products-missing-content.js` — проверяет критичные контентные поля активных товаров с учётом `categories.active`: товары только в отключённых категориях пропускаются, а товары без categories или со смешанными active/inactive categories всегда попадают в отчёт как edge cases.
+- `audits/products-wrong-variants.js` — проверяет варианты `shade`/`volume` у attributes активных товаров и формирует компактный отчёт `documentId` + `errorType`.
+- `sync/products-category-mirror-sync.js` — зеркально синхронизирует Products внутри настроенных групп из 2+ categories: для каждой группы строит union Products, одним `actions/publish` добавляет Product все недостающие categories этой группы, обрабатывает группы последовательно с live re-check/verify, использует throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
+- `sync/products-category-forward-sync.js` — односторонне синхронизирует Products по настроенным группам `source → target`: добавляет в target только отсутствующие там Products из source, обратно из target в source ничего не добавляет, выполняет общий dry-run, live re-check/verify по группам, использует тот же throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
+- `diagnostics/dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
+- `diagnostics/network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
+- `diagnostics/style-stealer.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
+- `sync/layout-sync.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, во вкладке `Фильтры` учитывает порядок смысловых групп, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
+- `manifests/tools.json` — runtime-источник `file`, semver `version` и `group` для Tools Launcher; `file` хранит путь относительно `tools/`, `group` задаётся только здесь.
 
-Для нового parser добавь файл в `parsers/` и зарегистрируй его в `manifests/parsers.json` через `file`, `version` и `group`. `version` и `group` внутри parser-файла не дублируются.
+Для нового tool добавь файл в подходящую подпапку `tools/` (`audits/`, `sync/` или `diagnostics/`) и зарегистрируй его в `manifests/tools.json` через `file`, `version` и `group`. `version` и `group` внутри tool-файла не дублируются.
 
 Рабочие группы: `products`, `offers`, `attributes`, `drafts`, `service`.
 
@@ -128,26 +128,30 @@ README обновляется, когда меняются структура, �
 │   ├── extensions.json
 │   ├── features.json
 │   ├── ui-ux.json
-│   └── parsers.json
+│   └── tools.json
 ├── features/
 │   ├── barcode-extractor.js
 │   ├── ctrl-enter-publisher.js
-│   └── parser-launcher.js
+│   └── tools-launcher.js
 ├── ui-ux/
 │   ├── sidebar.js
 │   ├── entry-relocate.js
 │   ├── product-attributes-navigator.js
 │   ├── product-sections.js
 │   └── record-list.js
-├── parsers/
-│   ├── dom-stealer.js
-│   ├── network-recorder.js
-│   ├── style-stealer.js
-│   ├── layout-sync.js
-│   ├── products-missing-content.js
-│   ├── products-wrong-variants.js
-│   ├── products-category-mirror-sync.js
-│   └── attributes-wrong-prices.js
+├── tools/
+│   ├── audits/
+│   │   ├── attributes-wrong-prices.js
+│   │   ├── products-missing-content.js
+│   │   └── products-wrong-variants.js
+│   ├── sync/
+│   │   ├── layout-sync.js
+│   │   ├── products-category-forward-sync.js
+│   │   └── products-category-mirror-sync.js
+│   └── diagnostics/
+│       ├── dom-stealer.js
+│       ├── network-recorder.js
+│       └── style-stealer.js
 ├── helpdesk/
 │   ├── workflow.json
 │   └── notifications.json
