@@ -4,7 +4,7 @@
 
 ## CANONICAL — dataset для фильтров «Уход за кожей»
 
-Для field-by-field enrichment товаров ветки «Уход за кожей» source dataset собирается ad hoc через DevTools/Content Manager, а не как постоянный repo parser, пока нет отдельного требования автоматизировать этот workflow.
+Для field-by-field enrichment товаров ветки «Уход за кожей» source dataset собирается ad hoc через DevTools/Content Manager, а не как постоянный repo tool, пока нет отдельного требования автоматизировать этот workflow.
 
 Category contract:
 - UID: `api::category.category`;
