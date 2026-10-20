@@ -994,9 +994,9 @@ Outbound contract:
 - Folder-local manifests вида `extension/manifest.json`, `features/manifest.json`, `ui-ux/manifest.json`, `parsers/manifest.json` были заменены централизованным `manifests/` 2026-09-23. Не использовать старые paths как default.
 - В 2026-09-23 папки `migrator/` и `postman/` были удалены при упрощении repo. Исторические workflows выше сохранены как knowledge, но наличие текущей реализации всегда проверять в live repo.
 
-## CANONICAL — зеркальные категории Products
+## CANONICAL — зеркальная синхронизация категорий Products
 
-Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser parser `parsers/products-mirror-categories.js` через `MIRROR_GROUPS`; рабочая locale только `ru`.
+Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser parser `parsers/products-category-mirror-sync.js` через `MIRROR_SYNC_GROUPS`; рабочая locale только `ru`.
 
 Бизнес-правило для одной mirror group:
 - собрать union Products всех Category группы;
@@ -1065,27 +1065,27 @@ Concurrency:
 
 HISTORICAL live benchmark 2026-10-19 для первой mirror group из двух Category: 308 Products были опубликованы без ошибок, verify дал C1=317/C2=317/missing=0 за 37.7 сек. Throughput вырос до ~9.23 req/s на concurrency 20, а ступени 25–40 не дали улучшения и увеличили latency; это подтвердило throughput-aware rollback вместо роста только по отсутствию ошибок.
 
-Current configured groups не дублировать в context: source of truth — live `MIRROR_GROUPS` в `parsers/products-mirror-categories.js`.
+Current configured groups не дублировать в context: source of truth — live `MIRROR_SYNC_GROUPS` в `parsers/products-category-mirror-sync.js`.
 
 Пересечение Category между разными mirror groups сейчас не запрещается и специально не объединяется. Если реальный каталог выявит пересекающиеся группы, сначала отдельно определить бизнес-семантику такого сценария, затем менять workflow.
 
-## CANONICAL — нормализация Products из дерева «Азиатский уход»
+## CANONICAL — односторонняя синхронизация категорий Products
 
-Назначение: поддерживать одностороннее включение Products из категорий дерева «Азиатский уход» в соответствующие категории основного каталога. Runtime parser: `parsers/products-normalize-asian-care.js`; рабочая locale только `ru`.
+Назначение: поддерживать одностороннее включение Products из настроенной source Category в соответствующую target Category. Runtime parser: `parsers/products-category-forward-sync.js`; рабочая locale только `ru`.
 
-Группы задаются вручную через `NORMALIZATION_GROUPS` по контракту:
+Группы задаются вручную через `FORWARD_SYNC_GROUPS` по контракту:
 
 ```js
 {
   name: 'Название группы',
-  source: '<documentId Category внутри Азиатского ухода>',
-  target: '<documentId соответствующей Category основного каталога>'
+  source: '<documentId Category-источника>',
+  target: '<documentId Category-получателя>'
 }
 ```
 
 Текущий бизнес-контракт — строго `1 source → 1 target`:
-- `source` — Category внутри дерева «Азиатский уход»;
-- `target` — соответствующая Category основного каталога;
+- `source` — Category-источник;
+- `target` — Category-получатель;
 - все Products из `source.product` должны присутствовать в `target.product`;
 - Products, которые есть только в `target`, никогда не добавлять обратно в `source`;
 - source relation не менять;
@@ -1099,10 +1099,10 @@ GET /content-manager/relations/api::category.category/<categoryDocumentId>/produ
 POST /content-manager/collection-types/api::product.product/<productDocumentId>/actions/publish?locale=ru
 ```
 
-Для write в `categories.connect` передаётся только target Category текущей normalization group с numeric `id`, полученным runtime по её `documentId`; `disconnect: []`.
+Для write в `categories.connect` передаётся только target Category текущей forward-sync group с numeric `id`, полученным runtime по её `documentId`; `disconnect: []`.
 
 CANONICAL run:
-1. Валидировать `NORMALIZATION_GROUPS` и проверить все configured source/target Category; если хотя бы одна не читается, остановиться до любых write.
+1. Валидировать `FORWARD_SYNC_GROUPS` и проверить все configured source/target Category; если хотя бы одна не читается, остановиться до любых write.
 2. Общий dry-run по всем группам: прочитать все страницы `source.product` и `target.product`, посчитать `source - target` и количество Products к publish.
 3. Если изменений 0 — закончить без confirm/write.
 4. Одно подтверждение на весь run.
@@ -1111,9 +1111,9 @@ CANONICAL run:
 7. Write ошибка одного Product не останавливает run; failed фиксировать и продолжать.
 8. После writes группы снова прочитать source/target и verify, что `source - target = 0`. Verify/read error не останавливает следующие группы.
 9. Финальный summary всегда; при failed/read/verify проблемах автоматически скачать CSV `group,productDocumentId,sourceCategory,targetCategory,error,verifyStatus`.
-10. Report сохраняется в `window.productsNormalizeAsianCareReport`.
+10. Report сохраняется в `window.productsCategoryForwardSyncReport`.
 
-Concurrency полностью наследует подтверждённый throughput-aware adaptive механизм mirror parser: старт 10, шаг 5, min 5, max 40, оценка ступени после 20 успешных requests, новая ступень должна улучшить best throughput минимум на 3%, после двух подряд неулучшающих ступеней rollback/lock на best concurrency; найденный уровень переносится между groups. На `429`/`5xx`/network error concurrency снижается и benchmark перезапускается. `POST actions/publish` автоматически не ретраить.
+Concurrency полностью наследует подтверждённый throughput-aware adaptive механизм mirror-sync parser: старт 10, шаг 5, min 5, max 40, оценка ступени после 20 успешных requests, новая ступень должна улучшить best throughput минимум на 3%, после двух подряд неулучшающих ступеней rollback/lock на best concurrency; найденный уровень переносится между groups. На `429`/`5xx`/network error concurrency снижается и benchmark перезапускается. `POST actions/publish` автоматически не ретраить.
 
-Current configured normalization groups не дублировать в context: source of truth — live `NORMALIZATION_GROUPS` в `parsers/products-normalize-asian-care.js`.
+Current configured forward-sync groups не дублировать в context: source of truth — live `FORWARD_SYNC_GROUPS` в `parsers/products-category-forward-sync.js`.
 
