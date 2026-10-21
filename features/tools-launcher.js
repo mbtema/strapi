@@ -215,12 +215,18 @@
     document.getElementById(OVERLAY_ID)?.remove();
   }
 
+  function getToolDisplayName(file) {
+    return file.split('/').pop() || file;
+  }
+
   function createButton(tool, status) {
     const button = document.createElement('button');
+    const displayName = getToolDisplayName(tool.file);
+
     button.type = 'button';
     button.textContent = activeRuns.has(tool.file)
-      ? `${tool.file} · запущен`
-      : tool.file;
+      ? `${displayName} · запущен`
+      : displayName;
     button.disabled = activeRuns.has(tool.file);
 
     Object.assign(button.style, {
