@@ -2328,7 +2328,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const filename = String($json.fileName || 'attachment'); const ext = filename.split('.').pop()?.toLowerCase() || ''; const contentType = ext === 'mov' ? 'video/quicktime' : String($json.mimeType || 'application/octet-stream'); return { mode: 'single_part', filename, content_type: contentType }; })() }}",
+        "jsonBody": "={{ (() => { const filename = String($json.fileName || 'attachment'); const ext = filename.split('.').pop()?.toLowerCase() || ''; const mimeByExt = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp', tif: 'image/tiff', tiff: 'image/tiff', heic: 'image/heic', heif: 'image/heif', mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', m4v: 'video/x-m4v' }; const contentType = mimeByExt[ext] || String($json.mimeType || 'application/octet-stream'); return { mode: 'single_part', filename, content_type: contentType }; })() }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
