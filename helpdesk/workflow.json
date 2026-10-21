@@ -731,7 +731,8 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "state": "awaitingIssueDescription"
+            "state": "awaitingIssueDescription",
+            "draftDescription": ""
           },
           "matchingColumns": [],
           "schema": [
@@ -794,6 +795,16 @@
               "type": "string",
               "readOnly": false,
               "removed": false
+            },
+            {
+              "id": "draftDescription",
+              "displayName": "draftDescription",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
             }
           ],
           "attemptToConvertTypes": false,
@@ -813,7 +824,7 @@
     {
       "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Опишите обращение 📝\n\nНапишите, что нужно изменить, исправить или проверить\n\nЕсли речь о товаре или странице, добавьте название, артикул или ссылку\n\nЕсли это ошибка, кратко опишите, что произошло",
+        "text": "Опишите, что нужно изменить, исправить или проверить 📝\n\nПри необходимости прикрепите фото, видео или файл к этому же сообщению\n\nПосле отправки бот автоматически создаст обращение",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -871,7 +882,7 @@
           "mappingMode": "defineBelow",
           "value": {
             "draftDescription": "={{ $('start').item.json.message.text.trim() }}",
-            "state": "awaitingIssueMedia"
+            "state": "awaitingIssueDescription"
           },
           "matchingColumns": [],
           "schema": [
@@ -962,53 +973,6 @@
     },
     {
       "parameters": {
-        "chatId": "={{ $json.chatId }}",
-        "text": "Описание сохранено ✅\n\nПри необходимости добавьте фото, видео или файл\nМожно отправить несколько вложений\n\nКогда всё готово, нажмите «Создать обращение»",
-        "replyMarkup": "inlineKeyboard",
-        "inlineKeyboard": {
-          "rows": [
-            {
-              "row": {
-                "buttons": [
-                  {
-                    "text": "Создать обращение 📝",
-                    "additionalFields": {
-                      "callback_data": "submitIssue"
-                    }
-                  },
-                  {
-                    "text": "Отменить ✖️",
-                    "additionalFields": {
-                      "callback_data": "cancelIssue"
-                    }
-                  }
-                ]
-              }
-            }
-          ]
-        },
-        "additionalFields": {
-          "appendAttribution": false
-        }
-      },
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        -2560,
-        -256
-      ],
-      "id": "8b2d964b-b050-4286-afce-bd125b9fcb8c",
-      "name": "askIssueMedia",
-      "webhookId": "bc6cbf29-2ee8-46e0-b673-a423f0ee763d",
-      "credentials": {
-        "telegramApi": {
-          "id": "Rohp2ZGI9XYqS610",
-          "name": "MonAmie Helpdesk"
-        }
-      }
-    },
-    {
-      "parameters": {
         "rules": {
           "values": [
             {
@@ -1021,13 +985,13 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : 'other')) }}",
+                    "leftValue": "={{ (() => { const cb = $('start').item.json.callback_query?.data || ''; if (cb === 'cancelIssue') return 'cancelIssue'; if (cb === 'submitIssue') return 'submitIssue'; const m = $('start').item.json.message ?? {}; const text = m.text; if (typeof text === 'string' && text.trim().length > 0 && !text.trim().startsWith('/')) return 'text'; if (m.photo || m.video || m.document) return 'media'; return 'other'; })() }}",
                     "rightValue": "cancelIssue",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "a9615b76-0b41-4baa-a746-e7da87d1e5bb"
+                    "id": "route-content-cancel"
                   }
                 ],
                 "combinator": "and"
@@ -1043,13 +1007,13 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : 'other')) }}",
-                    "rightValue": "other",
+                    "leftValue": "={{ (() => { const cb = $('start').item.json.callback_query?.data || ''; if (cb === 'cancelIssue') return 'cancelIssue'; if (cb === 'submitIssue') return 'submitIssue'; const m = $('start').item.json.message ?? {}; const text = m.text; if (typeof text === 'string' && text.trim().length > 0 && !text.trim().startsWith('/')) return 'text'; if (m.photo || m.video || m.document) return 'media'; return 'other'; })() }}",
+                    "rightValue": "text",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "646d4dc5-e86c-4b87-97a4-5f25a8451077"
+                    "id": "route-content-text"
                   }
                 ],
                 "combinator": "and"
@@ -1065,13 +1029,13 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : 'other')) }}",
+                    "leftValue": "={{ (() => { const cb = $('start').item.json.callback_query?.data || ''; if (cb === 'cancelIssue') return 'cancelIssue'; if (cb === 'submitIssue') return 'submitIssue'; const m = $('start').item.json.message ?? {}; const text = m.text; if (typeof text === 'string' && text.trim().length > 0 && !text.trim().startsWith('/')) return 'text'; if (m.photo || m.video || m.document) return 'media'; return 'other'; })() }}",
                     "rightValue": "media",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "03f20cd7-4733-451d-8998-c1fe93226bb1"
+                    "id": "route-content-media"
                   }
                 ],
                 "combinator": "and"
@@ -1087,13 +1051,35 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $('start').item.json.callback_query?.data === 'cancelIssue' ? 'cancelIssue' : ($('start').item.json.callback_query?.data === 'submitIssue' ? 'submitIssue' : ($('start').item.json.message?.photo || $('start').item.json.message?.video || $('start').item.json.message?.document ? 'media' : 'other')) }}",
+                    "leftValue": "={{ (() => { const cb = $('start').item.json.callback_query?.data || ''; if (cb === 'cancelIssue') return 'cancelIssue'; if (cb === 'submitIssue') return 'submitIssue'; const m = $('start').item.json.message ?? {}; const text = m.text; if (typeof text === 'string' && text.trim().length > 0 && !text.trim().startsWith('/')) return 'text'; if (m.photo || m.video || m.document) return 'media'; return 'other'; })() }}",
                     "rightValue": "submitIssue",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "e122f656-51e-48f6-9347-97b0f286190e"
+                    "id": "route-content-submit"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ (() => { const cb = $('start').item.json.callback_query?.data || ''; if (cb === 'cancelIssue') return 'cancelIssue'; if (cb === 'submitIssue') return 'submitIssue'; const m = $('start').item.json.message ?? {}; const text = m.text; if (typeof text === 'string' && text.trim().length > 0 && !text.trim().startsWith('/')) return 'text'; if (m.photo || m.video || m.document) return 'media'; return 'other'; })() }}",
+                    "rightValue": "other",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "route-content-other"
                   }
                 ],
                 "combinator": "and"
@@ -1107,10 +1093,10 @@
       "typeVersion": 3.4,
       "position": [
         -3008,
-        512
+        -64
       ],
       "id": "91d842f4-a060-49cd-b834-af1ccb4de5b9",
-      "name": "routeMediaType"
+      "name": "routeIssueContent"
     },
     {
       "parameters": {
@@ -1236,53 +1222,6 @@
     },
     {
       "parameters": {
-        "chatId": "={{ $json.chatId }}",
-        "text": "На этом шаге можно отправить фото, видео или файл\n\nКогда всё готово, нажмите «Создать обращение»",
-        "replyMarkup": "inlineKeyboard",
-        "inlineKeyboard": {
-          "rows": [
-            {
-              "row": {
-                "buttons": [
-                  {
-                    "text": "Создать обращение 📝",
-                    "additionalFields": {
-                      "callback_data": "submitIssue"
-                    }
-                  },
-                  {
-                    "text": "Отменить ✖️",
-                    "additionalFields": {
-                      "callback_data": "cancelIssue"
-                    }
-                  }
-                ]
-              }
-            }
-          ]
-        },
-        "additionalFields": {
-          "appendAttribution": false
-        }
-      },
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        -2784,
-        400
-      ],
-      "id": "71d1fc81-c8fe-4d80-bda3-2a18222f183a",
-      "name": "sendInvalidMediaMessage",
-      "webhookId": "f9fe421c-d146-42df-a4bc-3264b5e55887",
-      "credentials": {
-        "telegramApi": {
-          "id": "Rohp2ZGI9XYqS610",
-          "name": "MonAmie Helpdesk"
-        }
-      }
-    },
-    {
-      "parameters": {
         "operation": "rowNotExists",
         "dataTableId": {
           "__rl": true,
@@ -1307,7 +1246,7 @@
       "typeVersion": 1.1,
       "position": [
         -2560,
-        560
+        256
       ],
       "id": "c6f0370a-8bd6-4c68-a068-32f5a830c5fb",
       "name": "checkMediaNotSaved"
@@ -1434,57 +1373,10 @@
       "typeVersion": 1.1,
       "position": [
         -2336,
-        560
+        256
       ],
       "id": "efeeef4f-eba5-40c8-8270-c549a3d296b2",
       "name": "saveIssueMedia"
-    },
-    {
-      "parameters": {
-        "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Вложения добавлены ✅\n\nМожно отправить ещё фото, видео или файл\n\nКогда всё готово, нажмите «Создать обращение»",
-        "replyMarkup": "inlineKeyboard",
-        "inlineKeyboard": {
-          "rows": [
-            {
-              "row": {
-                "buttons": [
-                  {
-                    "text": "Создать обращение 📝",
-                    "additionalFields": {
-                      "callback_data": "submitIssue"
-                    }
-                  },
-                  {
-                    "text": "Отменить ✖️",
-                    "additionalFields": {
-                      "callback_data": "cancelIssue"
-                    }
-                  }
-                ]
-              }
-            }
-          ]
-        },
-        "additionalFields": {
-          "appendAttribution": false
-        }
-      },
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        -992,
-        464
-      ],
-      "id": "fa5b7109-3a57-45e6-9dec-7a5b90255b4f",
-      "name": "sendAlbumMediaSaved",
-      "webhookId": "d0354f0e-fe03-44ea-a903-b973c76bb38a",
-      "credentials": {
-        "telegramApi": {
-          "id": "Rohp2ZGI9XYqS610",
-          "name": "MonAmie Helpdesk"
-        }
-      }
     },
     {
       "parameters": {
@@ -1796,91 +1688,8 @@
     },
     {
       "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ (() => { const callback = $('start').item.json.callback_query?.data; if (callback === 'cancelIssue') return 'cancelIssue'; const text = $('start').item.json.message?.text; return typeof text === 'string' && text.trim().length > 0 && !text.trim().startsWith('/') ? 'valid' : 'invalid'; })() }}",
-                    "rightValue": "valid",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "dc52febb-6ab4-4835-84b9-f1ab415ee72a"
-                  }
-                ],
-                "combinator": "and"
-              }
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ (() => { const callback = $('start').item.json.callback_query?.data; if (callback === 'cancelIssue') return 'cancelIssue'; const text = $('start').item.json.message?.text; return typeof text === 'string' && text.trim().length > 0 && !text.trim().startsWith('/') ? 'valid' : 'invalid'; })() }}",
-                    "rightValue": "invalid",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "5d0736f1-52de-4a57-8154-08206714ebe5"
-                  }
-                ],
-                "combinator": "and"
-              }
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 3
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ (() => { const callback = $('start').item.json.callback_query?.data; if (callback === 'cancelIssue') return 'cancelIssue'; const text = $('start').item.json.message?.text; return typeof text === 'string' && text.trim().length > 0 && !text.trim().startsWith('/') ? 'valid' : 'invalid'; })() }}",
-                    "rightValue": "cancelIssue",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "id": "63de7e3c-52cd-467f-894f-20994f890505"
-                  }
-                ],
-                "combinator": "and"
-              }
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.4,
-      "position": [
-        -3008,
-        -64
-      ],
-      "id": "14e1314e-4539-4f37-a778-e6c08f8e7367",
-      "name": "validateIssueDescription"
-    },
-    {
-      "parameters": {
         "chatId": "={{ $json.chatId }}",
-        "text": "Опишите обращение обычным текстовым сообщением\n\nФото, видео и файлы можно добавить на следующем шаге",
+        "text": "Отправьте обращение текстовым сообщением\n\nФото, видео или файл можно прикрепить к этому же сообщению",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -1906,7 +1715,7 @@
       "typeVersion": 1.2,
       "position": [
         -2784,
-        -64
+        64
       ],
       "id": "98699702-f9e3-407c-9e66-b06a1f5d3ecc",
       "name": "sendInvalidIssueDescription",
@@ -2199,25 +2008,11 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -2784,
-        848
+        -1888,
+        640
       ],
       "id": "926e1adb-d8e4-463e-94f7-962488672efc",
       "name": "setSubmittingIssue"
-    },
-    {
-      "parameters": {
-        "amount": 3
-      },
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        -2560,
-        848
-      ],
-      "id": "3e44d12a-ac51-4348-a279-2dfddc6888f0",
-      "name": "waitForMediaWrites",
-      "webhookId": "af0c7815-0eb9-4f4e-ae74-6992d1ac97c6"
     },
     {
       "parameters": {
@@ -2243,8 +2038,8 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -2336,
-        848
+        -1664,
+        640
       ],
       "id": "61f37f05-837c-4b12-a4a6-204d27bdb624",
       "name": "getIssueMedia",
@@ -2264,13 +2059,13 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $json.fileId ? 'media' : 'none' }}",
+                    "leftValue": "={{ (() => { const items = $('getIssueMedia').all(); const hasMedia = items.some(i => String(i.json.fileId ?? '').trim()); const draft = String($('getProfile').first().json.draftDescription ?? '').trim(); const captions = items.map(i => String(i.json.caption ?? '').trim()).filter(Boolean); const hasDescription = Boolean(draft || captions.length); if (!hasDescription) return 'missingDescription'; return hasMedia ? 'media' : 'none'; })() }}",
                     "rightValue": "none",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "441a0dc8-4755-4e76-b112-7d8ecc020214"
+                    "id": "submit-no-media"
                   }
                 ],
                 "combinator": "and"
@@ -2286,13 +2081,35 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $json.fileId ? 'media' : 'none' }}",
+                    "leftValue": "={{ (() => { const items = $('getIssueMedia').all(); const hasMedia = items.some(i => String(i.json.fileId ?? '').trim()); const draft = String($('getProfile').first().json.draftDescription ?? '').trim(); const captions = items.map(i => String(i.json.caption ?? '').trim()).filter(Boolean); const hasDescription = Boolean(draft || captions.length); if (!hasDescription) return 'missingDescription'; return hasMedia ? 'media' : 'none'; })() }}",
                     "rightValue": "media",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
                     },
-                    "id": "735fe83c-dcb9-4a00-bd5f-e8e0f1b7008f"
+                    "id": "submit-media"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ (() => { const items = $('getIssueMedia').all(); const hasMedia = items.some(i => String(i.json.fileId ?? '').trim()); const draft = String($('getProfile').first().json.draftDescription ?? '').trim(); const captions = items.map(i => String(i.json.caption ?? '').trim()).filter(Boolean); const hasDescription = Boolean(draft || captions.length); if (!hasDescription) return 'missingDescription'; return hasMedia ? 'media' : 'none'; })() }}",
+                    "rightValue": "missingDescription",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "submit-missing-description"
                   }
                 ],
                 "combinator": "and"
@@ -2305,8 +2122,8 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -2112,
-        848
+        -1440,
+        640
       ],
       "id": "8684062e-25b6-4dd3-83a4-30f7c46204a7",
       "name": "routeSubmitMedia"
@@ -2334,8 +2151,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -1888,
-        960
+        -1216,
+        736
       ],
       "id": "aab69c38-b6cc-4f49-bce1-761d0d79eb8e",
       "name": "createNotionFileUpload",
@@ -2347,7 +2164,8 @@
           "id": "aUPcxBs0MEDPXk7i",
           "name": "MonAmie Notion Workspace"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -2358,8 +2176,8 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -1664,
-        960
+        -992,
+        736
       ],
       "id": "568313f5-4514-48e2-9bff-001c184cd62f",
       "name": "downloadTelegramFile",
@@ -2372,7 +2190,8 @@
           "id": "Rohp2ZGI9XYqS610",
           "name": "MonAmie Helpdesk"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -2405,8 +2224,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -1440,
-        960
+        -768,
+        736
       ],
       "id": "ff9fa7f2-ac27-4c40-baa8-916c6045e6bc",
       "name": "uploadNotionFile",
@@ -2427,42 +2246,50 @@
       "type": "n8n-nodes-base.aggregate",
       "typeVersion": 1,
       "position": [
-        -1216,
-        960
+        -544,
+        736
       ],
       "id": "09c11629-773e-4eb4-af56-e6f5e5d0290a",
       "name": "aggregateUploadedFiles"
     },
     {
       "parameters": {
-        "operation": "rowExists",
-        "dataTableId": {
-          "__rl": true,
-          "value": "telegramProfiles",
-          "mode": "name"
-        },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
+        "rules": {
+          "values": [
             {
-              "keyName": "userId",
-              "keyValue": "={{ String($('start').item.json.message?.from?.id ?? '') }}"
-            },
-            {
-              "keyName": "state",
-              "keyValue": "awaitingIssueMedia"
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ ['awaitingIssueDescription', 'awaitingIssueMedia'].includes(String($('getProfile').first().json.state ?? '')) ? 'collecting' : 'late' }}",
+                    "rightValue": "collecting",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "route-saved-media-collecting"
+                  }
+                ],
+                "combinator": "and"
+              }
             }
           ]
-        }
+        },
+        "options": {}
       },
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
       "position": [
         -2112,
-        560
+        256
       ],
       "id": "54870af7-a911-48c0-afc3-d89456b930b5",
-      "name": "checkAwaitingMediaAfterSave"
+      "name": "routeSavedMedia"
     },
     {
       "parameters": {
@@ -2520,7 +2347,7 @@
       "typeVersion": 3.4,
       "position": [
         -1888,
-        560
+        256
       ],
       "id": "fc15bd66-8d3f-4252-8a10-f46c78c36d0d",
       "name": "routeMediaConfirmation"
@@ -2532,8 +2359,8 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        -1888,
-        464
+        -1664,
+        160
       ],
       "id": "ff9fa71c-fa9e-4b05-b451-9432bc5c52a9",
       "name": "waitAlbumBatch",
@@ -2567,8 +2394,8 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -1664,
-        464
+        -1440,
+        160
       ],
       "id": "f5a0aa85-5cdb-4b5b-b2c2-8360c1de12d4",
       "name": "getLatestMediaInGroup"
@@ -2606,42 +2433,11 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -1440,
-        464
+        -1216,
+        160
       ],
       "id": "71d01b25-02d6-430d-8c96-40027a6bc51e",
       "name": "isLastAlbumItem"
-    },
-    {
-      "parameters": {
-        "operation": "rowExists",
-        "dataTableId": {
-          "__rl": true,
-          "value": "telegramProfiles",
-          "mode": "name"
-        },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "userId",
-              "keyValue": "={{ String($('start').item.json.message?.from?.id ?? '') }}"
-            },
-            {
-              "keyName": "state",
-              "keyValue": "awaitingIssueMedia"
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.dataTable",
-      "typeVersion": 1.1,
-      "position": [
-        -1216,
-        464
-      ],
-      "id": "e911605e-d27b-4986-99a2-65b6852452cd",
-      "name": "checkStillAwaitingMedia"
     },
     {
       "parameters": {
@@ -2778,8 +2574,8 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        -992,
-        736
+        -1216,
+        544
       ],
       "id": "f0e987ac-8d2a-495d-a93d-8563defd2480",
       "name": "createNotionIssueNoMedia",
@@ -2814,8 +2610,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -768,
-        960
+        128,
+        736
       ],
       "id": "505ca8b3-7dc5-456b-ba0c-147ea9b2c627",
       "name": "attachNotionMedia",
@@ -2879,53 +2675,6 @@
       "id": "6bbd24ce-fe72-4568-a35f-f41924aa4077",
       "name": "sendIssueSubmittedWithMedia",
       "webhookId": "1f90d87c-32de-4f83-8aba-e94f19cfd97c",
-      "credentials": {
-        "telegramApi": {
-          "id": "Rohp2ZGI9XYqS610",
-          "name": "MonAmie Helpdesk"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Вложение добавлено ✅\n\nМожно отправить ещё фото, видео или файл\n\nКогда всё готово, нажмите «Создать обращение»",
-        "replyMarkup": "inlineKeyboard",
-        "inlineKeyboard": {
-          "rows": [
-            {
-              "row": {
-                "buttons": [
-                  {
-                    "text": "Создать обращение 📝",
-                    "additionalFields": {
-                      "callback_data": "submitIssue"
-                    }
-                  },
-                  {
-                    "text": "Отменить ✖️",
-                    "additionalFields": {
-                      "callback_data": "cancelIssue"
-                    }
-                  }
-                ]
-              }
-            }
-          ]
-        },
-        "additionalFields": {
-          "appendAttribution": false
-        }
-      },
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        -1888,
-        656
-      ],
-      "id": "2fb475d4-9085-4f1a-b5e7-8f28a5a8e62b",
-      "name": "sendSingleMediaSaved",
-      "webhookId": "f8f7d1f0-2b7d-45a2-a174-33f6d56a3b31",
       "credentials": {
         "telegramApi": {
           "id": "Rohp2ZGI9XYqS610",
@@ -3091,7 +2840,7 @@
           "value": "c469a5a4-7569-480a-9780-35379543368f",
           "mode": "id"
         },
-        "title": "={{ String($('getProfile').first().json.draftDescription ?? 'Обращение').split('\\n').find(line => line.trim())?.trim().slice(0, 80) || 'Обращение' }}",
+        "title": "={{ (() => { const draft = String($('getProfile').first().json.draftDescription ?? '').trim(); const captions = $('getIssueMedia').all().map(i => String(i.json.caption ?? '').trim()).filter(Boolean); const description = [draft, ...captions].filter(Boolean).join('\\n\\n'); return description.split('\\n').find(line => line.trim())?.trim().slice(0, 80) || 'Обращение'; })() }}",
         "propertiesUi": {
           "propertyValues": [
             {
@@ -3108,7 +2857,7 @@
             },
             {
               "key": "Описание|rich_text",
-              "textContent": "={{ String($('getProfile').first().json.draftDescription ?? '') }}"
+              "textContent": "={{ (() => { const draft = String($('getProfile').first().json.draftDescription ?? '').trim(); const captions = $('getIssueMedia').all().map(i => String(i.json.caption ?? '').trim()).filter(Boolean); return [draft, ...captions].filter(Boolean).join('\\n\\n'); })() }}"
             },
             {
               "key": "Подписи к медиа|rich_text",
@@ -3133,8 +2882,8 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        -880,
-        912
+        -96,
+        736
       ],
       "id": "31c0ea6c-1fb6-49df-95c7-4d4c6e46ea31",
       "name": "createNotionIssueWithMedia",
@@ -3165,7 +2914,7 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "state": "awaitingIssueMedia"
+            "state": "awaitingIssueDescription"
           },
           "matchingColumns": [],
           "schema": [
@@ -3248,8 +2997,8 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -992,
-        1280
+        -320,
+        1056
       ],
       "id": "553f651a-7618-46b0-8593-8813c873823c",
       "name": "recoverSubmitBeforeNotion"
@@ -3288,8 +3037,8 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -768,
-        1280
+        -96,
+        1056
       ],
       "id": "3ce80558-af06-4489-ae1f-2a5b1c48b8fe",
       "name": "sendSubmitRetry",
@@ -3613,8 +3362,8 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -1104,
-        960
+        -320,
+        736
       ]
     },
     {
@@ -3674,26 +3423,20 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -2896,
-        560
+        -2784,
+        256
       ]
     },
     {
       "parameters": {
         "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
-        "text": "Файл не добавлен ⚠️\n\nМаксимальный размер одного вложения - 20 МБ\n\nУменьшите размер файла и отправьте его ещё раз",
+        "text": "Файл не добавлен ⚠️\n\nМаксимальный размер одного вложения - 20 МБ\n\nУменьшите файл и отправьте обращение ещё раз",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
             {
               "row": {
                 "buttons": [
-                  {
-                    "text": "Создать обращение 📝",
-                    "additionalFields": {
-                      "callback_data": "submitIssue"
-                    }
-                  },
                   {
                     "text": "Отменить ✖️",
                     "additionalFields": {
@@ -3714,8 +3457,210 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -2672,
-        704
+        -2560,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "items",
+        "options": {}
+      },
+      "id": "a7d4a346-1829-4b04-b813-c4d12eef46cf",
+      "name": "aggregateMissingDescription",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -1888,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "telegramProfiles",
+          "mode": "name"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "userId",
+              "keyValue": "={{ String($('getProfile').first().json.userId ?? '') }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "state": "awaitingIssueDescription",
+            "draftDescription": ""
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "userId",
+              "displayName": "userId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "chatId",
+              "displayName": "chatId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "username",
+              "displayName": "username",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "fullName",
+              "displayName": "fullName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "department",
+              "displayName": "department",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "state",
+              "displayName": "state",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "draftDescription",
+              "displayName": "draftDescription",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "7a120c72-6e44-4f3a-9be3-f5a5f84d0a11",
+      "name": "resetMissingDescription",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -1664,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "value": "telegramIssueMedia",
+          "mode": "name"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "userId",
+              "keyValue": "={{ String($('getProfile').first().json.userId ?? '') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8991cdd2-4a77-4c83-bf20-f4018c2d2525",
+      "name": "clearMissingDescriptionMedia",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -1440,
+        1200
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "deletedMedia",
+        "options": {}
+      },
+      "id": "c268bb7e-76ce-44d5-b08a-998ef467847c",
+      "name": "aggregateMissingDescriptionCleanup",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -1216,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
+        "text": "Не хватает описания ⚠️\n\nОтправьте обращение ещё раз и укажите, что нужно изменить, исправить или проверить\n\nФото, видео или файл можно прикрепить к этому же сообщению",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Отменить ✖️",
+                    "additionalFields": {
+                      "callback_data": "cancelIssue"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "d9935bcc-b23f-4fc5-b2a6-9580a7dcf372",
+      "name": "sendMissingIssueDescription",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -992,
+        1200
       ]
     }
   ],
@@ -3793,14 +3738,14 @@
         ],
         [
           {
-            "node": "validateIssueDescription",
+            "node": "routeIssueContent",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "routeMediaType",
+            "node": "routeIssueContent",
             "type": "main",
             "index": 0
           }
@@ -3851,38 +3796,6 @@
       "main": [
         [
           {
-            "node": "askIssueMedia",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "routeMediaType": {
-      "main": [
-        [
-          {
-            "node": "cancelIssueDraft",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "sendInvalidMediaMessage",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "checkMediaSize",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
             "node": "setSubmittingIssue",
             "type": "main",
             "index": 0
@@ -3905,7 +3818,7 @@
       "main": [
         [
           {
-            "node": "checkAwaitingMediaAfterSave",
+            "node": "routeSavedMedia",
             "type": "main",
             "index": 0
           }
@@ -3959,31 +3872,6 @@
         ]
       ]
     },
-    "validateIssueDescription": {
-      "main": [
-        [
-          {
-            "node": "saveIssueDescription",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "sendInvalidIssueDescription",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "cancelIssueDraft",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "cancelIssueDraft": {
       "main": [
         [
@@ -4007,17 +3895,6 @@
       ]
     },
     "setSubmittingIssue": {
-      "main": [
-        [
-          {
-            "node": "waitForMediaWrites",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "waitForMediaWrites": {
       "main": [
         [
           {
@@ -4051,6 +3928,13 @@
         [
           {
             "node": "createNotionFileUpload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "aggregateMissingDescription",
             "type": "main",
             "index": 0
           }
@@ -4112,7 +3996,7 @@
         ],
         [
           {
-            "node": "sendSingleMediaSaved",
+            "node": "setSubmittingIssue",
             "type": "main",
             "index": 0
           }
@@ -4145,18 +4029,7 @@
       "main": [
         [
           {
-            "node": "checkStillAwaitingMedia",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "checkStillAwaitingMedia": {
-      "main": [
-        [
-          {
-            "node": "sendAlbumMediaSaved",
+            "node": "setSubmittingIssue",
             "type": "main",
             "index": 0
           }
@@ -4167,7 +4040,7 @@
       "main": [
         [
           {
-            "node": "checkMediaNotSaved",
+            "node": "checkMediaSize",
             "type": "main",
             "index": 0
           }
@@ -4323,17 +4196,6 @@
         ]
       ]
     },
-    "checkAwaitingMediaAfterSave": {
-      "main": [
-        [
-          {
-            "node": "routeMediaConfirmation",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "routeUserProfile": {
       "main": [
         [
@@ -4382,6 +4244,100 @@
         [
           {
             "node": "sendMediaTooLarge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "routeIssueContent": {
+      "main": [
+        [
+          {
+            "node": "cancelIssueDraft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "saveIssueDescription",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "checkMediaSize",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "setSubmittingIssue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "sendInvalidIssueDescription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "routeSavedMedia": {
+      "main": [
+        [
+          {
+            "node": "routeMediaConfirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aggregateMissingDescription": {
+      "main": [
+        [
+          {
+            "node": "resetMissingDescription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "resetMissingDescription": {
+      "main": [
+        [
+          {
+            "node": "clearMissingDescriptionMedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "clearMissingDescriptionMedia": {
+      "main": [
+        [
+          {
+            "node": "aggregateMissingDescriptionCleanup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aggregateMissingDescriptionCleanup": {
+      "main": [
+        [
+          {
+            "node": "sendMissingIssueDescription",
             "type": "main",
             "index": 0
           }
