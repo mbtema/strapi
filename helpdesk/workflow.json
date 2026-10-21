@@ -1306,7 +1306,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -2784,
+        -2560,
         560
       ],
       "id": "c6f0370a-8bd6-4c68-a068-32f5a830c5fb",
@@ -1433,7 +1433,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -2560,
+        -2336,
         560
       ],
       "id": "efeeef4f-eba5-40c8-8270-c549a3d296b2",
@@ -2458,7 +2458,7 @@
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
       "position": [
-        -2336,
+        -2112,
         560
       ],
       "id": "54870af7-a911-48c0-afc3-d89456b930b5",
@@ -2519,7 +2519,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        -2112,
+        -1888,
         560
       ],
       "id": "fc15bd66-8d3f-4252-8a10-f46c78c36d0d",
@@ -3616,6 +3616,107 @@
         -1104,
         960
       ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ (() => { const m = $('start').item.json.message ?? {}; const size = m.photo ? Number(m.photo[m.photo.length - 1]?.file_size ?? 0) : Number(m.video?.file_size ?? m.document?.file_size ?? 0); return size > 20 * 1024 * 1024 ? 'tooLarge' : 'allowed'; })() }}",
+                    "rightValue": "allowed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "f7e2643a-2a3e-41b6-bc16-4f0823f79f3e"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ (() => { const m = $('start').item.json.message ?? {}; const size = m.photo ? Number(m.photo[m.photo.length - 1]?.file_size ?? 0) : Number(m.video?.file_size ?? m.document?.file_size ?? 0); return size > 20 * 1024 * 1024 ? 'tooLarge' : 'allowed'; })() }}",
+                    "rightValue": "tooLarge",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "919a98bc-b2d9-44bd-94b5-51a7b8bb823f"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aa75f767-790f-497c-b7f3-3c021fdc31af",
+      "name": "checkMediaSize",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -2896,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('start').item.json.message?.chat?.id ?? $('start').item.json.callback_query?.message?.chat?.id }}",
+        "text": "Файл не добавлен ⚠️\n\nМаксимальный размер одного вложения - 20 МБ\n\nУменьшите размер файла и отправьте его ещё раз",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Создать обращение 📝",
+                    "additionalFields": {
+                      "callback_data": "submitIssue"
+                    }
+                  },
+                  {
+                    "text": "Отменить ✖️",
+                    "additionalFields": {
+                      "callback_data": "cancelIssue"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "4e59e36c-b513-4d87-a3f6-4e3fbe13bfaf",
+      "name": "sendMediaTooLarge",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -2672,
+        704
+      ]
     }
   ],
   "pinData": {},
@@ -3775,7 +3876,7 @@
         ],
         [
           {
-            "node": "checkMediaNotSaved",
+            "node": "checkMediaSize",
             "type": "main",
             "index": 0
           }
@@ -4263,6 +4364,24 @@
         [
           {
             "node": "recoverSubmitBeforeNotion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "checkMediaSize": {
+      "main": [
+        [
+          {
+            "node": "checkMediaNotSaved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "sendMediaTooLarge",
             "type": "main",
             "index": 0
           }
