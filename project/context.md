@@ -264,14 +264,17 @@ Scope:
 
 Source contract не меняется ради производительности: неподтверждённый server-side filter по `product.active` не использовать. Оптимизация выполняется внутри подтверждённого Content Manager пути:
 - первую страницу attributes читать отдельно, остальные известные страницы — параллельно;
-- основной relation-scan выполнять throughput-aware adaptive waves: старт 10, шаг 5, min 5, max 60;
+- сначала выполнить локальный `price` precheck по list rows; relation к Product читать только для attributes, у которых уже найден `missing/invalid/zero/negative/fractional`;
+- если list row не содержит самого `price`, только для такой записи сделать Attribute detail GET и затем включить/исключить её из invalid candidates;
+- отсутствие `barcode` само по себе больше не вызывает detail GET: barcode дочитывается только для уже invalid + active offer, если его всё ещё нет в source row/detail;
+- оставшиеся GET выполнять throughput-aware adaptive waves: старт 10, шаг 5, min 5, max 60;
 - ступень оценивать после 50 успешных tasks; новая ступень должна улучшить best throughput минимум на 3%;
 - после двух подряд неулучшающих ступеней откатываться к best concurrency и фиксировать его;
 - network error / `429` / `5xx` для GET безопасно ретраить до 3 попыток и одновременно снижать concurrency с повторным benchmark;
 - постоянные `4xx` и response-contract ошибки не ретраить, run останавливать без partial CSV;
 - relation `attribute.product` читать только первую запись, потому что downstream-контракт использует только первый связанный Product;
-- `product.active` detail кэшировать по Product `documentId`; Attribute detail читать только как fallback, если list row не содержит `price`/ `barcode`;
-- порядок итоговых строк сохранять по исходному порядку attributes, несмотря на параллельное чтение.
+- `product.active` detail кэшировать по Product `documentId`;
+- порядок итоговых CSV строк сохранять по исходному порядку attributes, несмотря на параллельное чтение.
 
 Output:
 
@@ -284,7 +287,7 @@ errorType
 
 CSV: `attributes-wrong-prices.csv`, без timestamp. Отдельная сортировка не нужна — строки остаются в порядке добавления по мере обработки. При 0 проблем CSV не создаётся, достаточно сообщения в Console. При API/response ошибке запуск останавливается и частичный CSV не формируется.
 
-Progress сохраняется: checked/total, offers активных товаров, найденные invalid rows. Дополнительно сохраняется `window.attributesWrongPricesReadReport` с requests/retries/final/best concurrency и benchmark waves.
+Progress разделён по фазам: list loading → price precheck → invalid candidates relation check. Итоговый CSV contract не меняется. Дополнительно сохраняется `window.attributesWrongPricesReadReport` с totalAttributes, priceDetailFallbacks, invalidCandidates, activeInvalidOffers, requests/retries/final/best concurrency и benchmark waves.
 
 ## CANONICAL — products missing content
 
