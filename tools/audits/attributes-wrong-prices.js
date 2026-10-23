@@ -661,98 +661,166 @@ const downloadCSV = (items, headersList, filename) => {
     adaptiveState
   );
 
-  resetAdaptiveBenchmark(adaptiveState);
+  const candidates = [];
+  const missingPriceItems = [];
 
-  let checked = 0;
-  let activeProductOffers = 0;
-  let nextProgress = 250;
+  for (let index = 0; index < attributes.length; index++) {
+    const item = attributes[index];
 
-  const logProgress = force => {
-    if (!force && checked < nextProgress) return;
+    if (hasOwn(item, 'price')) {
+      const errorType = priceIssue(item.price);
 
-    console.log(
-      `[attributes-wrong-prices] checked ${checked}/${attributes.length} | ` +
-      `offers of active products ${activeProductOffers} | invalid ${invalidRows.length}`
+      if (errorType) {
+        candidates.push({
+          index,
+          item,
+          source: item,
+          errorType
+        });
+      }
+    } else {
+      missingPriceItems.push({
+        index,
+        item
+      });
+    }
+  }
+
+  console.log(
+    '[attributes-wrong-prices] Price precheck | ' +
+    `attributes ${attributes.length} | ` +
+    `invalid from list ${candidates.length} | ` +
+    `price detail fallback ${missingPriceItems.length}`
+  );
+
+  if (missingPriceItems.length) {
+    resetAdaptiveBenchmark(adaptiveState);
+
+    const detailed = await runAdaptiveRead(
+      missingPriceItems,
+      adaptiveState,
+      async entry => {
+        const source = await getDetail(
+          ATTRIBUTE_UID,
+          entry.item.documentId,
+          'Attribute'
+        );
+
+        if (!hasOwn(source, 'price')) {
+          throw new Error(
+            `Attribute ${entry.item.documentId}: Content Manager не вернул поле price`
+          );
+        }
+
+        return {
+          ...entry,
+          source,
+          errorType: priceIssue(source.price)
+        };
+      },
+      {
+        label: 'price-details'
+      }
     );
 
-    while (nextProgress <= checked) {
+    for (const entry of detailed) {
+      if (!entry.errorType) continue;
+
+      candidates.push({
+        index: entry.index,
+        item: entry.item,
+        source: entry.source,
+        errorType: entry.errorType
+      });
+    }
+  }
+
+  candidates.sort((a, b) => a.index - b.index);
+
+  console.log(
+    '[attributes-wrong-prices] Price precheck complete | ' +
+    `invalid candidates ${candidates.length}/${attributes.length}`
+  );
+
+  resetAdaptiveBenchmark(adaptiveState);
+
+  let checkedCandidates = 0;
+  let activeInvalidOffers = 0;
+  let nextProgress = 250;
+
+  const logCandidateProgress = force => {
+    if (!force && checkedCandidates < nextProgress) return;
+
+    console.log(
+      `[attributes-wrong-prices] candidates ${checkedCandidates}/${candidates.length} | ` +
+      `active invalid offers ${activeInvalidOffers} | output ${invalidRows.length}`
+    );
+
+    while (nextProgress <= checkedCandidates) {
       nextProgress += 250;
     }
   };
 
-  await runAdaptiveRead(
-    attributes,
-    adaptiveState,
-    async item => {
-      const product = await getFirstRelation(
-        ATTRIBUTE_UID,
-        item.documentId,
-        'product'
-      );
-
-      if (!product || !(await isProductActive(product))) {
-        return {
-          activeProductOffer: false,
-          invalidRow: null
-        };
-      }
-
-      let source = item;
-
-      if (!hasOwn(item, 'price') || !hasOwn(item, 'barcode')) {
-        source = await getDetail(
+  if (candidates.length) {
+    await runAdaptiveRead(
+      candidates,
+      adaptiveState,
+      async candidate => {
+        const product = await getFirstRelation(
           ATTRIBUTE_UID,
-          item.documentId,
-          'Attribute'
+          candidate.item.documentId,
+          'product'
         );
-      }
 
-      if (!hasOwn(source, 'price')) {
-        throw new Error(
-          `Attribute ${item.documentId}: Content Manager не вернул поле price`
-        );
-      }
-
-      const errorType = priceIssue(source.price);
-
-      return {
-        activeProductOffer: true,
-        invalidRow: errorType
-          ? {
-              documentId: item.documentId,
-              barcode: source.barcode ?? item.barcode ?? '',
-              price: source.price ?? '',
-              errorType
-            }
-          : null
-      };
-    },
-    {
-      label: 'attribute-relations',
-      onWave: ({ values }) => {
-        for (const value of values) {
-          checked++;
-
-          if (value.activeProductOffer) {
-            activeProductOffers++;
-          }
-
-          if (value.invalidRow) {
-            invalidRows.push(value.invalidRow);
-          }
+        if (!product || !(await isProductActive(product))) {
+          return null;
         }
 
-        logProgress(false);
-      }
-    }
-  );
+        let source = candidate.source;
 
-  logProgress(true);
+        if (!hasOwn(source, 'barcode')) {
+          source = await getDetail(
+            ATTRIBUTE_UID,
+            candidate.item.documentId,
+            'Attribute'
+          );
+        }
+
+        return {
+          documentId: candidate.item.documentId,
+          barcode:
+            source.barcode ??
+            candidate.item.barcode ??
+            '',
+          price: source.price ?? '',
+          errorType: candidate.errorType
+        };
+      },
+      {
+        label: 'invalid-candidate-relations',
+        onWave: ({ values }) => {
+          for (const row of values) {
+            checkedCandidates++;
+
+            if (!row) continue;
+
+            activeInvalidOffers++;
+            invalidRows.push(row);
+          }
+
+          logCandidateProgress(false);
+        }
+      }
+    );
+
+    logCandidateProgress(true);
+  }
 
   const readReport = {
     totalAttributes: attributes.length,
-    checked,
-    activeProductOffers,
+    priceDetailFallbacks: missingPriceItems.length,
+    invalidCandidates: candidates.length,
+    activeInvalidOffers,
     invalid: invalidRows.length,
     requests: readMetrics.requests,
     retries: readMetrics.retries,
@@ -766,6 +834,10 @@ const downloadCSV = (items, headersList, filename) => {
 
   console.log(
     '[attributes-wrong-prices] Read summary | ' +
+    `attributes ${readReport.totalAttributes} | ` +
+    `price fallbacks ${readReport.priceDetailFallbacks} | ` +
+    `invalid candidates ${readReport.invalidCandidates} | ` +
+    `output ${readReport.invalid} | ` +
     `requests ${readReport.requests} | retries ${readReport.retries} | ` +
     `final concurrency ${readReport.finalConcurrency}` +
     (
