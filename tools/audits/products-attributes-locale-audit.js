@@ -1,0 +1,346 @@
+(async () => {
+  'use strict';
+
+  const CFG = {
+    uid: 'api::product.product', field: 'attributes',
+    source: 'ru', target: 'kk', pageSize: 100,
+    adaptive: { min: 5, start: 10, max: 40, step: 5, sampleSize: 30, minGain: 0.03, lockAfter: 2 }
+  };
+  const KEY = '__tmProductAttributesAudit';
+  const PREFIX = '[attributes-audit]';
+  if (window[KEY]?.running) {
+    console.warn(PREFIX, 'Проверка уже запущена');
+    return;
+  }
+  document.getElementById('tm-attributes-audit')?.remove();
+
+  const state = {
+    running: true, stopped: false, started: performance.now(),
+    phaseStarted: performance.now(), phase: 'Подготовка', done: 0, total: 0,
+    errors: 0, lastSpeed: 0, concurrency: CFG.adaptive.start,
+    bestConcurrency: CFG.adaptive.start, bestSpeed: 0, stageDone: 0,
+    stageMs: 0, underperforming: 0, locked: false, waves: 0,
+    benchmark: [], duplicateRuRows: 0, duplicateKkRows: 0
+  };
+  window[KEY] = state;
+
+  const raw = localStorage.getItem('jwtToken');
+  if (!raw) throw new Error('Не найден jwtToken');
+  let token;
+  try { token = JSON.parse(raw); } catch { token = raw; }
+  if (typeof token !== 'string') throw new Error('Неверный формат jwtToken');
+
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const formatSeconds = value => {
+    if (!Number.isFinite(value)) return '—';
+    const n = Math.max(0, Math.ceil(value));
+    const h = Math.floor(n / 3600), m = Math.floor(n % 3600 / 60), s = n % 60;
+    return h ? `${h}ч ${m}м ${s}с` : m ? `${m}м ${s}с` : `${s}с`;
+  };
+
+  const panel = document.createElement('div');
+  panel.id = 'tm-attributes-audit';
+  Object.assign(panel.style, {
+    position: 'fixed', right: '24px', bottom: '24px', width: '370px',
+    padding: '18px', background: '#171923', color: '#fff',
+    border: '1px solid #4945ff', borderRadius: '12px',
+    boxShadow: '0 8px 35px #0008', font: '13px system-ui, sans-serif',
+    zIndex: '2147483647'
+  });
+  panel.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <b>Product attributes · RU → KK</b>
+      <button data-stop style="background:#4945ff;color:white;border:0;padding:6px 10px;border-radius:5px;cursor:pointer">Стоп</button>
+    </div>
+    <div data-phase style="margin-top:14px">Подготовка</div>
+    <div style="margin-top:9px;height:10px;background:#363846;border-radius:8px;overflow:hidden">
+      <div data-bar style="width:0%;height:100%;background:#7b79ff;transition:width .2s"></div>
+    </div>
+    <div data-progress style="margin-top:8px">0 / 0</div>
+    <div data-speed style="margin-top:8px;color:#b8bacb">—</div>
+    <div data-tune style="margin-top:5px;color:#b8bacb">—</div>
+    <div data-eta style="margin-top:5px;color:#b8bacb">—</div>
+  `;
+  document.body.appendChild(panel);
+  const el = selector => panel.querySelector(selector);
+  el('[data-stop]').onclick = () => {
+    state.stopped = true;
+    el('[data-stop]').disabled = true;
+    el('[data-stop]').textContent = 'Остановка...';
+  };
+
+  function render() {
+    const percent = state.total ? Math.min(100, 100 * state.done / state.total) : 0;
+    const elapsed = (performance.now() - state.phaseStarted) / 1000;
+    const speed = state.lastSpeed || (elapsed > 0 ? state.done / elapsed : 0);
+    el('[data-phase]').textContent = state.phase;
+    el('[data-bar]').style.width = percent.toFixed(1) + '%';
+    el('[data-progress]').textContent = `${state.done.toLocaleString()} / ${state.total.toLocaleString()} (${percent.toFixed(1)}%)`;
+    el('[data-speed]').textContent = `Скорость: ${speed.toFixed(1)} операций/сек`;
+    el('[data-tune]').textContent = `Concurrency: ${state.concurrency} · best: ${state.bestConcurrency} (${state.bestSpeed.toFixed(1)}/сек)` +
+      (state.locked ? ' · оптимизировано' : ' · подбор');
+    el('[data-eta]').textContent = `ETA: ${formatSeconds(speed ? (state.total - state.done) / speed : Infinity)} · время: ${formatSeconds((performance.now() - state.started) / 1000)} · ошибок: ${state.errors}`;
+  }
+
+  function beginPhase(phase, total) {
+    Object.assign(state, {
+      phase, total, done: 0, lastSpeed: 0, phaseStarted: performance.now(),
+      concurrency: CFG.adaptive.start, bestConcurrency: CFG.adaptive.start,
+      bestSpeed: 0, stageDone: 0, stageMs: 0, underperforming: 0, locked: false
+    });
+    render();
+  }
+
+  async function get(path) {
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (state.stopped) throw new Error('STOPPED');
+      try {
+        const response = await fetch(path, {
+          credentials: 'include',
+          headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
+        });
+        if (!response.ok) {
+          const error = new Error(`HTTP ${response.status}: ${path}`);
+          error.status = response.status;
+          error.transient = response.status === 429 || response.status >= 500;
+          throw error;
+        }
+        return await response.json();
+      } catch (error) {
+        lastError = error;
+        if (error.message === 'STOPPED') throw error;
+        const retryable = error.transient || error instanceof TypeError;
+        if (!retryable || attempt === 3) break;
+        await sleep(400 * attempt);
+      }
+    }
+    throw lastError;
+  }
+
+  function rowsOf(json) {
+    const rows = json?.results ?? json?.data;
+    if (!Array.isArray(rows)) throw new Error('Неожиданный формат ответа Content Manager API');
+    return rows;
+  }
+  const paginationOf = json => json.pagination ?? json.meta?.pagination;
+  function pageUrl(base, locale, page, sort = false) {
+    const params = new URLSearchParams({
+      locale, page: String(page), pageSize: String(CFG.pageSize)
+    });
+    if (sort) params.set('sort', 'id:asc');
+    return `${base}?${params}`;
+  }
+
+  function tune(wave, failures, transient) {
+    const A = CFG.adaptive;
+    if (transient) {
+      state.concurrency = Math.max(A.min, Math.floor(state.concurrency / 2));
+      Object.assign(state, {
+        stageDone: 0, stageMs: 0, locked: false, underperforming: 0,
+        bestSpeed: 0, bestConcurrency: state.concurrency
+      });
+      return 'backoff';
+    }
+    if (failures) {
+      state.stageDone = 0;
+      state.stageMs = 0;
+      return 'hold-error';
+    }
+    if (state.locked || !wave.full) return 'hold';
+    state.stageDone += wave.completed;
+    state.stageMs += wave.ms;
+    if (state.stageDone < A.sampleSize) return 'sampling';
+
+    const speed = state.stageDone / Math.max(0.001, state.stageMs / 1000);
+    let action;
+    if (!state.bestSpeed || speed >= state.bestSpeed * (1 + A.minGain)) {
+      state.bestSpeed = speed;
+      state.bestConcurrency = state.concurrency;
+      state.underperforming = 0;
+      action = 'new-best';
+    } else {
+      state.underperforming++;
+      action = 'probe-next';
+    }
+    if (state.underperforming >= A.lockAfter || state.concurrency >= A.max) {
+      state.concurrency = state.bestConcurrency;
+      state.locked = true;
+      action = 'lock-best';
+    } else {
+      state.concurrency = Math.min(A.max, state.concurrency + A.step);
+    }
+    state.stageDone = 0;
+    state.stageMs = 0;
+    return action;
+  }
+
+  async function adaptiveRun(items, handler) {
+    const results = new Array(items.length);
+    let cursor = 0;
+    while (cursor < items.length && !state.stopped) {
+      const concurrency = state.concurrency;
+      const batch = items.slice(cursor, cursor + concurrency);
+      const started = performance.now();
+      const outcomes = await Promise.all(batch.map(async (item, index) => {
+        try { return { ok: true, value: await handler(item), index }; }
+        catch (error) { return { ok: false, error, index }; }
+      }));
+      const ms = Math.max(1, performance.now() - started);
+      const speed = batch.length / (ms / 1000);
+      let failures = 0, transient = 0;
+      for (const outcome of outcomes) {
+        const position = cursor + outcome.index;
+        if (outcome.ok) results[position] = outcome.value;
+        else {
+          failures++;
+          state.errors++;
+          if (outcome.error.transient || outcome.error instanceof TypeError) transient++;
+          results[position] = null;
+        }
+      }
+      state.done += batch.length;
+      state.lastSpeed = speed;
+      state.waves++;
+      const action = tune({
+        completed: batch.length - failures,
+        ms, full: batch.length === concurrency
+      }, failures, transient);
+      state.benchmark.push({
+        phase: state.phase, wave: state.waves, concurrency,
+        count: batch.length, ms: Math.round(ms),
+        speed: +speed.toFixed(2), failures, action,
+        nextConcurrency: state.concurrency
+      });
+      cursor += batch.length;
+      render();
+      if (action !== 'sampling' && action !== 'hold') {
+        console.log(PREFIX, state.phase, `${state.done}/${state.total}`,
+          `C=${concurrency}→${state.concurrency}`, `${speed.toFixed(1)}/сек`, action);
+      }
+      if (failures) {
+        const error = outcomes.find(item => !item.ok)?.error;
+        console.error(PREFIX, `Ошибок в волне: ${failures}`, error);
+        if (state.phase.startsWith('Загрузка Product')) throw error;
+      }
+      if (transient) await sleep(1000);
+    }
+    if (state.stopped) throw new Error('STOPPED');
+    return results;
+  }
+
+  async function loadProducts(locale) {
+    const base = `/content-manager/collection-types/${CFG.uid}`;
+    const first = await get(pageUrl(base, locale, 1, true));
+    const pagination = paginationOf(first);
+    if (!pagination || !Number.isInteger(Number(pagination.pageCount))) {
+      throw new Error(`Не получена пагинация Product ${locale}`);
+    }
+    const pageCount = Number(pagination.pageCount);
+    beginPhase(`Загрузка Product · ${locale}`, pageCount);
+    state.done = 1;
+    render();
+    const pages = Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => index + 2);
+    const chunks = await adaptiveRun(pages, page => get(pageUrl(base, locale, page, true)));
+    const products = [...rowsOf(first), ...chunks.flatMap(rowsOf)];
+    const ids = new Set();
+    let duplicates = 0;
+    for (const product of products) {
+      if (!product.documentId) throw new Error(`Product без documentId · ${locale}`);
+      if (ids.has(product.documentId)) duplicates++;
+      ids.add(product.documentId);
+    }
+    if (locale === CFG.source) state.duplicateRuRows = duplicates;
+    else state.duplicateKkRows = duplicates;
+    console.log(PREFIX, `Product ${locale}: ${products.length} строк, ${ids.size} уникальных documentId, ${duplicates} повторов`);
+    return ids;
+  }
+
+  async function getAttributes(documentId, locale) {
+    const base = `/content-manager/relations/${CFG.uid}/${encodeURIComponent(documentId)}/${CFG.field}`;
+    const ids = new Set();
+    let page = 1;
+    while (true) {
+      const json = await get(pageUrl(base, locale, page));
+      const rows = rowsOf(json);
+      for (const item of rows) {
+        if (!item.documentId) throw new Error(`Attribute без documentId: ${documentId}/${locale}`);
+        ids.add(item.documentId);
+      }
+      const pagination = paginationOf(json);
+      if (pagination?.pageCount != null) {
+        if (page >= Number(pagination.pageCount)) break;
+      } else if (rows.length < CFG.pageSize) break;
+      if (!rows.length) break;
+      page++;
+    }
+    return ids;
+  }
+
+  try {
+    console.log(PREFIX, 'Начало read-only проверки attributes');
+    const ru = await loadProducts(CFG.source);
+    const kk = await loadProducts(CFG.target);
+    const common = [...ru].filter(documentId => kk.has(documentId));
+    const counts = {
+      ruProducts: ru.size, kkProducts: kk.size,
+      missingKkProducts: ru.size - common.length,
+      onlyKkProducts: kk.size - common.length,
+      checked: 0, matching: 0, different: 0,
+      missingAttributesInKk: 0, extraAttributesInKk: 0, readErrors: 0
+    };
+    beginPhase('Сравнение attributes · RU ↔ KK', common.length);
+    await adaptiveRun(common, async documentId => {
+      try {
+        const [ruAttributes, kkAttributes] = await Promise.all([
+          getAttributes(documentId, CFG.source),
+          getAttributes(documentId, CFG.target)
+        ]);
+        let missing = 0, extra = 0;
+        for (const id of ruAttributes) if (!kkAttributes.has(id)) missing++;
+        for (const id of kkAttributes) if (!ruAttributes.has(id)) extra++;
+        counts.checked++;
+        if (missing || extra) {
+          counts.different++;
+          counts.missingAttributesInKk += missing;
+          counts.extraAttributesInKk += extra;
+        } else counts.matching++;
+      } catch (error) {
+        counts.readErrors++;
+        throw error;
+      }
+    });
+    state.phase = 'Проверка завершена';
+    render();
+    console.log(PREFIX, 'Итоговые счётчики');
+    console.table({
+      'Product RU': counts.ruProducts,
+      'Product KK': counts.kkProducts,
+      'Повторов строк RU': state.duplicateRuRows,
+      'Повторов строк KK': state.duplicateKkRows,
+      'Отсутствует локаль KK': counts.missingKkProducts,
+      'Есть только в KK': counts.onlyKkProducts,
+      'Проверено пар': counts.checked,
+      'Attributes совпадают': counts.matching,
+      'Attributes отличаются': counts.different,
+      'Связей не хватает в KK': counts.missingAttributesInKk,
+      'Лишние связи в KK': counts.extraAttributesInKk,
+      'Всего проблемных RU товаров': counts.different + counts.missingKkProducts,
+      'Ошибок чтения': counts.readErrors
+    });
+    console.log(PREFIX, 'Время:', formatSeconds((performance.now() - state.started) / 1000),
+      '| benchmark волн:', state.waves);
+    el('[data-stop]').textContent = 'Закрыть';
+    el('[data-stop]').disabled = false;
+    el('[data-stop]').onclick = () => panel.remove();
+  } catch (error) {
+    state.phase = state.stopped ? 'Остановлено пользователем' : 'Проверка прервана';
+    render();
+    if (!state.stopped) console.error(PREFIX, error);
+    el('[data-stop]').textContent = 'Закрыть';
+    el('[data-stop]').disabled = false;
+    el('[data-stop]').onclick = () => panel.remove();
+  } finally {
+    state.running = false;
+  }
+})();
