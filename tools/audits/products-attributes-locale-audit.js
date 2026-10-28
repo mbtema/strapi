@@ -94,7 +94,6 @@
   async function get(path) {
     let lastError;
     for (let attempt = 1; attempt <= 3; attempt++) {
-      if (state.stopped) throw new Error('STOPPED');
       try {
         const response = await fetch(path, {
           credentials: 'include',
@@ -147,7 +146,15 @@
       state.stageMs = 0;
       return 'hold-error';
     }
-    if (state.locked || !wave.full) return 'hold';
+    if (!wave.full) return 'hold';
+    if (state.locked) {
+      state.stableDone=(state.stableDone||0)+wave.completed;
+      if(state.stableDone<500)return 'hold';
+      state.stableDone=0;state.locked=false;
+      state.concurrency=Math.max(A.min,state.bestConcurrency-A.step);
+      state.bestSpeed=0;state.stageDone=0;state.stageMs=0;
+      return 'rebenchmark';
+    }
     state.stageDone += wave.completed;
     state.stageMs += wave.ms;
     if (state.stageDone < A.sampleSize) return 'sampling';
