@@ -676,7 +676,7 @@
     };
 
     __tm.phase('Публикация товаров',tasks.length);
-    while (cursor < tasks.length && !__tm.st.stop) {
+    while (cursor < tasks.length) {
       wave++;
 
       const configuredConcurrency =
@@ -841,8 +841,7 @@
       cursor += batch.length;
     }
 
-    if(__tm.st.stop){__tm.finish('Остановлено');throw new Error('Остановлено после завершения текущей волны');}
-    __tm.finish();return { successes, failures };
+    return { successes, failures };
   }
 
   function buildVerify(groupInfo, categoryStates) {
@@ -1080,6 +1079,7 @@
   const issueRowKeys = new Set();
 
   for (const groupInfo of groupInfos) {
+    if (__tm.st.stop) break;
     console.log(
       '[products-category-mirror-sync] Group ' +
       groupInfo.number + '/' +
@@ -1400,6 +1400,7 @@
   console.log(
     '[products-category-mirror-sync] Итог'
   );
+  __tm.finish(__tm.st.stop ? 'Остановлено после текущей группы' : 'Завершено');
   console.table(groupResults);
 
   if (adaptiveState.waves.length) {
