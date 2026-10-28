@@ -449,6 +449,7 @@ async function runAdaptiveRead(
     cursor += batch.length;
   }
 
+  if (__tm.st.stop) { __tm.finish('Остановлено'); throw new Error('Остановлено пользователем'); }
   return output;
 }
 
@@ -864,6 +865,7 @@ const downloadCSV = (items, headersList, filename) => {
     )
   );
 
+  __tm.finish();
   if (!invalidRows.length) {
     console.log('Готово: проблем с ценой у offers активных товаров не найдено');
     return;
