@@ -2059,7 +2059,7 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ (() => { const items = $('getIssueMedia').all(); const hasMedia = items.some(i => String(i.json.fileId ?? '').trim()); const draft = String($('getProfile').first().json.draftDescription ?? '').trim(); const captions = items.map(i => String(i.json.caption ?? '').trim()).filter(Boolean); const hasDescription = Boolean(draft || captions.length); if (!hasDescription) return 'missingDescription'; return hasMedia ? 'media' : 'none'; })() }}",
+                    "leftValue": "={{ (() => { const items = $('getIssueMedia').all(); const hasMedia = items.some(i => String(i.json.fileId ?? '').trim()); const directText = String($('start').item.json.message?.text ?? '').trim(); const savedDraft = String($('getProfile').first().json.draftDescription ?? '').trim(); const captions = items.map(i => String(i.json.caption ?? '').trim()).filter(Boolean); const hasDescription = Boolean(directText || savedDraft || captions.length); if (!hasDescription) return 'missingDescription'; return hasMedia ? 'media' : 'none'; })() }}",
                     "rightValue": "none",
                     "operator": {
                       "type": "string",
@@ -2081,7 +2081,7 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ (() => { const items = $('getIssueMedia').all(); const hasMedia = items.some(i => String(i.json.fileId ?? '').trim()); const draft = String($('getProfile').first().json.draftDescription ?? '').trim(); const captions = items.map(i => String(i.json.caption ?? '').trim()).filter(Boolean); const hasDescription = Boolean(draft || captions.length); if (!hasDescription) return 'missingDescription'; return hasMedia ? 'media' : 'none'; })() }}",
+                    "leftValue": "={{ (() => { const items = $('getIssueMedia').all(); const hasMedia = items.some(i => String(i.json.fileId ?? '').trim()); const directText = String($('start').item.json.message?.text ?? '').trim(); const savedDraft = String($('getProfile').first().json.draftDescription ?? '').trim(); const captions = items.map(i => String(i.json.caption ?? '').trim()).filter(Boolean); const hasDescription = Boolean(directText || savedDraft || captions.length); if (!hasDescription) return 'missingDescription'; return hasMedia ? 'media' : 'none'; })() }}",
                     "rightValue": "media",
                     "operator": {
                       "type": "string",
@@ -2103,7 +2103,7 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ (() => { const items = $('getIssueMedia').all(); const hasMedia = items.some(i => String(i.json.fileId ?? '').trim()); const draft = String($('getProfile').first().json.draftDescription ?? '').trim(); const captions = items.map(i => String(i.json.caption ?? '').trim()).filter(Boolean); const hasDescription = Boolean(draft || captions.length); if (!hasDescription) return 'missingDescription'; return hasMedia ? 'media' : 'none'; })() }}",
+                    "leftValue": "={{ (() => { const items = $('getIssueMedia').all(); const hasMedia = items.some(i => String(i.json.fileId ?? '').trim()); const directText = String($('start').item.json.message?.text ?? '').trim(); const savedDraft = String($('getProfile').first().json.draftDescription ?? '').trim(); const captions = items.map(i => String(i.json.caption ?? '').trim()).filter(Boolean); const hasDescription = Boolean(directText || savedDraft || captions.length); if (!hasDescription) return 'missingDescription'; return hasMedia ? 'media' : 'none'; })() }}",
                     "rightValue": "missingDescription",
                     "operator": {
                       "type": "string",
@@ -2532,7 +2532,7 @@
           "value": "c469a5a4-7569-480a-9780-35379543368f",
           "mode": "id"
         },
-        "title": "={{ String($('getProfile').first().json.draftDescription ?? 'Обращение').split('\\n').find(line => line.trim())?.trim().slice(0, 80) || 'Обращение' }}",
+        "title": "={{ (() => { const directText = String($('start').item.json.message?.text ?? '').trim(); const savedDraft = String($('getProfile').first().json.draftDescription ?? '').trim(); const description = directText || savedDraft || 'Обращение'; return description.split('\\n').find(line => line.trim())?.trim().slice(0, 80) || 'Обращение'; })() }}",
         "propertiesUi": {
           "propertyValues": [
             {
@@ -2549,7 +2549,7 @@
             },
             {
               "key": "Описание|rich_text",
-              "textContent": "={{ String($('getProfile').first().json.draftDescription ?? '') }}"
+              "textContent": "={{ (() => { const directText = String($('start').item.json.message?.text ?? '').trim(); const savedDraft = String($('getProfile').first().json.draftDescription ?? '').trim(); return directText || savedDraft; })() }}"
             },
             {
               "key": "Подписи к медиа|rich_text",
