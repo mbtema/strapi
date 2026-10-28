@@ -119,19 +119,6 @@ Raw URL для импорта:
 
 README обновляется, когда меняются структура, назначение, установка, использование или перечень основных инструментов репозитория.
 
-## Сборка самодостаточных tools
-
-Массовые инструменты постепенно переводятся на общий runtime. Готовые файлы `tools/audits/*.js` и `tools/sync/*.js` по-прежнему запускаются копированием всего JS в Console Strapi Admin — без загрузки дополнительных модулей.
-
-- `tools/runtime/progress.js` — панель прогресса, ETA, Stop.
-- `tools/runtime/adaptive.js` — непрерывная адаптация нагрузки и benchmark.
-- `tools/src/` — исходники мигрированных инструментов.
-- `tools/build.js` — сборщик на Node.js без зависимостей.
-
-Пересобрать готовые файлы: `node tools/build.js`. Проверить актуальность: `node tools/build.js --check`.
-
-Пилот: `tools/audits/products-attributes-locale-audit.js` (read-only сверка `product.attributes` между `ru` и `kk`). Остальные tools пока используют свою прежнюю реализацию. Подробнее — `tools/runtime/README.md`.
-
 ## Дерево
 
 ```text
@@ -156,17 +143,8 @@ README обновляется, когда меняются структура, �
 ├── tools/
 │   ├── audits/
 │   │   ├── attributes-wrong-prices.js
-│   │   ├── products-attributes-locale-audit.js
 │   │   ├── products-missing-content.js
 │   │   └── products-wrong-variants.js
-│   ├── runtime/
-│   │   ├── progress.js
-│   │   ├── adaptive.js
-│   │   └── README.md
-│   ├── src/
-│   │   └── audits/
-│   │       └── products-attributes-locale-audit.js
-│   ├── build.js
 │   ├── sync/
 │   │   ├── layout-sync.js
 │   │   ├── products-category-forward-sync.js
