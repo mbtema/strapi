@@ -87,7 +87,7 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 
 ## Migrator
 
-`migrator/config.js` — самостоятельный read-only Console-скрипт для Strapi Admin (DevTools → Console), не зарегистрирован в Tools Launcher. Читает все товары локали `ru` с `newFrom1C=true`; включает в конфиг товары, у которых отсутствует хотя бы одно из полей `name1`, `name2`, `preview_picture`, `detail_picture`, `categories`, `detail_text`. Для кандидатов читает связанные `attributes[].barcode` и скачивает `migration-config.csv` со строго тремя колонками: `documentId;name;barcodes`. Несколько barcode разделяются `|`; значения сохраняются строками. Показывает прогресс, не изменяет CMS. Вторая стадия сопоставления в Bitrix и стадия записи будут добавлены отдельно после проверки.
+`migrator/config.js` — самостоятельный read-only Console-скрипт для Strapi Admin (DevTools → Console), не зарегистрирован в Tools Launcher. Читает все товары локали `ru` с `newFrom1C=true`; включает в конфиг товары, у которых отсутствует хотя бы одно из полей `name1`, `name2`, `preview_picture`, `detail_picture`, `categories`, `detail_text`. Для кандидатов читает связанные `attributes[].barcode` и скачивает `migration-config.csv` со строго тремя колонками: `documentId;name;barcodes`. Несколько barcode разделяются `|`; значения сохраняются строками. Показывает прогресс, не изменяет CMS. Второй этап — `migrator/matcher.js`: Console-скрипт Bitrix Admin, принимает `migration-config.csv`, ищет строгое (с учётом регистра) совпадение `NAME === name` и проверяет хотя бы один общий barcode из торговых предложений. Скачивает `migration-matched.csv` с `documentId;name;barcodes;bitrixId;bitrixCardUrl;matchedBarcode` только для подтверждённых пар, а остальные случаи выводит в `migration-unmatched.csv`. Выполняет поиск последовательно, сохраняет checkpoint в localStorage для продолжения, не меняет товары (но изменяет пользовательский поисковый фильтр Bitrix). Третий этап записи будет добавлен отдельно после проверки.
 
 ## Helpdesk
 
@@ -159,7 +159,8 @@ README обновляется, когда меняются структура, �
 │       ├── network-recorder.js
 │       └── style-stealer.js
 ├── migrator/
-│   └── config.js
+│   ├── config.js
+│   └── matcher.js
 ├── helpdesk/
 │   ├── workflow.json
 │   └── notifications.json
