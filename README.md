@@ -87,7 +87,7 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 
 ## Migrator
 
-`migrator/01-strapi-config.js` — самостоятельный read-only Console-скрипт для Strapi Admin (DevTools → Console), не зарегистрирован в Tools Launcher. Читает все товары локали `ru` с `newFrom1C=true`; включает в конфиг товары, у которых отсутствует хотя бы одно из полей `name1`, `name2`, `preview_picture`, `detail_picture`, `categories`, `detail_text`. Для кандидатов читает связанные `attributes[].barcode` и скачивает `migration-config.csv` со строго тремя колонками: `documentId;name;barcodes`. Несколько barcode разделяются `|`; значения сохраняются строками. Показывает прогресс, не изменяет CMS. Вторая стадия сопоставления в Bitrix и стадия записи будут добавлены отдельно после проверки.
+`migrator/config.js` — самостоятельный read-only Console-скрипт для Strapi Admin (DevTools → Console), не зарегистрирован в Tools Launcher. Читает все товары локали `ru` с `newFrom1C=true`; включает в конфиг товары, у которых отсутствует хотя бы одно из полей `name1`, `name2`, `preview_picture`, `detail_picture`, `categories`, `detail_text`. Для кандидатов читает связанные `attributes[].barcode` и скачивает `migration-config.csv` со строго тремя колонками: `documentId;name;barcodes`. Несколько barcode разделяются `|`; значения сохраняются строками. Показывает прогресс, не изменяет CMS. Вторая стадия сопоставления в Bitrix и стадия записи будут добавлены отдельно после проверки.
 
 ## Helpdesk
 
@@ -159,7 +159,7 @@ README обновляется, когда меняются структура, �
 │       ├── network-recorder.js
 │       └── style-stealer.js
 ├── migrator/
-│   └── 01-strapi-config.js
+│   └── config.js
 ├── helpdesk/
 │   ├── workflow.json
 │   └── notifications.json
