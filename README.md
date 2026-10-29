@@ -9,6 +9,7 @@
 | [`features/`](./features) | Функции: горячие клавиши, barcode и Tools Launcher |
 | [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
 | [`tools/`](./tools) | Browser tools по назначению: `audits/`, `sync/`, `diagnostics/` |
+| [`migrator/`](./migrator) | Отдельные скрипты переноса контента Bitrix → Strapi; сейчас доступен первый этап формирования конфига |
 | [`helpdesk/`](./helpdesk) | n8n workflows Telegram-бота MonAmie Helpdesk |
 | [`translator/`](./translator) | RU → KK переводчик: полная версия, compressed-версия и extractor для накопленного translation context |
 | [`project/`](./project) | Sync/staging copies для Project Instructions и источника `context.md` |
@@ -84,6 +85,10 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 
 Рабочие группы: `audits`, `sync`, `diagnostics`.
 
+## Migrator
+
+`migrator/01-strapi-config.js` — самостоятельный read-only Console-скрипт для Strapi Admin (DevTools → Console), не зарегистрирован в Tools Launcher. Читает все товары локали `ru` с `newFrom1C=true`; включает в конфиг товары, у которых отсутствует хотя бы одно из полей `name1`, `name2`, `preview_picture`, `detail_picture`, `categories`, `detail_text`. Для кандидатов читает связанные `attributes[].barcode` и скачивает `migration-config.csv` со строго тремя колонками: `documentId;name;barcodes`. Несколько barcode разделяются `|`; значения сохраняются строками. Показывает прогресс, не изменяет CMS. Вторая стадия сопоставления в Bitrix и стадия записи будут добавлены отдельно после проверки.
+
 ## Helpdesk
 
 `helpdesk/workflow.json` — основной n8n workflow Telegram-бота MonAmie Helpdesk: регистрация сотрудника, создание обращения одним сообщением, загрузка медиа и создание карточки в Notion. После нажатия `Создать обращение` сотрудник отправляет текст или медиа с подписью; текст обязателен, медиа опционально, отдельной кнопки отправки нет.
@@ -153,6 +158,8 @@ README обновляется, когда меняются структура, �
 │       ├── dom-stealer.js
 │       ├── network-recorder.js
 │       └── style-stealer.js
+├── migrator/
+│   └── 01-strapi-config.js
 ├── helpdesk/
 │   ├── workflow.json
 │   └── notifications.json
