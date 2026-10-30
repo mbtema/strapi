@@ -105,8 +105,10 @@ async function inputRow() {
   }
   return row;
 }
-async function detail(uid,id) {
-  const j=await sGet(`/content-manager/collection-types/${uid}/${encodeURIComponent(id)}?locale=${CFG.locale}`);
+async function detail(uid,id,status=null) {
+  const q=new URLSearchParams({locale:CFG.locale});
+  if(status)q.set('status',status);
+  const j=await sGet(`/content-manager/collection-types/${uid}/${encodeURIComponent(id)}?${q}`);
   const data=j.data??j;
   const matches=(Array.isArray(data)?data:[data]).map(unwrap)
     .filter(x=>x?.documentId===id && x?.locale===CFG.locale);
@@ -315,6 +317,7 @@ async function main() {
   const plannedMissing=missingRequired(projected,[...oldCats,...missingCats]);
   add('newFrom1C',plannedMissing.length?'KEEP_INCOMPLETE':'CLEAR_AFTER_VERIFY',
     plannedMissing.length?`останутся пустыми: ${plannedMissing.join(', ')}`:'отдельный PUT после успешной проверки всех полей');
+  add('publish','PUBLISH_AFTER_SAVE','после Save и проверки записи, только locale=ru');
   console.table(actions);
   const missingSource=actions.filter(x=>['SOURCE_EMPTY','SOURCE_UNAVAILABLE','SOURCE_INCOMPLETE'].includes(x.action));
   log(`План: ${actions.filter(x=>['FILL','UPLOAD_AND_LINK','SYNC','CONNECT'].includes(x.action)).length} изменений, ${missingSource.length} полей без источника`);
@@ -376,33 +379,87 @@ async function main() {
   }
   console.table(checks);
   if(checks.some(x=>x.verify!=='OK'))throw Error('Save выполнен, но проверка не прошла; ручная диагностика перед повтором');
-  log('CONTENT_VERIFIED: доступный контент сохранён и проверен; Publish не выполнялся.');
+  log('CONTENT_VERIFIED: доступный контент сохранён и проверен.');
 
-  const stillMissing=missingRequired(after,afterCats);
-  if(stillMissing.length) {
-    log(`FLAG_KEEP: newFrom1C=true; карточка неполная: ${stillMissing.join(', ')}`);
-    return;
-  }
-  // Два PUT намеренно разделены: флаг сбрасывается только после успешной проверки контента.
-  const beforeFlag=await detail('api::product.product',row.documentId);
-  const catsBeforeFlag=await relations(row.documentId,'categories');
   const catIds=x=>JSON.stringify(x.map(c=>c.documentId).sort());
-  if(snapshot(beforeFlag)!==snapshot(after) || catIds(catsBeforeFlag)!==catIds(afterCats)) {
-    throw Error('Карточка изменилась перед сбросом newFrom1C; флаг оставлен true');
+  const stillMissing=missingRequired(after,afterCats);
+  let finalSaved=after;
+  let finalCats=afterCats;
+  if(stillMissing.length) {
+    // Частичный перенос разрешён: остаётся признак незавершённой миграции.
+    log(`FLAG_KEEP: newFrom1C=true; карточка неполная: ${stillMissing.join(', ')}`);
+    if(!Object.keys(payload).length) {
+      log('SAVE_SKIP: изменений нет; Publish не выполняется');
+      return;
+    }
+  } else {
+    // Отдельный Save флага после того, как все шесть обязательных полей проверены.
+    const beforeFlag=await detail('api::product.product',row.documentId);
+    const catsBeforeFlag=await relations(row.documentId,'categories');
+    if(snapshot(beforeFlag)!==snapshot(after) || catIds(catsBeforeFlag)!==catIds(afterCats)) {
+      throw Error('Карточка изменилась перед сбросом newFrom1C; Publish отменён');
+    }
+    try {
+      await http(strapiUrl(productPath),{
+        method:'PUT',headers:{Authorization:`Bearer ${AUTH.strapiJwt}`,'Content-Type':'application/json'},
+        body:JSON.stringify({newFrom1C:false})
+      });
+    } catch(e) {
+      throw Error(`PUT newFrom1C: исход требует проверки; контент уже сохранён, Publish не выполнялся (${e.message})`);
+    }
+    finalSaved=await detail('api::product.product',row.documentId);
+    finalCats=await relations(row.documentId,'categories');
+    if(finalSaved.newFrom1C!==false ||
+       missingRequired(finalSaved,finalCats).length ||
+       catIds(finalCats)!==catIds(afterCats)) {
+      throw Error('newFrom1C / обязательный контент не прошли проверку после PUT; Publish отменён');
+    }
+    log('FLAG_VERIFIED: newFrom1C=false сохранён и проверен');
   }
+
+  // Последнее действие: Publish только после всех Save и подтверждённых проверок.
+  // Повторный live-read защищает от публикации изменённой во время операции карточки.
+  const beforePublish=await detail('api::product.product',row.documentId);
+  const beforePublishCats=await relations(row.documentId,'categories');
+  if(snapshot(beforePublish)!==snapshot(finalSaved) ||
+     catIds(beforePublishCats)!==catIds(finalCats)) {
+    throw Error('Карточка изменилась перед Publish; публикация отменена');
+  }
+
+  const publishPath=`/content-manager/collection-types/api::product.product/${row.documentId}/actions/publish?locale=${CFG.locale}`;
   try {
-    await http(strapiUrl(productPath),{
-      method:'PUT',headers:{Authorization:`Bearer ${AUTH.strapiJwt}`,'Content-Type':'application/json'},
-      body:JSON.stringify({newFrom1C:false})
+    await http(strapiUrl(publishPath),{
+      method:'POST',
+      headers:{Authorization:`Bearer ${AUTH.strapiJwt}`,'Content-Type':'application/json'},
+      body:'{}'
     });
-  } catch(e) {throw Error(`PUT newFrom1C: исход требует проверки; контент уже сохранён (${e.message})`);}
-  const verifiedFlag=await detail('api::product.product',row.documentId);
-  const verifiedCats=await relations(row.documentId,'categories');
-  if(verifiedFlag.newFrom1C!==false ||
-     missingRequired(verifiedFlag,verifiedCats).length ||
-     catIds(verifiedCats)!==catIds(afterCats)) {
-    throw Error('newFrom1C / обязательный контент не прошли проверку после PUT; проверь товар вручную');
+  } catch(e) {
+    // POST Publish не повторять автоматически: исход может быть неизвестен.
+    throw Error(`Publish: результат требует проверки в Strapi; не запускай повторно вслепую (${e.message})`);
   }
-  log('MIGRATION_COMPLETE: newFrom1C=false проверено; Publish не выполнялся.');
+  log('PUBLISH_SENT: запрос принят, проверяю опубликованную версию');
+
+  // Читаем именно опубликованную версию, а не текущий draft.
+  const published=await detail('api::product.product',row.documentId,'published');
+  if(!published.publishedAt || Number.isNaN(Date.parse(published.publishedAt))) {
+    throw Error('Publish отправлен, но publishedAt не подтверждён; проверь статус товара в Strapi');
+  }
+  const scalarFields=['name','name1','name2','detail_text','active','newFrom1C'];
+  for(const field of scalarFields) {
+    if(published[field]!==finalSaved[field]) {
+      throw Error(`Publish выполнен, но опубликованное поле ${field} отличается от сохранённого`);
+    }
+  }
+  for(const field of ['preview_picture','detail_picture']) {
+    if(mediaId(published[field])!==mediaId(finalSaved[field])) {
+      throw Error(`Publish выполнен, но опубликованное поле ${field} отличается от сохранённого`);
+    }
+  }
+  if(JSON.stringify(mediaIds(published.pictures))!==JSON.stringify(mediaIds(finalSaved.pictures))) {
+    throw Error('Publish выполнен, но опубликованная галерея отличается от сохранённой');
+  }
+  log(`PUBLISH_VERIFIED: опубликована ru-версия, publishedAt=${published.publishedAt}, newFrom1C=${published.newFrom1C}`);
+  log('MIGRATION_COMPLETE: Save → проверка → newFrom1C → Publish → проверка опубликованной версии');
+
 }
 main().catch(e=>{console.error('[Importer] STOP:',e.message);process.exitCode=1;});
