@@ -214,6 +214,13 @@ function mediaIds(v) {
   const arr=Array.isArray(v)?v:Array.isArray(v?.data)?v.data:[];
   return arr.map(mediaId);
 }
+// Те же шесть обязательных полей, по которым config.js отбирает товары.
+// Галерея (pictures) необязательна; active не является критерием полноты.
+const requiredContent = ['name1','name2','preview_picture','detail_picture','detail_text'];
+const missingRequired = (product, categories) => [
+  ...requiredContent.filter(field => !filled(product[field])),
+  ...(categories.length ? [] : ['categories'])
+];
 async function loadState() {
   try {return JSON.parse(await readFile(stateFile,'utf8'));}
   catch(e){if(e.code==='ENOENT')return {uploads:{}};throw e;}
@@ -297,6 +304,17 @@ async function main() {
   add('active',bitrix.active===null?'SOURCE_UNAVAILABLE':product.active===bitrix.active?'KEEP':'SYNC');
   add('categories',missingCats.length?'CONNECT':mapping.some(x=>!x.category)?'SOURCE_UNAVAILABLE':'KEEP',
     `${missingCats.length} добавить; ${mapping.filter(x=>!x.category).length} разделов без соответствия`);
+  // Показываем решение по флагу заранее, но снимаем его только после проверки фактического сохранения.
+  const projected={...product};
+  for(const field of ['name1','name2','detail_text']) {
+    if(!filled(projected[field]) && filled(bitrix[field]))projected[field]=bitrix[field];
+  }
+  for(const field of ['preview_picture','detail_picture']) {
+    if(!filled(projected[field]) && bitrix[field]?.url)projected[field]={id:1};
+  }
+  const plannedMissing=missingRequired(projected,[...oldCats,...missingCats]);
+  add('newFrom1C',plannedMissing.length?'KEEP_INCOMPLETE':'CLEAR_AFTER_VERIFY',
+    plannedMissing.length?`останутся пустыми: ${plannedMissing.join(', ')}`:'отдельный PUT после успешной проверки всех полей');
   console.table(actions);
   const missingSource=actions.filter(x=>['SOURCE_EMPTY','SOURCE_UNAVAILABLE','SOURCE_INCOMPLETE'].includes(x.action));
   log(`План: ${actions.filter(x=>['FILL','UPLOAD_AND_LINK','SYNC','CONNECT'].includes(x.action)).length} изменений, ${missingSource.length} полей без источника`);
@@ -325,7 +343,7 @@ async function main() {
     for(const image of gallery)payload.pictures.push(await upload(image,'pictures',image.order,row.bitrixId,state));
   }
   if(missingCats.length)payload.categories={connect:missingCats.map(x=>({id:x.id,documentId:x.documentId,locale:CFG.locale})),disconnect:[]};
-  if(!Object.keys(payload).length){log('Изменений нет');return;}
+  if(!Object.keys(payload).length)log('Новых значений контента нет; проверю полноту карточки');
 
   // Изображения могли загружаться долго: проверяем ещё раз перед PUT.
   const now=await detail('api::product.product',row.documentId);
@@ -335,12 +353,15 @@ async function main() {
     throw Error('Strapi изменился во время загрузки Media; PUT отменён, checkpoint сохранён');
   }
 
-  try {
-    await http(strapiUrl(`/content-manager/collection-types/api::product.product/${row.documentId}?locale=${CFG.locale}`),{
-      method:'PUT',headers:{Authorization:`Bearer ${AUTH.strapiJwt}`,'Content-Type':'application/json'},
-      body:JSON.stringify(payload)
-    });
-  } catch(e) {throw Error(`PUT: результат требует проверки; не повторять вслепую (${e.message})`);}
+  const productPath=`/content-manager/collection-types/api::product.product/${row.documentId}?locale=${CFG.locale}`;
+  if(Object.keys(payload).length) {
+    try {
+      await http(strapiUrl(productPath),{
+        method:'PUT',headers:{Authorization:`Bearer ${AUTH.strapiJwt}`,'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+    } catch(e) {throw Error(`PUT контента: результат требует проверки; не повторять вслепую (${e.message})`);}
+  }
   const after=await detail('api::product.product',row.documentId);
   const afterCats=await relations(row.documentId,'categories');
   const checks=[];
@@ -355,7 +376,33 @@ async function main() {
   }
   console.table(checks);
   if(checks.some(x=>x.verify!=='OK'))throw Error('Save выполнен, но проверка не прошла; ручная диагностика перед повтором');
-  log('SAVE_VERIFIED: доступный контент сохранён. Publish и newFrom1C не изменялись.');
-  if(missingSource.length)log('Часть полей осталась без источника и будет проверена при следующем запуске.');
+  log('CONTENT_VERIFIED: доступный контент сохранён и проверен; Publish не выполнялся.');
+
+  const stillMissing=missingRequired(after,afterCats);
+  if(stillMissing.length) {
+    log(`FLAG_KEEP: newFrom1C=true; карточка неполная: ${stillMissing.join(', ')}`);
+    return;
+  }
+  // Два PUT намеренно разделены: флаг сбрасывается только после успешной проверки контента.
+  const beforeFlag=await detail('api::product.product',row.documentId);
+  const catsBeforeFlag=await relations(row.documentId,'categories');
+  const catIds=x=>JSON.stringify(x.map(c=>c.documentId).sort());
+  if(snapshot(beforeFlag)!==snapshot(after) || catIds(catsBeforeFlag)!==catIds(afterCats)) {
+    throw Error('Карточка изменилась перед сбросом newFrom1C; флаг оставлен true');
+  }
+  try {
+    await http(strapiUrl(productPath),{
+      method:'PUT',headers:{Authorization:`Bearer ${AUTH.strapiJwt}`,'Content-Type':'application/json'},
+      body:JSON.stringify({newFrom1C:false})
+    });
+  } catch(e) {throw Error(`PUT newFrom1C: исход требует проверки; контент уже сохранён (${e.message})`);}
+  const verifiedFlag=await detail('api::product.product',row.documentId);
+  const verifiedCats=await relations(row.documentId,'categories');
+  if(verifiedFlag.newFrom1C!==false ||
+     missingRequired(verifiedFlag,verifiedCats).length ||
+     catIds(verifiedCats)!==catIds(afterCats)) {
+    throw Error('newFrom1C / обязательный контент не прошли проверку после PUT; проверь товар вручную');
+  }
+  log('MIGRATION_COMPLETE: newFrom1C=false проверено; Publish не выполнялся.');
 }
 main().catch(e=>{console.error('[Importer] STOP:',e.message);process.exitCode=1;});
