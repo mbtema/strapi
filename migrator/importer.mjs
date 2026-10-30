@@ -30,6 +30,8 @@ const APPLY = args.includes('--apply');
 const confirmation = args.find(x => x.startsWith('--confirm='))?.slice(10);
 const CONFIRM_BATCH = args.includes('--confirm-batch');
 const VERBOSE = args.includes('--verbose');
+const RETRY_ERRORS = args.includes('--retry-errors');
+const RETRY_PARTIAL = args.includes('--retry-partial');
 const getNumberOption = (key, fallback, min, max) => {
   const values = args.filter(x => x.startsWith(key + '='));
   if (values.length > 1) throw Error('Параметр повторён: ' + key);
@@ -41,7 +43,7 @@ const getNumberOption = (key, fallback, min, max) => {
 const LIMIT = getNumberOption('--limit', APPLY ? 10 : 100000, 1, 100000);
 const PAUSE_MS = getNumberOption('--pause-ms', 1500, 500, 60000);
 for (const a of args) {
-  if (!['--apply','--confirm-batch','--verbose'].includes(a) &&
+  if (!['--apply','--confirm-batch','--verbose','--retry-errors','--retry-partial'].includes(a) &&
       !/^--confirm=\d+$/.test(a) &&
       !/^--limit=\d+$/.test(a) &&
       !/^--pause-ms=\d+$/.test(a)) throw Error('Неизвестный параметр: ' + a);
@@ -564,7 +566,9 @@ async function main() {
   for(let idx=0;idx<rows.length && !stopRequested;idx++) {
     const row=rows[idx];
     const previous=items[row.documentId];
-    if(APPLY && previous && ['done','skipped_already','review'].includes(previous.status)) {
+    if(APPLY && previous && (['done','skipped_already','review'].includes(previous.status) ||
+        (previous.status==='error' && !RETRY_ERRORS) ||
+        (previous.status==='partial' && !RETRY_PARTIAL))) {
       skipped++;
       continue;
     }
