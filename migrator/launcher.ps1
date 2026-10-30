@@ -1,1 +1,1 @@
-node --use-system-ca .\importer.mjs
+node --use-system-ca "$env:USERPROFILE\Desktop\importer.mjs"
