@@ -13,7 +13,7 @@
     },
     {
       "file": "audits/products-missing-content.js",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "group": "audits"
     },
     {
