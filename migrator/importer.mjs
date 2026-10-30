@@ -605,7 +605,15 @@ async function main() {
       failed+' ошибок, '+manual+' требуется проверить вручную, '+skipped+
       ' пропущено по checkpoint. Прошло '+Math.round((Date.now()-started)/1000)+' сек.');
   log('CSV-отчёт: '+job.reportFile);
-  if(APPLY)log('Checkpoint: '+job.file+'; следующий запуск с тем же CSV продолжит обработку');
-  if(failed||manual)process.exitCode=1;
+  if(APPLY) {
+    log('Checkpoint: '+job.file+'; следующий запуск с тем же CSV продолжит обработку');
+    const totals={done:0,partial:0,skipped_already:0,error:0,review:0,pending:0};
+    for(const row of rows){
+      const status=items[row.documentId]?.status||'pending';
+      totals[status in totals ? status : 'pending']++;
+    }
+    log('Сводка CSV: '+JSON.stringify(totals));
+    if(totals.error || totals.review || totals.pending && !attempted)process.exitCode=1;
+  } else if(failed)process.exitCode=1;
 }
 main().catch(e=>{console.error('[Importer] STOP:',e.message);process.exitCode=1;});
