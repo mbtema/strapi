@@ -328,7 +328,7 @@ async function loadJob(hash,rows) {
     await appendFile(file,JSON.stringify({hash,documentId:id,item})+'\n','utf8');
     items[id]=item;
   };
-  const reportFile=resolve('migration-import-report.csv');
+  const reportFile=resolve(APPLY?'migration-import-report.csv':'migration-import-plan.csv');
   const report=async()=>atomicWrite(reportFile,reportCsv(rows,items));
   return {items,save,report,file,reportFile};
 }
