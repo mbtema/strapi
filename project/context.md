@@ -291,37 +291,35 @@ Progress разделён по фазам: list loading → price precheck → i
 
 ## CANONICAL — products missing content
 
-Назначение проверки: контролировать однородность критичного контента только у товаров, которые реально могут быть доступны клиенту.
+Назначение: найти все Product с незаполненными критичными полями, независимо от `product.active`, статуса публикации (draft/modified/published) и активности категорий.
 
-Parser: `products-missing-content.js`. Source — Content Manager API, локаль `ru`.
+Parser: `tools/audits/products-missing-content.js`. Source — Content Manager API, локаль `ru`. Проверяется фактическое текущее состояние каждой записи в CMS; Public REST не используется.
 
 Логика:
-- первый слой: `product.active=true`; inactive products сразу skip;
-- второй слой: состояние связанных `categories`;
-- список categories загружается постранично через Content Manager и превращается в map `documentId → active`;
-- relations товара к `categories` читаются через native relation endpoint;
-- если все связанные categories имеют `active=false` → product skip;
-- если все связанные categories `active=true` → проверяются `name1`, `name2`, `detail_picture`, `detail_text`;
-- если categories отсутствуют → product всегда идёт в отчёт с `categoryState=no_categories`;
-- если одновременно есть active и inactive categories → product всегда идёт в отчёт с `categoryState=mixed_active`, независимо от заполненности контента;
-- hardcoded исключений по category documentId нет.
+- загрузить все страницы Product; никакие записи по `active` или status не исключать;
+- для каждого Product прочитать detail и native Content Manager relations `brand`, `categories`;
+- проверить наличие `name1`, `name2`, `detail_picture`, `preview_picture`, `brand`, `categories`, `detail_text`;
+- если отсутствует хотя бы одно из семи полей — включить Product в report ровно один раз;
+- статус связанных Category и наличие/отсутствие иных полей не влияют на выборку.
 
 Контент считается отсутствующим, если:
-- `name1` / `name2` пустые;
-- `detail_picture` отсутствует;
+- `name1` / `name2` пустые или содержат только пробелы;
+- `detail_picture` / `preview_picture` не содержат media;
+- `brand` / `categories` не содержат ни одной связанной записи;
 - `detail_text` после удаления HTML tags и `&nbsp;` / `&#160;` не содержит текста.
 
-Output intentionally compact:
+Output:
 
 ```text
 documentId
-categoryState
 missingFields
 ```
 
-CSV: `products-missing-content.csv`, без timestamp. Edge cases и missing content объединяются в одной строке товара; `missingFields` показывает конкретно отсутствующие content fields.
+CSV: `products-missing-content.csv` (без timestamp). `missingFields` содержит через запятую все отсутствующие поля записи. Сортировка по `documentId`. При успешном запуске CSV создаётся и при нулевом числе проблем (только заголовки).
 
-`brand`, `attributes` и сам факт наличия `categories` не добавляются в эту content-проверку как обычные missing-fields: для них используются отдельные healthchecks.
+Content Manager pagination/response должны соответствовать ожидаемому контракту; при ошибке чтения, отсутствии требуемого field в detail или несовпадении данных аудит прерывается без частичного CSV. Проверка read-only.
+
+Изменение условий реализовано 2026-10-30; production-прогон с реальным CMS API после изменения пока не подтверждён.
 
 ## CANONICAL — Product attributes relation endpoint
 
@@ -803,7 +801,7 @@ Source of truth для физического порядка — `layouts.edit`.
 - active products без attributes / brand / categories — ad hoc checks, при необходимости выполнять через Postman/internal API вместо отдельных runtime tools;
 - duplicate technical fields `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`; null/empty не считать duplicate value;
 - wrong prices у offers active products: отдельный CANONICAL workflow выше; `missing`, `invalid`, `zero`, `negative`, `fractional`, output `documentId`, `barcode`, `price`, `errorType`;
-- missing content: отдельный CANONICAL workflow выше; active product проверяется по `name1`, `name2`, `detail_picture`, `detail_text` с дополнительным слоем `categories.active`, без hardcoded category IDs;
+- missing content: отдельный CANONICAL workflow выше; все Product `ru` независимо от `active`/status проверяются по `name1`, `name2`, `detail_picture`, `preview_picture`, `brand`, `categories`, `detail_text`;
 - wrong variants: несколько offers нельзя последовательно выбирать одним типом `shade` или `volume`;
 - attributes without product — ad hoc/Postman check; все `attribute` в `ru` без relation `product`, server-side Content Manager filter, без дополнительных условий;
 - attributes without detail picture — offer активного product, `isInStock=true`, `detail_picture=null`;
