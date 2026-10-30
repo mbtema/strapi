@@ -103,7 +103,10 @@ async function listAll(uid, label) {
     pageCount = pagination.pageCount;
     if (page === 1) expectedTotal = pagination.total;
     if (expectedTotal !== pagination.total) throw new Error(label + ': изменился total');
-    if ((!items.length && pageCount > 0) || (items.length && pageCount === 0)) {
+    if ((items.length === 0 &&
+         (page !== 1 || pageCount > 1 ||
+          (pagination.total !== null && pagination.total !== 0))) ||
+        (items.length > 0 && pageCount === 0)) {
       throw new Error(label + ': неожиданная пустая/лишняя страница ' + page);
     }
     for (const item of items) {
@@ -151,7 +154,10 @@ async function getRelation(uid, documentId, field) {
     pageCount = pagination.pageCount;
     if (page === 1) expectedTotal = pagination.total;
     if (expectedTotal !== pagination.total) throw new Error(label + ': изменился total');
-    if ((!items.length && pageCount > 0) || (items.length && pageCount === 0)) {
+    if ((items.length === 0 &&
+         (page !== 1 || pageCount > 1 ||
+          (pagination.total !== null && pagination.total !== 0))) ||
+        (items.length > 0 && pageCount === 0)) {
       throw new Error(label + ': неожиданная пустая/лишняя страница ' + page);
     }
     for (const item of items) {
