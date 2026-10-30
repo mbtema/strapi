@@ -11,7 +11,8 @@
     locale: 'ru',
     checkpointEvery: 10,
     maxVisibleRows: 100,
-    pauseMs: 150
+    cardConcurrency: 3,
+    maxPendingProducts: 4
   };
 
   if (!location.pathname.startsWith('/bitrix/admin/')) {
@@ -23,7 +24,6 @@
   window.__tmBitrixMatchingRunning = true;
   window.bitrixMatchStop = false;
 
-  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
   const normalizeBarcode = value => String(value ?? '').replace(/\s+/g, '');
   const LIST_PATH = '/bitrix/admin/iblock_element_admin.php';
@@ -194,6 +194,7 @@
       '; подтвержденных/проверенных из checkpoint: ' + completed.size
     );
 
+    const startedAt = performance.now();
     const listParams = {
       IBLOCK_ID: CFG.iblockId,
       type: 'catalog',
@@ -346,22 +347,42 @@
       };
     }
 
-    async function matchProduct(product) {
-      if (nameCounts.get(product.name) !== 1) {
-        return {
-          status: 'STRAPI_NAME_DUPLICATE',
-          details: 'Несколько Strapi Product с одинаковым NAME'
-        };
-      }
-
-      const candidateIds = await searchByName(product.name);
-      const exact = [];
-      for (const bitrixId of candidateIds) {
-        const card = await readCard(bitrixId);
-        if (card.name === product.name) {
-          exact.push({ bitrixId, barcodes: card.barcodes });
+    // Лимит только для независимых GET карточек. Сессионный фильтр Bitrix
+    // всегда обрабатывается одним последовательным потоком.
+    function createLimiter(maxActive) {
+      let active = 0;
+      const queue = [];
+      function startNext() {
+        while (active < maxActive && queue.length) {
+          const { work, resolve, reject } = queue.shift();
+          active++;
+          Promise.resolve().then(work).then(resolve, reject).finally(() => {
+            active--;
+            startNext();
+          });
         }
       }
+      return work => new Promise((resolve, reject) => {
+        queue.push({ work, resolve, reject });
+        startNext();
+      });
+    }
+
+    const limitedCardRead = createLimiter(CFG.cardConcurrency);
+
+    async function verifyCandidates(product, candidateIds) {
+      // Проверяем ВСЕ карточки, даже если одна дала ошибку: результат
+      // такого товара остаётся ERROR, как и до оптимизации.
+      const responses = await Promise.allSettled(
+        candidateIds.map(id => limitedCardRead(() => readCard(id)))
+      );
+      const failure = responses.find(x => x.status === 'rejected');
+      if (failure) throw failure.reason;
+      const exact = candidateIds.flatMap((bitrixId, index) => {
+        const card = responses[index].value;
+        return card.name === product.name
+          ? [{ bitrixId, barcodes: card.barcodes }] : [];
+      });
       if (exact.length === 0) {
         return { status: 'NAME_NOT_FOUND',
           details: 'Просмотрено кандидатов: ' + candidateIds.length };
@@ -402,30 +423,64 @@
       localStorage.setItem(checkpointKey, JSON.stringify(Object.fromEntries(completed)));
     }
 
+    const asError = error => ({
+      status: 'ERROR',
+      details: error instanceof Error ? error.message : String(error)
+    });
     let executed = 0;
-    for (const product of products) {
-      if (window.bitrixMatchStop) break;
-      if (completed.has(product.documentId)) continue;
-
-      let result;
-      try {
-        result = await matchProduct(product);
-      } catch (error) {
-        result = { status: 'ERROR',
-          details: error instanceof Error ? error.message : String(error) };
-      }
+    let matchedCount = [...completed.values()].filter(
+      x => x.status === 'MATCH_CONFIRMED'
+    ).length;
+    function recordResult(product, result) {
       completed.set(product.documentId, result);
       executed++;
+      if (result.status === 'MATCH_CONFIRMED') matchedCount++;
       if (executed % CFG.checkpointEvery === 0) {
         persist();
-        const count = [...completed.values()].filter(
-          x => x.status === 'MATCH_CONFIRMED'
-        ).length;
         console.log('[Matcher] ' + completed.size + '/' + products.length +
-          '; совпало ' + count + '; последний: ' + result.status);
+          '; совпало ' + matchedCount + '; последний: ' + result.status);
       }
-      await sleep(CFG.pauseMs);
     }
+
+    // Producer: только последовательные поиски NAME.
+    // Consumer: до четырёх ожидающих проверок, до трёх GET карточек одновременно.
+    const pending = new Set();
+    let backgroundFailure = null;
+    function scheduleVerification(product, ids) {
+      const task = verifyCandidates(product, ids)
+        .then(result => recordResult(product, result),
+          error => recordResult(product, asError(error)))
+        .catch(error => { backgroundFailure ??= error; });
+      pending.add(task);
+      task.then(() => pending.delete(task));
+    }
+
+    try {
+      for (const product of products) {
+        if (window.bitrixMatchStop || backgroundFailure) break;
+        if (completed.has(product.documentId)) continue;
+        if (nameCounts.get(product.name) !== 1) {
+          recordResult(product, {
+            status: 'STRAPI_NAME_DUPLICATE',
+            details: 'Несколько Strapi Product с одинаковым NAME'
+          });
+          continue;
+        }
+        try {
+          const ids = await searchByName(product.name);
+          scheduleVerification(product, ids);
+          if (pending.size >= CFG.maxPendingProducts) {
+            await Promise.race(pending);
+          }
+        } catch (error) {
+          recordResult(product, asError(error));
+        }
+      }
+    } finally {
+      // При остановке ждём уже начатые проверки карточек перед экспортом.
+      await Promise.all(pending);
+    }
+    if (backgroundFailure) throw backgroundFailure;
     persist();
 
     const confirmed = [];
@@ -480,6 +535,8 @@
       matchedBarcode: item.matchedBarcode,
       bitrixCardUrl: item.bitrixCardUrl
     })));
+    console.log('[Matcher] Время выполнения: ' +
+      ((performance.now() - startedAt) / 1000).toFixed(1) + ' сек.');
     console.log('[Matcher] ' + (finished ? 'Готово' : 'Остановлено') +
       ': ' + completed.size + '/' + products.length +
       '; совпало ' + confirmed.length +
