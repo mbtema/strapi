@@ -1,10 +1,12 @@
 // Bitrix -> Strapi: этап 3. Node.js 20+, npm install cheerio.
-// Читает migration-matched.csv, по умолчанию dry-run, запись только --apply --confirm=<bitrixId>.
+// Читает весь migration-matched.csv: dry-run по умолчанию, запись малыми последовательными партиями.
+// --apply --confirm-batch --limit=10; для одного товара --apply --confirm=<bitrixId>.
 // JWT Strapi и Cookie Bitrix нужно один раз вставить в const AUTH ниже; отдельные файлы не нужны.
 import * as cheerio from 'cheerio';
-import { readFile, writeFile, rename } from 'node:fs/promises';
+import { readFile, writeFile, rename, appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { createHash } from 'node:crypto';
 
 // Рабочие файлы находятся на рабочем столе Windows.
 const DESKTOP = resolve(process.env.USERPROFILE || homedir(), 'Desktop');
@@ -23,8 +25,27 @@ const AUTH = {
   strapiJwt: "ВСТАВЬ_JWT_STRAPI",
   bitrixCookie: "ВСТАВЬ_COOKIE_BITRIX"
 };
-const APPLY = process.argv.includes('--apply');
-const confirmation = process.argv.find(x => x.startsWith('--confirm='))?.slice(10);
+const args = process.argv.slice(2);
+const APPLY = args.includes('--apply');
+const confirmation = args.find(x => x.startsWith('--confirm='))?.slice(10);
+const CONFIRM_BATCH = args.includes('--confirm-batch');
+const VERBOSE = args.includes('--verbose');
+const getNumberOption = (key, fallback, min, max) => {
+  const values = args.filter(x => x.startsWith(key + '='));
+  if (values.length > 1) throw Error('Параметр повторён: ' + key);
+  if (!values.length) return fallback;
+  const n = Number(values[0].split('=')[1]);
+  if (!Number.isSafeInteger(n) || n < min || n > max) throw Error('Некорректное значение ' + key);
+  return n;
+};
+const LIMIT = getNumberOption('--limit', APPLY ? 10 : 100000, 1, 100000);
+const PAUSE_MS = getNumberOption('--pause-ms', 1500, 500, 60000);
+for (const a of args) {
+  if (!['--apply','--confirm-batch','--verbose'].includes(a) &&
+      !/^--confirm=\d+$/.test(a) &&
+      !/^--limit=\d+$/.test(a) &&
+      !/^--pause-ms=\d+$/.test(a)) throw Error('Неизвестный параметр: ' + a);
+}
 const stateFile = resolve('migration-media-checkpoint.json');
 const log = (...v) => console.log('[Importer]', ...v);
 const clean = x => String(x ?? '').replace(/\s+/g, ' ').trim();
@@ -88,23 +109,31 @@ function parseCsv(text) {
   if(cell || row.length) {row.push(cell.replace(/\r$/, ''));if(row.some(Boolean))rows.push(row);}
   return rows;
 }
-async function inputRow() {
-  const data=parseCsv(await readFile(resolve(CFG.input),'utf8'));
-  const heads=data.shift();
-  const expected=['documentId','name','barcodes','bitrixId','bitrixCardUrl','matchedBarcode'];
+async function inputRows() {
+  const raw = await readFile(resolve(CFG.input), 'utf8');
+  const data = parseCsv(raw);
+  const heads = data.shift();
+  const expected = ['documentId','name','barcodes','bitrixId','bitrixCardUrl','matchedBarcode'];
   if(JSON.stringify(heads)!==JSON.stringify(expected)) {
     throw Error('Неверные колонки CSV: ' + heads?.join(';'));
   }
-  if(data.length!==1 || data[0].length!==6) {
-    throw Error('Для пилота нужен CSV ровно с одним товаром');
-  }
-  const row=Object.fromEntries(heads.map((h,i)=>[h,data[0][i]]));
-  // Совпадение товара уже проверено matcher.js; здесь используются только ID.
-  if(!/^[a-z0-9]+$/i.test(row.documentId) || !/^\d+$/.test(row.bitrixId)) {
-    throw Error('CSV: некорректные documentId или bitrixId');
-  }
-  return row;
+  if (!data.length) throw Error('В migration-matched.csv нет товаров');
+  const ids=new Set(), bitrixIds=new Set();
+  const rows=data.map((cells,index)=>{
+    if(cells.length!==heads.length)throw Error('CSV: неверное число колонок в строке '+(index+2));
+    const row=Object.fromEntries(heads.map((h,i)=>[h,cells[i]]));
+    if(!/^[a-z0-9]+$/i.test(row.documentId) || !/^\d+$/.test(row.bitrixId)) {
+      throw Error('CSV: некорректные ID в строке '+(index+2));
+    }
+    if(ids.has(row.documentId)||bitrixIds.has(row.bitrixId)) {
+      throw Error('CSV: повторяющийся documentId или bitrixId в строке '+(index+2));
+    }
+    ids.add(row.documentId); bitrixIds.add(row.bitrixId);
+    return row;
+  });
+  return {rows, hash:createHash('sha256').update(raw).digest('hex').slice(0,16)};
 }
+
 async function detail(uid,id,status=null) {
   const q=new URLSearchParams({locale:CFG.locale});
   if(status)q.set('status',status);
@@ -258,6 +287,49 @@ async function upload(image,field,order,id,state) {
   await storeState(state);
   log(`Media: ${field} ${image.fileId} -> ${result.id}`);
   return result.id;
+}
+
+// Контроль массовой обработки: отдельный checkpoint для каждой версии CSV.
+// Перед любой записью фиксируем review. После сбоя во время POST/PUT автоматический retry запрещён.
+const sleep = ms => new Promise(resolve => setTimeout(resolve,ms));
+const csvCell = value => {
+  const str = String(value ?? '');
+  return /[;"\r\n]/.test(str) ? '"'+str.replace(/"/g,'""')+'"' : str;
+};
+const reportFields=['documentId','bitrixId','name','status','changes','missing','newFrom1C','published','phase','message'];
+function reportCsv(rows, items) {
+  return '\uFEFF'+reportFields.join(';')+'\r\n'+rows.map(row=>{
+    const record=items[row.documentId]||{};
+    const obj={...row,...record,missing:Array.isArray(record.missing)?record.missing.join('|'):record.missing};
+    return reportFields.map(f=>csvCell(obj[f])).join(';');
+  }).join('\r\n')+'\r\n';
+}
+async function atomicWrite(filename,data) {
+  const temp=filename+'.tmp';
+  await writeFile(temp,data,'utf8');
+  await rename(temp,filename);
+}
+async function loadJob(hash,rows) {
+  const file=resolve('migration-import-journal-'+hash+'.jsonl');
+  const items=Object.create(null);
+  let raw='';
+  try {raw=await readFile(file,'utf8');}
+  catch(e){if(e.code!=='ENOENT')throw e;}
+  if(raw && !raw.endsWith('\n')) {
+    throw Error('Checkpoint оборван: проверь последний товар вручную перед продолжением: '+file);
+  }
+  for(const line of raw.split('\n').filter(Boolean)) {
+    const event=JSON.parse(line);
+    if(event.hash!==hash || !event.documentId || !event.item)throw Error('Неверный формат checkpoint');
+    items[event.documentId]=event.item;
+  }
+  const save=async(id,item)=>{
+    await appendFile(file,JSON.stringify({hash,documentId:id,item})+'\n','utf8');
+    items[id]=item;
+  };
+  const reportFile=resolve('migration-import-report.csv');
+  const report=async()=>atomicWrite(reportFile,reportCsv(rows,items));
+  return {items,save,report,file,reportFile};
 }
 
 async function main() {
