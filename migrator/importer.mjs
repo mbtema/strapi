@@ -1,6 +1,6 @@
 // Bitrix -> Strapi: этап 3. Node.js 20+, npm install cheerio.
-// Читает весь migration-matched.csv: dry-run по умолчанию, запись малыми последовательными партиями.
-// --apply --confirm-batch --limit=10; для одного товара --apply --confirm=<bitrixId>.
+// Читает весь migration-matched.csv: по одному товару за раз до конца файла.
+// По умолчанию dry-run; --apply для последовательной записи всех товаров.
 // JWT Strapi и Cookie Bitrix нужно один раз вставить в const AUTH ниже; отдельные файлы не нужны.
 import * as cheerio from 'cheerio';
 import { readFile, writeFile, rename, appendFile } from 'node:fs/promises';
@@ -28,7 +28,6 @@ const AUTH = {
 const args = process.argv.slice(2);
 const APPLY = args.includes('--apply');
 const confirmation = args.find(x => x.startsWith('--confirm='))?.slice(10);
-const CONFIRM_BATCH = args.includes('--confirm-batch');
 const VERBOSE = args.includes('--verbose');
 const RETRY_ERRORS = args.includes('--retry-errors');
 const RETRY_PARTIAL = args.includes('--retry-partial');
@@ -40,12 +39,10 @@ const getNumberOption = (key, fallback, min, max) => {
   if (!Number.isSafeInteger(n) || n < min || n > max) throw Error('Некорректное значение ' + key);
   return n;
 };
-const LIMIT = getNumberOption('--limit', APPLY ? 10 : 100000, 1, 100000);
 const PAUSE_MS = getNumberOption('--pause-ms', 1500, 500, 60000);
 for (const a of args) {
-  if (!['--apply','--confirm-batch','--verbose','--retry-errors','--retry-partial'].includes(a) &&
+  if (!['--apply','--verbose','--retry-errors','--retry-partial'].includes(a) &&
       !/^--confirm=\d+$/.test(a) &&
-      !/^--limit=\d+$/.test(a) &&
       !/^--pause-ms=\d+$/.test(a)) throw Error('Неизвестный параметр: ' + a);
 }
 const stateFile = resolve('migration-media-checkpoint.json');
@@ -545,21 +542,15 @@ async function main() {
   });
   if(missingAuth.length)throw Error('Заполни JWT и Cookie в const AUTH: '+missingAuth.join(', '));
   const {rows,hash}=await inputRows();
-  if(APPLY) {
-    if(confirmation && CONFIRM_BATCH)throw Error('Укажи только один тип подтверждения: --confirm или --confirm-batch');
-    if(confirmation && (rows.length!==1 || confirmation!==rows[0].bitrixId)) {
-      throw Error('--confirm=<BitrixID> допускается только для CSV с одним соответствующим товаром');
-    }
-    if(!confirmation && !CONFIRM_BATCH) {
-      throw Error('Для партии нужен --apply --confirm-batch; для одного товара --apply --confirm=<BitrixID>');
-    }
+  // --apply обрабатывает все строки файла; старый --confirm доступен только для одиночного теста.
+  if(APPLY && confirmation && (rows.length!==1 || confirmation!==rows[0].bitrixId)) {
+    throw Error('--confirm=<BitrixID> допускается только для CSV с одним соответствующим товаром');
   }
   const job=await loadJob(hash,rows);
   const items=APPLY?job.items:{};
   const started=Date.now();
   let attempted=0,successful=0,failed=0,manual=0,skipped=0;
-  log((APPLY?'APPLY':'DRY-RUN')+': '+rows.length+' строк; лимит '+LIMIT+
-      '; пауза '+PAUSE_MS+' мс; последовательно');
+  log((APPLY?'APPLY':'DRY-RUN')+': '+rows.length+' товаров; обработка всех строк последовательно; пауза '+PAUSE_MS+' мс');
   log('Отчёт: '+job.reportFile);
   let stopRequested=false;
   process.on('SIGINT',()=>{stopRequested=true;log('Остановка запрошена; заканчиваю текущий товар');});
@@ -572,7 +563,6 @@ async function main() {
       skipped++;
       continue;
     }
-    if(attempted>=LIMIT)break;
     if(attempted>0)await sleep(PAUSE_MS);
     attempted++;
     let writeStarted=false;
