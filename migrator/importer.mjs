@@ -261,7 +261,7 @@ async function storeState(state) {
   await writeFile(temp,JSON.stringify(state,null,2),{mode:0o600});
   await rename(temp,stateFile);
 }
-async function upload(image,field,order,id,state) {
+async function upload(image,field,order,id,state,markWrite) {
   const key=`${id}:${field}:${image.fileId}`;
   const known=state.uploads[key];
   if(known){log(`Media checkpoint: ${field} -> ${known}`);return known;}
@@ -277,6 +277,7 @@ async function upload(image,field,order,id,state) {
   const form=new FormData();
   form.append('files',new Blob([buf],{type:mime}),filename);
   // POST /upload — без retry. Если ответ неясен, проверить Media Library вручную.
+  await markWrite('UPLOAD '+field+' '+image.fileId);
   let j;
   try {j=await (await http(strapiUrl('/upload'),{method:'POST',
     headers:{Authorization:`Bearer ${AUTH.strapiJwt}`},body:form})).json();}
@@ -332,15 +333,7 @@ async function loadJob(hash,rows) {
   return {items,save,report,file,reportFile};
 }
 
-async function main() {
-  const missingAuth = ['strapiJwt', 'bitrixCookie'].filter(key => {
-    const value = AUTH[key];
-    return !value || value.startsWith('ВСТАВЬ_') || value.startsWith('__LOCAL_') || value.startsWith('PASTE_');
-  });
-  if (missingAuth.length) throw Error('Открой importer.mjs и вставь JWT и Cookie в const AUTH: ' + missingAuth.join(', '));
-  const row=await inputRow();
-  if(APPLY && confirmation!==row.bitrixId)throw Error(`Для записи нужен --apply --confirm=${row.bitrixId}`);
-  log(APPLY?'APPLY (1 товар)':'DRY-RUN (0 записей)');
+async function migrateOne(row, markWrite, verbose) {
 
   const [product,oldCats,html]=await Promise.all([
     detail('api::product.product',row.documentId),
@@ -348,9 +341,14 @@ async function main() {
     bGet(cardUrl(row.bitrixId))
   ]);
   const bitrix=extractBitrix(html);
-  if(product.newFrom1C!==true)throw Error('Товар больше не является кандидатом: newFrom1C != true');
-  log(`Перенос по CSV: Bitrix ID ${row.bitrixId} -> Strapi ${row.documentId}`);
-  log(`Bitrix: ${cardUrl(row.bitrixId)}`);
+  if(product.newFrom1C!==true) {
+    log('SKIP: newFrom1C уже false, Bitrix ID '+row.bitrixId);
+    return {status:'skipped_already',changes:0,missing:[],newFrom1C:false,published:null,message:'newFrom1C уже false'};
+  }
+  if(verbose) {
+    log('Перенос по CSV: Bitrix ID '+row.bitrixId+' -> Strapi '+row.documentId);
+    log('Bitrix: '+cardUrl(row.bitrixId));
+  }
 
   const mapping=[];
   for(const section of bitrix.sections) {
@@ -390,10 +388,10 @@ async function main() {
   add('newFrom1C',plannedMissing.length?'KEEP_INCOMPLETE':'CLEAR_AFTER_VERIFY',
     plannedMissing.length?`останутся пустыми: ${plannedMissing.join(', ')}`:'отдельный PUT после успешной проверки всех полей');
   add('publish','PUBLISH_AFTER_SAVE','после Save и проверки записи, только locale=ru');
-  console.table(actions);
+  if(verbose)console.table(actions);
   const missingSource=actions.filter(x=>['SOURCE_EMPTY','SOURCE_UNAVAILABLE','SOURCE_INCOMPLETE'].includes(x.action));
   log(`План: ${actions.filter(x=>['FILL','UPLOAD_AND_LINK','SYNC','CONNECT'].includes(x.action)).length} изменений, ${missingSource.length} полей без источника`);
-  if(!APPLY) {log('DRY_RUN_READY: без изменений и Publish');return;}
+  if(!APPLY) return {status:'dry_run',changes:actions.filter(x=>['FILL','UPLOAD_AND_LINK','SYNC','CONNECT'].includes(x.action)).length,missing:plannedMissing,newFrom1C:product.newFrom1C,published:false,message:'План составлен, записей нет'};
 
   // Прямо перед записью заново проверяем значения целевых полей.
   const snapshot=p=>JSON.stringify(['name1','name2','detail_text','preview_picture','detail_picture','pictures','active','name','newFrom1C'].map(f=>p[f]));
@@ -411,11 +409,11 @@ async function main() {
   }
   if(byField.get('active')==='SYNC')payload.active=bitrix.active;
   for(const f of ['preview_picture','detail_picture']) {
-    if(byField.get(f)==='UPLOAD_AND_LINK')payload[f]=await upload(bitrix[f],f,0,row.bitrixId,state);
+    if(byField.get(f)==='UPLOAD_AND_LINK')payload[f]=await upload(bitrix[f],f,0,row.bitrixId,state,markWrite);
   }
   if(byField.get('pictures')==='UPLOAD_AND_LINK') {
     payload.pictures=[];
-    for(const image of gallery)payload.pictures.push(await upload(image,'pictures',image.order,row.bitrixId,state));
+    for(const image of gallery)payload.pictures.push(await upload(image,'pictures',image.order,row.bitrixId,state,markWrite));
   }
   if(missingCats.length)payload.categories={connect:missingCats.map(x=>({id:x.id,documentId:x.documentId,locale:CFG.locale})),disconnect:[]};
   if(!Object.keys(payload).length)log('Новых значений контента нет; проверю полноту карточки');
@@ -430,6 +428,7 @@ async function main() {
 
   const productPath=`/content-manager/collection-types/api::product.product/${row.documentId}?locale=${CFG.locale}`;
   if(Object.keys(payload).length) {
+    await markWrite('PUT_CONTENT');
     try {
       await http(strapiUrl(productPath),{
         method:'PUT',headers:{Authorization:`Bearer ${AUTH.strapiJwt}`,'Content-Type':'application/json'},
@@ -449,7 +448,7 @@ async function main() {
     else ok=after[field]===expected;
     checks.push({field,verify:ok?'OK':'FAILED'});
   }
-  console.table(checks);
+  if(verbose)console.table(checks);
   if(checks.some(x=>x.verify!=='OK'))throw Error('Save выполнен, но проверка не прошла; ручная диагностика перед повтором');
   log('CONTENT_VERIFIED: доступный контент сохранён и проверен.');
 
@@ -462,7 +461,7 @@ async function main() {
     log(`FLAG_KEEP: newFrom1C=true; карточка неполная: ${stillMissing.join(', ')}`);
     if(!Object.keys(payload).length) {
       log('SAVE_SKIP: изменений нет; Publish не выполняется');
-      return;
+      return {status:'partial',changes:0,missing:stillMissing,newFrom1C:true,published:false,message:'Нет изменений; обязательный контент неполный'};
     }
   } else {
     // Отдельный Save флага после того, как все шесть обязательных полей проверены.
@@ -471,6 +470,7 @@ async function main() {
     if(snapshot(beforeFlag)!==snapshot(after) || catIds(catsBeforeFlag)!==catIds(afterCats)) {
       throw Error('Карточка изменилась перед сбросом newFrom1C; Publish отменён');
     }
+    await markWrite('PUT_NEWFROM1C');
     try {
       await http(strapiUrl(productPath),{
         method:'PUT',headers:{Authorization:`Bearer ${AUTH.strapiJwt}`,'Content-Type':'application/json'},
@@ -499,6 +499,7 @@ async function main() {
   }
 
   const publishPath=`/content-manager/collection-types/api::product.product/${row.documentId}/actions/publish?locale=${CFG.locale}`;
+  await markWrite('POST_PUBLISH');
   try {
     await http(strapiUrl(publishPath),{
       method:'POST',
@@ -532,6 +533,8 @@ async function main() {
   }
   log(`PUBLISH_VERIFIED: опубликована ru-версия, publishedAt=${published.publishedAt}, newFrom1C=${published.newFrom1C}`);
   log('MIGRATION_COMPLETE: Save → проверка → newFrom1C → Publish → проверка опубликованной версии');
+  return {status:stillMissing.length?'partial':'done',changes:checks.length,missing:stillMissing,
+    newFrom1C:published.newFrom1C,published:true,message:'Publish проверен'};
 
 }
 main().catch(e=>{console.error('[Importer] STOP:',e.message);process.exitCode=1;});
