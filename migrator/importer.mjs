@@ -1,6 +1,6 @@
 // Bitrix -> Strapi: этап 3. Node.js 20+, npm install cheerio.
 // Читает migration-matched.csv, по умолчанию dry-run, запись только --apply --confirm=<bitrixId>.
-// JWT и Cookie встроены в локальную копию; launcher.ps1 только запускает этот файл.
+// JWT Strapi и Cookie Bitrix нужно один раз вставить в const AUTH ниже; отдельные файлы не нужны.
 import * as cheerio from 'cheerio';
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -19,8 +19,9 @@ const CFG = {
   maxImageMB: 20
 };
 const AUTH = {
-  strapiJwt: "__LOCAL_STRAPI_JWT__",
-  bitrixCookie: "__LOCAL_BITRIX_COOKIE__"
+  // Один раз вставь свои значения в кавычки, потом только запускай скрипт.
+  strapiJwt: "ВСТАВЬ_JWT_STRAPI",
+  bitrixCookie: "ВСТАВЬ_COOKIE_BITRIX"
 };
 const APPLY = process.argv.includes('--apply');
 const confirmation = process.argv.find(x => x.startsWith('--confirm='))?.slice(10);
@@ -251,8 +252,11 @@ async function upload(image,field,order,id,state) {
 }
 
 async function main() {
-  if(AUTH.strapiJwt==='PASTE_STRAPI_JWT_HERE'||AUTH.bitrixCookie==='PASTE_BITRIX_COOKIE_HERE'||
-     !AUTH.strapiJwt||!AUTH.bitrixCookie)throw Error('Впиши JWT Strapi и Cookie Bitrix локально');
+  const missingAuth = ['strapiJwt', 'bitrixCookie'].filter(key => {
+    const value = AUTH[key];
+    return !value || value.startsWith('ВСТАВЬ_') || value.startsWith('__LOCAL_') || value.startsWith('PASTE_');
+  });
+  if (missingAuth.length) throw Error('Открой importer.mjs и вставь JWT и Cookie в const AUTH: ' + missingAuth.join(', '));
   const row=await inputRow();
   if(APPLY && confirmation!==row.bitrixId)throw Error(`Для записи нужен --apply --confirm=${row.bitrixId}`);
   log(APPLY?'APPLY (1 товар)':'DRY-RUN (0 записей)');
