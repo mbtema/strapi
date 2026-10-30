@@ -1,6 +1,6 @@
 // Bitrix -> Strapi: этап 3. Node.js 20+, npm install cheerio.
 // Читает migration-matched.csv, по умолчанию dry-run, запись только --apply --confirm=<bitrixId>.
-// JWT и Cookie встроены в локальную копию; launcher.ps1 сохраняет их при обновлении кода.
+// JWT и Cookie встроены в локальную копию; launcher.ps1 только запускает этот файл.
 import * as cheerio from 'cheerio';
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -27,7 +27,6 @@ const confirmation = process.argv.find(x => x.startsWith('--confirm='))?.slice(1
 const stateFile = resolve('migration-media-checkpoint.json');
 const log = (...v) => console.log('[Importer]', ...v);
 const clean = x => String(x ?? '').replace(/\s+/g, ' ').trim();
-const barcode = x => String(x ?? '').replace(/\s+/g, '');
 const filled = x => x != null && (typeof x === 'string' ? !!x.trim() :
   Array.isArray(x) ? x.length > 0 : typeof x === 'object' && 'data' in x ? filled(x.data) : true);
 const unwrap = x => x?.attributes && !Array.isArray(x.attributes) && !x.documentId
@@ -99,14 +98,9 @@ async function inputRow() {
     throw Error('Для пилота нужен CSV ровно с одним товаром');
   }
   const row=Object.fromEntries(heads.map((h,i)=>[h,data[0][i]]));
-  if(!/^[a-z0-9]+$/i.test(row.documentId) || !/^\d+$/.test(row.bitrixId) || !row.name) {
-    throw Error('CSV: некорректные идентификаторы или NAME');
-  }
-  if(row.bitrixCardUrl !== cardUrl(row.bitrixId)) {
-    throw Error('CSV: bitrixCardUrl не совпадает с канонической ссылкой');
-  }
-  if(!row.barcodes.split('|').includes(row.matchedBarcode) || !/^\d{8,18}$/.test(row.matchedBarcode)) {
-    throw Error('CSV: matchedBarcode отсутствует среди barcodes');
+  // Совпадение товара уже проверено matcher.js; здесь используются только ID.
+  if(!/^[a-z0-9]+$/i.test(row.documentId) || !/^\d+$/.test(row.bitrixId)) {
+    throw Error('CSV: некорректные documentId или bitrixId');
   }
   return row;
 }
@@ -157,8 +151,9 @@ function imageFrom(source,id) {
 }
 function extractBitrix(html) {
   const $=cheerio.load(html);
-  const name=$('input[name="NAME"]').first().val();
-  if(typeof name!=='string') throw Error('Bitrix: не найдена карточка товара');
+  if(typeof $('input[name="NAME"]').first().val()!=='string') {
+    throw Error('Bitrix: не найдена карточка товара');
+  }
   const property=id => {
     const matches=$('input[name], textarea[name]').toArray().filter(el=>
       new RegExp(`^PROP\\[${id}\\]\\[`).test($(el).attr('name')??''));
@@ -192,25 +187,7 @@ function extractBitrix(html) {
   const activeInput=$('input[type="checkbox"][name="ACTIVE"]');
   const active=activeInput.length ? activeInput.is(':checked') : null;
   const detailText=$('textarea[name="DETAIL_TEXT"]');
-  const offers=new Map();
-  $('table').each((_,table)=>{
-    const trs=$(table).find('tr').toArray().filter(r=>$(r).closest('table').get(0)===table);
-    const idx=trs.findIndex(r=>{
-      const cells=$(r).children('td,th').toArray().map(el=>clean($(el).text()));
-      return cells.some(x=>/^(штрих\s*[-–]?\s*код|barcode)$/i.test(x)) && cells.some(x=>/^id$/i.test(x));
-    });
-    if(idx<0)return;
-    const hdr=$(trs[idx]).children('td,th').toArray().map(el=>clean($(el).text()));
-    const bi=hdr.findIndex(x=>/^(штрих\s*[-–]?\s*код|barcode)$/i.test(x));
-    const ii=hdr.findIndex(x=>/^id$/i.test(x));
-    for(const r of trs.slice(idx+1)) {
-      const cells=$(r).children('td,th').toArray();
-      if(cells.length<=Math.max(bi,ii))continue;
-      const id=clean($(cells[ii]).text());
-      if(/^\d+$/.test(id))offers.set(id,barcode($(cells[bi]).text()));
-    }
-  });
-  return {name,offers:[...offers.values()].filter(Boolean),name1:property(216),name2:property(217),
+  return {name1:property(216),name2:property(217),
     preview_picture:single('PREVIEW_PICTURE'),detail_picture:single('DETAIL_PICTURE'),
     pictures,detail_text:detailText.length?String(detailText.first().val()??''):null,
     active,sections};
@@ -280,23 +257,14 @@ async function main() {
   if(APPLY && confirmation!==row.bitrixId)throw Error(`Для записи нужен --apply --confirm=${row.bitrixId}`);
   log(APPLY?'APPLY (1 товар)':'DRY-RUN (0 записей)');
 
-  const [product,oldCats,attrs,html]=await Promise.all([
+  const [product,oldCats,html]=await Promise.all([
     detail('api::product.product',row.documentId),
     relations(row.documentId,'categories'),
-    relations(row.documentId,'attributes'),
     bGet(cardUrl(row.bitrixId))
   ]);
   const bitrix=extractBitrix(html);
-  const strapiCodes=[];
-  for(const a of attrs) {
-    const code=a.barcode==null?(await detail('api::attribute.attribute',a.documentId)).barcode:a.barcode;
-    if(barcode(code))strapiCodes.push(barcode(code));
-  }
-  const common=[...new Set(strapiCodes)].filter(x=>bitrix.offers.includes(x));
   if(product.newFrom1C!==true)throw Error('Товар больше не является кандидатом: newFrom1C != true');
-  if(product.name!==row.name || bitrix.name!==row.name ||
-     !common.includes(row.matchedBarcode))throw Error('STOP: NAME или BARCODE больше не совпадают');
-  log(`Соответствие подтверждено: ${row.bitrixId}, barcode=${row.matchedBarcode}`);
+  log(`Перенос по CSV: Bitrix ID ${row.bitrixId} -> Strapi ${row.documentId}`);
   log(`Bitrix: ${cardUrl(row.bitrixId)}`);
 
   const mapping=[];
