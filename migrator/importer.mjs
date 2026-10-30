@@ -537,4 +537,71 @@ async function migrateOne(row, markWrite, verbose) {
     newFrom1C:published.newFrom1C,published:true,message:'Publish проверен'};
 
 }
+async function main() {
+  const missingAuth=['strapiJwt','bitrixCookie'].filter(k=>{
+    const v=AUTH[k];return !v || ['ВСТАВЬ_','__LOCAL_','PASTE_'].some(p=>v.startsWith(p));
+  });
+  if(missingAuth.length)throw Error('Заполни JWT и Cookie в const AUTH: '+missingAuth.join(', '));
+  const {rows,hash}=await inputRows();
+  if(APPLY) {
+    if(confirmation && CONFIRM_BATCH)throw Error('Укажи только один тип подтверждения: --confirm или --confirm-batch');
+    if(confirmation && (rows.length!==1 || confirmation!==rows[0].bitrixId)) {
+      throw Error('--confirm=<BitrixID> допускается только для CSV с одним соответствующим товаром');
+    }
+    if(!confirmation && !CONFIRM_BATCH) {
+      throw Error('Для партии нужен --apply --confirm-batch; для одного товара --apply --confirm=<BitrixID>');
+    }
+  }
+  const job=await loadJob(hash,rows);
+  const items=APPLY?job.items:{};
+  const started=Date.now();
+  let attempted=0,successful=0,failed=0,manual=0,skipped=0;
+  log((APPLY?'APPLY':'DRY-RUN')+': '+rows.length+' строк; лимит '+LIMIT+
+      '; пауза '+PAUSE_MS+' мс; последовательно');
+  log('Отчёт: '+job.reportFile);
+  let stopRequested=false;
+  process.on('SIGINT',()=>{stopRequested=true;log('Остановка запрошена; заканчиваю текущий товар');});
+  for(let idx=0;idx<rows.length && !stopRequested;idx++) {
+    const row=rows[idx];
+    const previous=items[row.documentId];
+    if(APPLY && previous && ['done','skipped_already','review'].includes(previous.status)) {
+      skipped++;
+      continue;
+    }
+    if(attempted>=LIMIT)break;
+    if(attempted>0)await sleep(PAUSE_MS);
+    attempted++;
+    let writeStarted=false;
+    const item={status:'running',attempts:(previous?.attempts||0)+1,bitrixId:row.bitrixId,
+      name:row.name,updatedAt:new Date().toISOString(),phase:'READ'};
+    if(APPLY)await job.save(row.documentId,item);
+    const markWrite=async phase=>{
+      writeStarted=true;
+      if(APPLY){Object.assign(item,{status:'review',phase,message:'Не повторять до проверки возможной записи'});await job.save(row.documentId,item);}
+    };
+    try {
+      const result=await migrateOne(row,markWrite,VERBOSE || rows.length===1);
+      Object.assign(item,result,{phase:'COMPLETE',updatedAt:new Date().toISOString()});
+      if(['done','partial','skipped_already','dry_run'].includes(result.status))successful++;
+      log('['+(idx+1)+'/'+rows.length+'] '+row.bitrixId+': '+result.status+
+          '; изменений: '+result.changes+'; осталось полей: '+(result.missing?.length||0));
+    }catch(e){
+      Object.assign(item,{status:writeStarted?'review':'error',phase:item.phase||'READ',
+        message:String(e?.message||e),updatedAt:new Date().toISOString()});
+      if(writeStarted)manual++; else failed++;
+      console.error('[Importer] ['+(idx+1)+'/'+rows.length+'] '+row.bitrixId+' '+item.status+': '+item.message);
+    }
+    if(APPLY)await job.save(row.documentId,item);
+    else items[row.documentId]=item;
+    log('Прогресс: обработано '+attempted+', успешно/частично '+successful+
+        ', ошибки чтения '+failed+', ручная проверка '+manual);
+  }
+  await atomicWrite(job.reportFile,reportCsv(rows,items));
+  log('ИТОГО за запуск: '+attempted+' обработано, '+successful+' успешно/частично, '+
+      failed+' ошибок, '+manual+' требуется проверить вручную, '+skipped+
+      ' пропущено по checkpoint. Прошло '+Math.round((Date.now()-started)/1000)+' сек.');
+  log('CSV-отчёт: '+job.reportFile);
+  if(APPLY)log('Checkpoint: '+job.file+'; следующий запуск с тем же CSV продолжит обработку');
+  if(failed||manual)process.exitCode=1;
+}
 main().catch(e=>{console.error('[Importer] STOP:',e.message);process.exitCode=1;});
