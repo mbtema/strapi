@@ -195,12 +195,21 @@
       throw Error('Страница ' + page + ': в таблице нет заголовка ID');
     }
 
-    const bodyRows = [...table.querySelectorAll('tbody > tr.main-grid-row-body[data-id]')];
+    // В Bitrix grid есть скрытая служебная строка main-grid-not-count
+    // с data-id="template_0": это шаблон редактора, а не предложение.
+    // Пропускаем ТОЛЬКО явно опознанные шаблоны, чтобы не скрыть ошибки данных.
+    const bodyRows = [...table.querySelectorAll('tbody > tr.main-grid-row-body[data-id]')]
+      .filter(tr => !(
+        tr.classList.contains('main-grid-not-count') &&
+        tr.hasAttribute('hidden') &&
+        /^template_\d+$/.test(tr.dataset.id ?? '')
+      ));
     const rows = bodyRows.map(tr => {
       const cells = [...tr.querySelectorAll(':scope > td')];
       const id = trim(tr.dataset.id);
-      if (!/^\d+$/.test(id) || !cells[barcodeIndex]) {
-        throw Error('Страница ' + page + ': нет ID строки или ячейки PROPERTY_19');
+      if (!/^\d+$/.test(id) || cells.length !== heads.length || !cells[barcodeIndex]) {
+        throw Error('Страница ' + page + ': некорректные ID/ячейки строки ' +
+          id + ' (cells=' + cells.length + ', headers=' + heads.length + ')');
       }
 
       // Известный шаблон карточки проверяем по реальным ссылкам строки, если они есть.
