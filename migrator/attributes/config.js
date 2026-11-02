@@ -18,7 +18,7 @@
   const UID = 'api::attribute.attribute';
   const LOG = '[Attributes config]';
 
-  if (!location.pathname.startsWith('/admin/')) {
+  if (location.pathname !== '/admin' && !location.pathname.startsWith('/admin/')) {
     throw Error('Открой Strapi Admin и запусти скрипт в DevTools Console');
   }
   if (window.__tmAttributesConfigRunning) {
