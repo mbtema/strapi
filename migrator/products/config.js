@@ -1,4 +1,4 @@
-// Этап 1: Strapi Admin -> Console -> migration-config.csv
+// Этап 1: Strapi Admin -> Console -> products-config.csv
 // Только GET. Отбор: newFrom1C=true и отсутствие хотя бы одного
 // из шести обязательных полей. CSV: documentId;name;barcodes.
 (async () => {
@@ -8,7 +8,7 @@
     locale: 'ru',
     pageSize: 100,
     concurrency: 4,
-    filename: 'migration-config.csv'
+    filename: 'products-config.csv'
   };
   const PRODUCT_UID = 'api::product.product';
   const ATTRIBUTE_UID = 'api::attribute.attribute';

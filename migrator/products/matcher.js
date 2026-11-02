@@ -1,7 +1,7 @@
 // Этап 2: Bitrix Admin -> Console.
-// Вход: migration-config.csv (documentId;name;barcodes).
-// Выход: migration-matched.csv (только NAME + barcode подтверждены)
-// и migration-unmatched.csv (остальные результаты).
+// Вход: products-config.csv (documentId;name;barcodes).
+// Выход: products-matched.csv (только NAME + barcode подтверждены)
+// и products-unmatched.csv (остальные результаты).
 // Запросы не изменяют товары; Bitrix filter сохраняет состояние в сессии.
 (async () => {
   'use strict';
@@ -141,7 +141,7 @@
   }
 
   try {
-    console.log('[Matcher] Выбери migration-config.csv');
+    console.log('[Matcher] Выбери products-config.csv');
     const file = await selectCsv();
     if (!file) {
       console.log('[Matcher] Файл не выбран');
@@ -511,13 +511,13 @@
     window.bitrixMatchResult = { confirmed, unmatched, finished, checkpointKey };
     window.bitrixMatchExport = () => {
       downloadCsv(
-        finished ? 'migration-matched.csv' : 'migration-matched-partial.csv',
+        finished ? 'products-matched.csv' : 'products-matched-partial.csv',
         ['documentId', 'name', 'barcodes', 'bitrixId',
           'bitrixCardUrl', 'matchedBarcode'],
         confirmed
       );
       if (unmatched.length) {
-        setTimeout(() => downloadCsv('migration-unmatched.csv',
+        setTimeout(() => downloadCsv('products-unmatched.csv',
           ['documentId', 'name', 'status', 'details'], unmatched), 700);
       }
     };

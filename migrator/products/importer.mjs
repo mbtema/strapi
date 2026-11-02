@@ -1,5 +1,5 @@
 // Bitrix -> Strapi: этап 3. Node.js 20+, npm install cheerio.
-// Читает весь migration-matched.csv: по одному товару за раз до конца файла.
+// Читает весь products-matched.csv: по одному товару за раз до конца файла.
 // По умолчанию dry-run; --apply для последовательной записи всех товаров.
 // JWT Strapi и Cookie Bitrix нужно один раз вставить в const AUTH ниже; отдельные файлы не нужны.
 import * as cheerio from 'cheerio';
@@ -16,7 +16,7 @@ const CFG = {
   strapi: 'http://10.10.3.80:1337',
   bitrix: 'https://www.monamie.kz',
   locale: 'ru',
-  input: 'migration-matched.csv',
+  input: 'products-matched.csv',
   timeoutMs: 30000,
   maxImageMB: 20
 };
@@ -45,7 +45,7 @@ for (const a of args) {
       !/^--confirm=\d+$/.test(a) &&
       !/^--pause-ms=\d+$/.test(a)) throw Error('Неизвестный параметр: ' + a);
 }
-const stateFile = resolve('migration-media-checkpoint.json');
+const stateFile = resolve('products-media-checkpoint.json');
 const log = (...v) => console.log('[Importer]', ...v);
 const clean = x => String(x ?? '').replace(/\s+/g, ' ').trim();
 const filled = x => x != null && (typeof x === 'string' ? !!x.trim() :
@@ -116,7 +116,7 @@ async function inputRows() {
   if(JSON.stringify(heads)!==JSON.stringify(expected)) {
     throw Error('Неверные колонки CSV: ' + heads?.join(';'));
   }
-  if (!data.length) throw Error('В migration-matched.csv нет товаров');
+  if (!data.length) throw Error('В products-matched.csv нет товаров');
   const ids=new Set(), bitrixIds=new Set();
   const rows=data.map((cells,index)=>{
     if(cells.length!==heads.length)throw Error('CSV: неверное число колонок в строке '+(index+2));
@@ -310,7 +310,7 @@ async function atomicWrite(filename,data) {
   await rename(temp,filename);
 }
 async function loadJob(hash,rows) {
-  const file=resolve('migration-import-journal-'+hash+'.jsonl');
+  const file=resolve('products-import-journal-'+hash+'.jsonl');
   const items=Object.create(null);
   let raw='';
   try {raw=await readFile(file,'utf8');}
@@ -327,7 +327,7 @@ async function loadJob(hash,rows) {
     await appendFile(file,JSON.stringify({hash,documentId:id,item})+'\n','utf8');
     items[id]=item;
   };
-  const reportFile=resolve(APPLY?'migration-import-report.csv':'migration-import-plan.csv');
+  const reportFile=resolve(APPLY?'products-import-report.csv':'products-import-plan.csv');
   const report=async()=>atomicWrite(reportFile,reportCsv(rows,items));
   return {items,save,report,file,reportFile};
 }
