@@ -225,10 +225,16 @@ function imageFrom(text, id) {
   return null;
 }
 
-function parseBitrix(html, expectedBarcode) {
+function parseBitrix(html, expectedBarcode, expectedId) {
   const $ = cheerio.load(html);
   if (typeof $('input[name="NAME"]').first().val() !== 'string') {
     throw Error('Bitrix вернул не карточку предложения (нет NAME)');
+  }
+  // В реальной форме Bitrix есть hidden ID. Проверяем саму карточку, а не только URL.
+  const elementIds = $('input[type="hidden"][name="ID"]').toArray()
+    .map(el => String($(el).val() ?? '').trim());
+  if (elementIds.length !== 1 || elementIds[0] !== expectedId) {
+    throw Error('Bitrix ID карточки не совпадает с ID из matcher: ' + expectedId);
   }
   // Подтверждение актуального barcode обязательно перед записью. Неподтверждённая
   // разметка карточки -> ошибка чтения, а НЕ разрешение на импорт.
@@ -267,7 +273,7 @@ function parseBitrix(html, expectedBarcode) {
 
 async function readBitrix(row) {
   const html = await (await http(row.bitrixUrl, { headers: bHeaders() }, true)).text();
-  return parseBitrix(html, row.barcode);
+  return parseBitrix(html, row.barcode, row.bitrixId);
 }
 function getMime(ct) {
   const type = ct.split(';')[0].trim().toLowerCase();
