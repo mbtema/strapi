@@ -1,7 +1,7 @@
 // Этап 2: Bitrix Admin -> Console -> attributes-matched.csv
 // Вход: attributes-config.csv (documentId;barcode;active;hasDetailPicture).
-// Выход: только кандидаты importer (documentId;barcode;bitrixUrl).
-// Чтение IBLOCK_ID=2 / PROPERTY_19 + ACTIVE, только GET.
+// Выход: только кандидаты importer: documentId;barcode;active;hasDetailPicture;bitrixId;bitrixActive;pictureUrl.
+// Чтение IBLOCK_ID=2 / PROPERTY_19 + ACTIVE + DETAIL_PICTURE, только GET.
 (async () => {
   'use strict';
 
@@ -13,12 +13,11 @@
     maxPages: 4000,
     matchedFile: 'attributes-matched.csv',
     unmatchedFile: 'attributes-unmatched.csv',
-    checkpointVersion: 'v3-id-asc'
+    checkpointVersion: 'v4-picture-url'
   };
   const AUTH = {
     // В DevTools браузер отправляет Bitrix Cookie сам (credentials: include).
     // Заголовок Cookie нельзя установить вручную через browser fetch.
-    // Для Node importer будет отдельный ключ AUTH.bitrixCookies.
     bitrixCookies: ''
   };
   const LOG = '[Attributes matcher]';
@@ -119,15 +118,6 @@
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
 
-  function cardUrl(id) {
-    const u = new URL(CARD_PATH, location.origin);
-    u.searchParams.set('IBLOCK_ID', CFG.iblockId);
-    u.searchParams.set('type', 'catalog');
-    u.searchParams.set('lang', CFG.locale);
-    u.searchParams.set('ID', id);
-    return u.href;
-  }
-
   function pageUrl(page) {
     const u = new URL(LIST_PATH, location.origin);
     u.searchParams.set('IBLOCK_ID', CFG.iblockId);
@@ -184,7 +174,43 @@
     return Number.isSafeInteger(number) && number >= 0 ? number : null;
   }
 
-  function parseGrid(html, page, target) {
+  function originalImageUrl(cell, page, id) {
+    // В Bitrix в <a href> — оригинал, в <img src> — resize_cache (миниатюра).
+    // Только публичный оригинал /upload/iblock/; не читаем никакие карточки.
+    const anchors = [...cell.querySelectorAll('a[href]')];
+    const originals = new Set();
+    for (const anchor of anchors) {
+      const href = anchor.getAttribute('href') ?? '';
+      if (!href.includes('/upload/iblock/')) continue;
+      let url;
+      try { url = new URL(href, location.origin); }
+      catch { throw Error('Страница ' + page + ', Bitrix ID ' + id + ': неверный href Media'); }
+      if (url.origin !== location.origin || url.username || url.password ||
+          url.search || url.hash ||
+          !/^\/upload\/iblock\/(?!resize_cache\/)[^?#]+\.(?:jpe?g|png|webp|gif)$/i.test(url.pathname)) {
+        throw Error('Страница ' + page + ', Bitrix ID ' + id +
+          ': URL оригинала Media не прошёл проверку: ' + url.pathname);
+      }
+      originals.add(url.href);
+    }
+    if (originals.size > 1) {
+      throw Error('Страница ' + page + ', Bitrix ID ' + id +
+        ': несколько разных оригиналов DETAIL_PICTURE');
+    }
+    if (originals.size === 1) return [...originals][0];
+
+    const hasPreview = [...cell.querySelectorAll('img[src]')].some(img => {
+      const src = img.getAttribute('src') ?? '';
+      return src.includes('/upload/resize_cache/') || src.includes('/upload/iblock/');
+    });
+    if (hasPreview || anchors.some(a => (a.getAttribute('href') ?? '').includes('/upload/'))) {
+      throw Error('Страница ' + page + ', Bitrix ID ' + id +
+        ': есть превью/ссылка на Media, но URL оригинала не подтверждён');
+    }
+    return '';
+  }
+
+  function parseGrid(html, page, target, pictureWanted) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const matches = [...doc.querySelectorAll('table.main-grid-table')].map(table => {
       const head = [...table.querySelectorAll('thead tr.main-grid-row-head > th')];
@@ -201,6 +227,15 @@
       throw Error('Страница ' + page + ': нет колонки ACTIVE. ' +
         'В настройках таблицы Bitrix включи «Активность» и повтори matcher.');
     }
+    const pictureIndexes = heads.map((th, index) =>
+      th.dataset.name === 'DETAIL_PICTURE' ||
+      /детальная картинка/i.test(th.textContent ?? '') ? index : -1
+    ).filter(index => index >= 0);
+    if (pictureIndexes.length !== 1) {
+      throw Error('Страница ' + page + ': нет единственной колонки DETAIL_PICTURE. ' +
+        'Включи «Детальная картинка» в настройках таблицы Bitrix.');
+    }
+    const pictureIndex = pictureIndexes[0];
     if (!heads.some(th => th.dataset.name === 'ID')) {
       throw Error('Страница ' + page + ': в таблице нет заголовка ID');
     }
@@ -237,7 +272,7 @@
       const barcode = barcodeOf(cells[barcodeIndex].textContent);
       // Для проверки уникальности учитываем весь Bitrix, а ACTIVE читаем только
       // для barcode из Strapi, иначе неизвестная разметка чужих строк остановит аудит.
-      if (!target.has(barcode)) return { id, barcode, active: null };
+      if (!target.has(barcode)) return { id, barcode, active: null, pictureUrl: '' };
       const activeCell = cells[activeIndex];
       const content = activeCell?.querySelector('.main-grid-cell-content') ?? activeCell;
       const value = trim(content?.textContent).toLowerCase();
@@ -257,7 +292,11 @@
           ': не удалось прочитать ACTIVE (значение: ' +
           JSON.stringify(value.slice(0, 70)) + '). Нужен HTML ячейки ACTIVE.');
       }
-      return { id, barcode, active: parsed[0] };
+      // Ссылки не сохраняем для записей, где Strapi Media уже существует.
+      const pictureUrl = pictureWanted.has(barcode)
+        ? originalImageUrl(cells[pictureIndex], page, id)
+        : '';
+      return { id, barcode, active: parsed[0], pictureUrl };
     });
 
     const totalText = doc.querySelector(
@@ -311,6 +350,10 @@
           !['true','false'].includes(hasDetailPicture)) {
         throw Error('CSV строка ' + (index + 2) + ': некорректные active/hasDetailPicture');
       }
+      if (/^[+-]?\d+(?:[.,]\d+)?[eE][+-]?\d+$/.test(barcode)) {
+        throw Error('CSV строка ' + (index + 2) +
+          ': barcode в научном формате Excel; возьми оригинальный CSV из config.js.');
+      }
       return { documentId, barcode,
         active: active === 'null' ? null : active === 'true',
         hasDetailPicture: hasDetailPicture === 'true' };
@@ -328,10 +371,13 @@
       }
     }
     const target = new Set([...counts].filter(([, count]) => count === 1).map(([barcode]) => barcode));
+    const pictureWanted = new Set(inputRows.filter(row =>
+      !row.hasDetailPicture && target.has(row.barcode)
+    ).map(row => row.barcode));
     const inputHash = await digest(fileText);
 
     console.log(LOG, 'Strapi:', inputRows.length, '| уникальных непустых barcode:', target.size);
-    const first = parseGrid(await readPage(1), 1, target);
+    const first = parseGrid(await readPage(1), 1, target, pictureWanted);
     const firstOrderIssue = ascendingIssue(first.rows, null);
     if (firstOrderIssue) {
       throw Error('Страница 1: ' + firstOrderIssue +
@@ -378,7 +424,7 @@
       for (const item of first.rows) {
         if (!target.has(item.barcode)) continue;
         const ids = initial.get(item.barcode) ?? [];
-        ids.push({ id: item.id, active: item.active });
+        ids.push({ id: item.id, active: item.active, pictureUrl: item.pictureUrl });
         initial.set(item.barcode, ids);
       }
       state.hits = [...initial];
@@ -390,7 +436,12 @@
     if (seen.size !== state.seenIds.length ||
         [...hits].some(([barcode, ids]) => !target.has(barcode) ||
           !Array.isArray(ids) || ids.some(hit =>
-            !hit || !/^\d+$/.test(hit.id) || typeof hit.active !== 'boolean'))) {
+            !hit || !/^\d+$/.test(hit.id) || typeof hit.active !== 'boolean' ||
+            typeof hit.pictureUrl !== 'string' ||
+            (hit.pictureUrl && (
+              !pictureWanted.has(barcode) ||
+              !hit.pictureUrl.startsWith(location.origin + '/upload/iblock/')
+            ))))) {
       throw Error('Checkpoint повреждён (ID или barcode)');
     }
     if (seen.size !== Math.min(total, (state.nextPage - 1) * size)) {
@@ -410,7 +461,7 @@
       for (let page = from; page <= to; page++) {
         let validData = null;
         for (let attempt = 1; attempt <= 3; attempt++) {
-          const data = parseGrid(await readPage(page), page, target);
+          const data = parseGrid(await readPage(page), page, target, pictureWanted);
           const expected = page < pageCount ? size : total - size * (pageCount - 1);
           const pageIds = new Set();
           const repeated = data.rows.find(row => {
@@ -465,7 +516,7 @@
           seen.add(row.id);
           if (!target.has(row.barcode)) continue;
           const ids = hits.get(row.barcode) ?? [];
-          ids.push({ id: row.id, active: row.active });
+          ids.push({ id: row.id, active: row.active, pictureUrl: row.pictureUrl });
           hits.set(row.barcode, ids);
         }
       }
@@ -490,11 +541,11 @@
     const summary = {
       totalStrapi: inputRows.length, totalBitrix: total,
       candidates: 0, alreadySynced: 0, needsActive: 0, missingStrapiPicture: 0,
-      emptyBarcode: 0, notFound: 0,
+      noBitrixPicture: 0, emptyBarcode: 0, notFound: 0,
       duplicateStrapiBarcode: 0, duplicateBitrixBarcode: 0
     };
     for (const row of inputRows) {
-      let status, bitrixUrl = '';
+      let status, hit = null;
       if (!barcodeOf(row.barcode)) {
         status = 'EMPTY_BARCODE'; summary.emptyBarcode++;
       } else if ((counts.get(row.barcode) ?? 0) > 1) {
@@ -505,23 +556,32 @@
         else if (ids.length > 1) {
           status = 'DUPLICATE_BITRIX_BARCODE'; summary.duplicateBitrixBarcode++;
         } else {
-          const hit = ids[0];
+          hit = ids[0];
           const activeDiffers = row.active !== hit.active;
-          const pictureMissing = !row.hasDetailPicture;
-          if (!activeDiffers && !pictureMissing) {
+          const needsPicture = !row.hasDetailPicture && Boolean(hit.pictureUrl);
+          if (!activeDiffers && row.hasDetailPicture) {
             status = 'ALREADY_SYNCED';
             summary.alreadySynced++;
+          } else if (!activeDiffers && !needsPicture) {
+            // Ни active, ни Media не требуют записи; нет источника изображения.
+            status = 'NO_BITRIX_PICTURE';
+            summary.noBitrixPicture++;
           } else {
             status = 'MATCHED';
-            bitrixUrl = cardUrl(hit.id);
             summary.candidates++;
             if (activeDiffers) summary.needsActive++;
-            if (pictureMissing) summary.missingStrapiPicture++;
+            if (needsPicture) summary.missingStrapiPicture++;
           }
         }
       }
       if (status === 'MATCHED') {
-        mapped.push({ documentId: row.documentId, barcode: row.barcode, bitrixUrl });
+        mapped.push({
+          documentId: row.documentId, barcode: row.barcode,
+          active: row.active === null ? 'null' : String(row.active),
+          hasDetailPicture: String(row.hasDetailPicture),
+          bitrixId: hit.id, bitrixActive: String(hit.active),
+          pictureUrl: hit.pictureUrl
+        });
       } else if (status !== 'ALREADY_SYNCED') {
         diagnostics.push({ documentId: row.documentId, barcode: row.barcode,
           status, bitrixIds: (hits.get(row.barcode) ?? []).map(hit => hit.id).join('|') });
@@ -530,7 +590,9 @@
 
     window.bitrixAttributesMatchResult = { summary, rows: mapped, unmatched: diagnostics };
     window.bitrixAttributesMatchExport = () => {
-      downloadCsv(CFG.matchedFile, ['documentId', 'barcode', 'bitrixUrl'], mapped);
+      downloadCsv(CFG.matchedFile,
+        ['documentId', 'barcode', 'active', 'hasDetailPicture',
+          'bitrixId', 'bitrixActive', 'pictureUrl'], mapped);
       if (diagnostics.length) {
         setTimeout(() => downloadCsv(CFG.unmatchedFile,
           ['documentId', 'barcode', 'status', 'bitrixIds'], diagnostics), 750);
@@ -544,7 +606,8 @@
       'Bitrix предложений за', ((performance.now() - started) / 1000).toFixed(1),
       'сек. Изменений в Bitrix нет.');
     console.log(LOG, 'attributes-matched.csv: только кандидаты importer', mapped.length +
-      '; уже синхронизированы и исключены:', summary.alreadySynced + '.');
+      '; уже синхронизированы и исключены:', summary.alreadySynced +
+      '; без доступного изображения Bitrix и без изменений:', summary.noBitrixPicture + '.');
   } catch (error) {
     console.error(LOG, 'STOP. Итоговый CSV не создаётся при ошибке.', error);
   } finally {
