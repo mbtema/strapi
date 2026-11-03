@@ -8,7 +8,8 @@
   const CFG = {
     iblockId: '2',
     locale: 'ru',
-    pageConcurrency: 4,
+    // Bitrix Admin хранит состояние навигации в сессии: не запрашивать страницы параллельно.
+    pageConcurrency: 1,
     maxPages: 4000,
     matchedFile: 'attributes-matched.csv',
     unmatchedFile: 'attributes-unmatched.csv',
@@ -379,10 +380,39 @@
       }
       const from = state.nextPage;
       const to = Math.min(pageCount, from + CFG.pageConcurrency - 1);
-      const results = await Promise.all(
-        Array.from({ length: to - from + 1 }, (_, i) => from + i)
-          .map(async page => ({ page, data: parseGrid(await readPage(page), page, target) }))
-      );
+      const results = [];
+      for (let page = from; page <= to; page++) {
+        let validData = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const data = parseGrid(await readPage(page), page, target);
+          const expected = page < pageCount ? size : total - size * (pageCount - 1);
+          const pageIds = new Set();
+          const repeated = data.rows.find(row => {
+            if (seen.has(row.id) || pageIds.has(row.id)) return true;
+            pageIds.add(row.id);
+            return false;
+          });
+          const stable = data.rows.length === expected &&
+            (data.total === null || data.total === total) && !repeated;
+          if (stable) {
+            validData = data;
+            break;
+          }
+          const reason = repeated
+            ? 'повторился Bitrix ID ' + repeated.id
+            : 'ожидалось ' + expected + ' записей и total=' + total +
+              ', получено ' + data.rows.length + ' и total=' + data.total;
+          if (attempt === 3) {
+            throw Error('Страница ' + page + ': ' + reason +
+              ' после 3 последовательных чтений. Пагинация нестабильна; ' +
+              'checkpoint сохранён, CSV не сформирован.');
+          }
+          console.warn(LOG, 'Страница', page + ':', reason,
+            '| повторное последовательное чтение', (attempt + 1) + '/3');
+          await sleep(500 * attempt);
+        }
+        results.push({ page, data: validData });
+      }
 
       // Сначала валидируем ВСЮ группу, потом меняем checkpoint.
       const batchIds = new Set();
