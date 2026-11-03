@@ -1,7 +1,7 @@
 // Attributes: Bitrix IBLOCK_ID=2 -> Strapi api::attribute.attribute (locale=ru).
 // Node.js 20+; npm install cheerio. По умолчанию read-only dry-run; --apply записывает.
 // Рабочие CSV, журнал и отчёты — на рабочем столе Windows.
-// Перед --apply необходима проверка HTML реальной карточки предложения Bitrix.
+// Скачанный файл должен называться attributes-importer.mjs (на рабочем столе Windows).
 import * as cheerio from 'cheerio';
 import { readFile, writeFile, rename, appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';

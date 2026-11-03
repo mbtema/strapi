@@ -1,4 +1,6 @@
 # Импорт торговых предложений (Attributes). Скрипт и CSV — на рабочем столе Windows.
-# Без --apply: node --use-system-ca "$env:USERPROFILE\Desktop\attributes-importer.mjs"
-# Безопасный пилот: добавить --only=<documentId> к команде ниже.
+# Скачай attributes-importer.mjs из этой папки GitHub на рабочий стол.
+# Без --apply (dry-run): node --use-system-ca "$env:USERPROFILE\Desktop\attributes-importer.mjs"
+# Для пилота добавь --only=ТВОЙ_DOCUMENT_ID (без угловых скобок).
+# ВНИМАНИЕ: следующая команда с --apply выполняет запись!
 node --use-system-ca "$env:USERPROFILE\Desktop\attributes-importer.mjs" --apply
