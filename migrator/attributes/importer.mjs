@@ -15,7 +15,7 @@ const CFG = {
   input: 'attributes-matched.csv',
   timeoutMs: 30000,
   maxImageMB: 20,
-  pauseMs: 1500
+  pauseMs: 0
 };
 const AUTH = {
   jwtToken: 'ВСТАВЬ_JWT_STRAPI',
@@ -31,8 +31,8 @@ const RETRY_ERRORS = args.includes('--retry-errors');
 const ONLY = args.find(x => x.startsWith('--only='))?.slice(7) ?? null;
 const customPause = args.find(x => x.startsWith('--pause-ms='))?.slice(11);
 const PAUSE_MS = customPause == null ? CFG.pauseMs : Number(customPause);
-if (!Number.isSafeInteger(PAUSE_MS) || PAUSE_MS < 500 || PAUSE_MS > 60000) {
-  throw Error('Неверное --pause-ms (допустимо 500..60000)');
+if (!Number.isSafeInteger(PAUSE_MS) || PAUSE_MS < 0 || PAUSE_MS > 60000) {
+  throw Error('Неверное --pause-ms (допустимо 0..60000)');
 }
 if (ONLY !== null && !/^[a-z0-9]+$/i.test(ONLY)) throw Error('Неверное --only=documentId');
 for (const arg of args) {
@@ -463,7 +463,7 @@ async function main() {
   const items = APPLY ? journal.items : new Map();
   const selected = rows.filter(row => (!ONLY || row.documentId === ONLY));
   const totalMatched = selected.filter(row => row.bitrixUrl).length;
-  let pending = 0, done = 0, skipped = 0, errors = 0, review = 0;
+  let done = 0, planned = 0, skipped = 0, errors = 0, review = 0;
   let requestedStop = false;
   process.on('SIGINT', () => {
     requestedStop = true;
@@ -481,7 +481,7 @@ async function main() {
       skipped++;
       continue;
     }
-    if (attempted) await sleep(PAUSE_MS);
+    if (attempted && PAUSE_MS > 0) await sleep(PAUSE_MS);
     attempted++;
     const item = {
       status: 'running', phase: 'READ', attempts: (old?.attempts ?? 0) + 1,
@@ -501,6 +501,7 @@ async function main() {
         phase: 'COMPLETE', updatedAt: new Date().toISOString()
       });
       if (item.status === 'done') done++;
+      else if (item.status === 'dry_run') planned++;
       else skipped++;
     } catch (e) {
       Object.assign(item, { status: writeStarted ? 'review' : 'error',
@@ -511,15 +512,18 @@ async function main() {
     }
     if (APPLY) await journal.save(row.documentId, item);
     else items.set(row.documentId, item);
-    pending++;
-    if (attempted % 10 === 0 || attempted === selected.length) {
-      log('Обработано', attempted + '/' + selected.length, 'изменено:', done,
-        'не требовалось:', skipped, 'ошибок:', errors, 'проверить:', review);
+    if (attempted % 100 === 0 || attempted === selected.length) {
+      log('Обработано', attempted + '/' + selected.length,
+        APPLY ? 'изменено:' : 'запланировано:', APPLY ? done : planned,
+        'не требовалось/пропущено:', skipped, 'ошибок:', errors, 'проверить:', review);
+      // Полный CSV пересоздаём раз в 100 записей, а не после каждой:
+      // на больших входных файлах это устраняет квадратичные дисковые записи.
+      await atomicWrite(reportPath, reportCsv(rows, items));
     }
-    await atomicWrite(reportPath, reportCsv(rows, items));
   }
   await atomicWrite(reportPath, reportCsv(rows, items));
-  log('Итог: изменено', done, 'не требовалось/пропущено', skipped,
+  log('Итог:', APPLY ? 'изменено' : 'запланировано', APPLY ? done : planned,
+    'не требовалось/пропущено', skipped,
     'ошибки:', errors, 'ручная проверка:', review, 'отчёт:', reportPath);
   if (APPLY) log('Журнал:', journal.path, '| повтор с тем же CSV продолжит обработку');
   if (errors || review) process.exitCode = 1;
