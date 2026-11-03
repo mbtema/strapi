@@ -40,7 +40,8 @@ for (const arg of args) {
       !/^--only=[a-z0-9]+$/i.test(arg) &&
       !/^--pause-ms=\d+$/.test(arg)) throw Error('Неизвестный параметр: ' + arg);
 }
-const log = (...v) => console.log('[Attributes importer]', ...v);
+const LOG = '[Attributes importer]';
+const log = (...v) => console.log(LOG, ...v);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const UID = 'api::attribute.attribute';
 const strapiUrl = path => new URL(path, CFG.strapi).href;
@@ -363,11 +364,10 @@ async function upload(image, bitrixId, markWrite) {
   if (!Number.isSafeInteger(value?.id) || value.id <= 0) {
     throw Error('Upload вернул неизвестный Media ID, требуется ручная проверка');
   }
-  log('Media uploaded, ID=' + value.id);
   return value.id;
 }
 
-async function migrateOne(row, markWrite) {
+async function migrateOne(row, markWrite, markMediaUploaded) {
   if (!row.bitrixUrl) return { status: 'unmatched', changes: '', published: false,
     message: 'Для этого barcode Bitrix URL отсутствует' };
   const [initial, bitrix] = await Promise.all([readStrapi(row.documentId, null, row.barcode), readBitrix(row)]);
@@ -396,7 +396,11 @@ async function migrateOne(row, markWrite) {
 
   const payload = {};
   if (needsActive) payload.active = bitrix.active;
-  if (needsPicture) payload.detail_picture = await upload(bitrix.picture, row.bitrixId, markWrite);
+  if (needsPicture) {
+    payload.detail_picture = await upload(bitrix.picture, row.bitrixId, markWrite);
+    // Upload подтверждён: сохраняем Media ID в журнале даже если позже Save/Publish не пройдут.
+    await markMediaUploaded(payload.detail_picture);
+  }
   const beforePut = await readStrapi(row.documentId, null, row.barcode);
   if (snapshot(beforePut) !== snapshot(fresh)) {
     throw Error('Strapi изменился до сохранения, PUT отменён (загруженную Media нужно проверить)');
@@ -451,6 +455,73 @@ async function migrateOne(row, markWrite) {
     published: true, message: 'Save и Publish проверены на ru-версии' };
 }
 
+// Статистика собирается из текущих результатов + checkpoint, а не только из этой сессии.
+// Поэтому после перезапуска обработанные записи не начинают счётчик заново.
+function getProgress(selected, items) {
+  const stats = {
+    processed: 0, updated: 0, unchanged: 0, uploaded: 0,
+    unmatched: 0, errors: 0, review: 0, planned: 0
+  };
+  for (const row of selected) {
+    const item = items.get(row.documentId);
+    if (!item) continue;
+    const status = item.status;
+    if (['done', 'skipped_already', 'unmatched', 'review'].includes(status) ||
+        (status === 'error' && !(APPLY && RETRY_ERRORS)) ||
+        (status === 'dry_run' && !APPLY)) stats.processed++;
+    if (status === 'done') stats.updated++;
+    else if (status === 'skipped_already') stats.unchanged++;
+    else if (status === 'unmatched') stats.unmatched++;
+    else if (status === 'error') stats.errors++;
+    else if (status === 'review') stats.review++;
+    else if (status === 'dry_run') stats.planned++;
+    // Совместимость с журналами до появления отдельного Media-счётчика.
+    if (item.uploadedMediaId > 0 ||
+        (status === 'done' && String(item.changes ?? '').split('|').includes('detail_picture'))) {
+      stats.uploaded++;
+    }
+  }
+  return stats;
+}
+function formatSeconds(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const secs = Math.round(ms / 1000);
+  const days = Math.floor(secs / 86400);
+  const hours = Math.floor((secs % 86400) / 3600);
+  const mins = Math.floor((secs % 3600) / 60);
+  const seconds = secs % 60;
+  if (days) return days + 'д ' + hours + 'ч ' + mins + 'м';
+  if (hours) return hours + 'ч ' + mins + 'м';
+  if (mins) return mins + 'м ' + seconds + 'с';
+  return seconds + 'с';
+}
+const count = n => Number(n).toLocaleString('ru-RU');
+function showProgress(selected, items, attempted, startedAt) {
+  const stats = getProgress(selected, items);
+  const ratio = selected.length ? stats.processed / selected.length : 1;
+  const completed = Math.round(ratio * 24);
+  const bar = '#'.repeat(completed) + '.'.repeat(24 - completed);
+  const elapsed = Date.now() - startedAt;
+  // Скорость относится к текущему запуску; записи, загруженные из checkpoint,
+  // не учитываются в ней, иначе ETA после resume будет заведомо занижена.
+  const rate = attempted > 0 && elapsed > 0 ? attempted * 1000 / elapsed : 0;
+  const remaining = selected.length - stats.processed;
+  const eta = !remaining ? '0с' : rate ? formatSeconds(remaining / rate * 1000) : '—';
+  const rateText = rate ? (rate < 0.1 ? rate.toFixed(2) : rate.toFixed(1)) : '—';
+  console.log(LOG, APPLY ? 'APPLY' : 'DRY-RUN',
+    '[' + bar + ']', (ratio * 100).toFixed(1) + '%',
+    count(stats.processed) + '/' + count(selected.length),
+    '|', rateText, 'зап/сек', '| прошло', formatSeconds(elapsed), '| осталось ~', eta);
+  console.log(LOG,
+    APPLY ? 'Обновлено ' + count(stats.updated) : 'В плане ' + count(stats.planned),
+    '| Без изменений', count(stats.unchanged),
+    '| Загружено картинок', count(stats.uploaded),
+    '| Без пары', count(stats.unmatched),
+    '| Ошибок', count(stats.errors),
+    '| Проверить вручную', count(stats.review));
+  return stats;
+}
+
 async function main() {
   const missing = Object.entries(AUTH).filter(([,v]) =>
     !v || ['ВСТАВЬ_', 'PASTE_', '__LOCAL_'].some(prefix => v.startsWith(prefix)));
@@ -463,7 +534,7 @@ async function main() {
   const items = APPLY ? journal.items : new Map();
   const selected = rows.filter(row => (!ONLY || row.documentId === ONLY));
   const totalMatched = selected.filter(row => row.bitrixUrl).length;
-  let done = 0, planned = 0, skipped = 0, errors = 0, review = 0;
+  const startedAt = Date.now();
   let requestedStop = false;
   process.on('SIGINT', () => {
     requestedStop = true;
@@ -472,13 +543,13 @@ async function main() {
   log(APPLY ? 'APPLY' : 'DRY-RUN', 'строк для обработки:', selected.length,
     '| с URL Bitrix:', totalMatched, '| пауза:', PAUSE_MS + 'ms');
   let attempted = 0;
+  showProgress(selected, items, attempted, startedAt);
   for (const row of selected) {
     if (requestedStop) break;
     const old = items.get(row.documentId);
     // Сомнительный исход записи нельзя повторять автоматически.
     if (APPLY && old && (['done','skipped_already','unmatched','review'].includes(old.status) ||
       (old.status === 'error' && !RETRY_ERRORS))) {
-      skipped++;
       continue;
     }
     if (attempted && PAUSE_MS > 0) await sleep(PAUSE_MS);
@@ -496,26 +567,24 @@ async function main() {
       item.message = 'Операция записи могла выполниться; проверить вручную';
       if (APPLY) await journal.save(row.documentId, item);
     };
+    const markMediaUploaded = async mediaId => {
+      item.uploadedMediaId = mediaId;
+      if (APPLY) await journal.save(row.documentId, item);
+    };
     try {
-      Object.assign(item, await migrateOne(row, markWrite), {
+      Object.assign(item, await migrateOne(row, markWrite, markMediaUploaded), {
         phase: 'COMPLETE', updatedAt: new Date().toISOString()
       });
-      if (item.status === 'done') done++;
-      else if (item.status === 'dry_run') planned++;
-      else skipped++;
     } catch (e) {
       Object.assign(item, { status: writeStarted ? 'review' : 'error',
         message: e.message, updatedAt: new Date().toISOString() });
-      if (writeStarted) review++; else errors++;
-      console.error('[Attributes importer]', '[' + attempted + '/' + selected.length + ']',
-        row.documentId, item.status, item.message);
+      console.error('[Attributes importer] Ошибка', row.documentId,
+        '(' + item.status + '):', item.message);
     }
     if (APPLY) await journal.save(row.documentId, item);
     else items.set(row.documentId, item);
-    if (attempted % 10 === 0 || attempted === selected.length) {
-      log('Обработано', attempted + '/' + selected.length,
-        APPLY ? 'изменено:' : 'запланировано:', APPLY ? done : planned,
-        'не требовалось/пропущено:', skipped, 'ошибок:', errors, 'проверить:', review);
+    if (attempted % 100 === 0) {
+      showProgress(selected, items, attempted, startedAt);
     }
     if (attempted % 100 === 0 || attempted === selected.length) {
       // Полный CSV пересоздаём раз в 100 записей, а не после каждой:
@@ -524,10 +593,10 @@ async function main() {
     }
   }
   await atomicWrite(reportPath, reportCsv(rows, items));
-  log('Итог:', APPLY ? 'изменено' : 'запланировано', APPLY ? done : planned,
-    'не требовалось/пропущено', skipped,
-    'ошибки:', errors, 'ручная проверка:', review, 'отчёт:', reportPath);
+  const summary = showProgress(selected, items, attempted, startedAt);
+  log('Итог:', count(summary.processed) + '/' + count(selected.length),
+    '| затрачено', formatSeconds(Date.now() - startedAt), '| отчёт:', reportPath);
   if (APPLY) log('Журнал:', journal.path, '| повтор с тем же CSV продолжит обработку');
-  if (errors || review) process.exitCode = 1;
+  if (summary.errors || summary.review) process.exitCode = 1;
 }
 main().catch(e => { console.error('[Attributes importer] STOP:', e.message); process.exitCode = 1; });
