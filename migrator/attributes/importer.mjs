@@ -512,18 +512,37 @@ function formatSeconds(ms) {
   return seconds + 'с';
 }
 const count = n => Number(n).toLocaleString('ru-RU');
-// Сводка выводится отдельно; подробный прогресс каждой записи не использует
-// циклический обход всех строк CSV на каждом шаге.
-function showSummary(selected, items, startedAt) {
+// После каждого RESULT показываем счётчик без пересчёта всех строк CSV.
+// Полная сводка и прогресс-бар строятся только при старте, каждые 100 записей
+// и в конце. Скорость/ETA считают только работу текущего запуска, без checkpoint.
+function progressMetrics(total, completed, attempted, startedAt) {
+  const elapsed = Math.max(0, Date.now() - startedAt);
+  const fraction = total ? Math.min(1, completed / total) : 1;
+  const rate = attempted > 0 && elapsed > 0 ? attempted * 1000 / elapsed : 0;
+  const remaining = Math.max(0, total - completed);
+  const width = Math.round(fraction * 24);
+  return {
+    percent: (fraction * 100).toFixed(1) + '%',
+    bar: '[' + '#'.repeat(width) + '.'.repeat(24 - width) + ']',
+    speed: rate ? (rate < 0.1 ? rate.toFixed(2) : rate.toFixed(1)) : '—',
+    eta: remaining === 0 ? '0с' : rate ? formatSeconds(remaining / rate * 1000) : '—',
+    elapsed: formatSeconds(elapsed)
+  };
+}
+function showProgress(selected, items, completed, attempted, startedAt) {
   const stats = getProgress(selected, items);
-  log('СВОДКА: обработано ' + count(stats.processed) + '/' + count(selected.length) +
-    ' | обновлено ' + count(stats.updated) +
-    ' | без изменений ' + count(stats.unchanged) +
-    ' | загружено картинок ' + count(stats.uploaded) +
-    ' | нет пары ' + count(stats.unmatched) +
-    ' | ошибок ' + count(stats.errors) +
-    ' | проверить вручную ' + count(stats.review) +
-    ' | прошло ' + formatSeconds(Date.now() - startedAt));
+  const p = progressMetrics(selected.length, completed, attempted, startedAt);
+  log(APPLY ? 'APPLY' : 'DRY-RUN', p.bar, p.percent,
+    count(completed) + '/' + count(selected.length),
+    '| за запуск', count(attempted),
+    '| скорость', p.speed, 'зап/сек',
+    '| прошло', p.elapsed, '| осталось ~', p.eta);
+  log(APPLY ? 'Обновлено ' + count(stats.updated) : 'В плане ' + count(stats.planned),
+    '| Без изменений', count(stats.unchanged),
+    '| Загружено картинок', count(stats.uploaded),
+    '| Без пары', count(stats.unmatched),
+    '| Ошибок', count(stats.errors),
+    '| Проверить вручную', count(stats.review));
   return stats;
 }
 
@@ -548,7 +567,8 @@ async function main() {
   log(APPLY ? 'APPLY' : 'DRY-RUN', 'строк для обработки:', selected.length,
     '| с URL Bitrix:', totalMatched, '| пауза:', PAUSE_MS + 'ms');
   let attempted = 0;
-  showSummary(selected, items, startedAt);
+  const alreadyCompleted = getProgress(selected, items).processed;
+  showProgress(selected, items, alreadyCompleted, attempted, startedAt);
   for (const [index, row] of selected.entries()) {
     if (requestedStop) break;
     const old = items.get(row.documentId);
@@ -596,8 +616,15 @@ async function main() {
     }
     if (APPLY) await journal.save(row.documentId, item);
     else items.set(row.documentId, item);
+    const completed = Math.min(selected.length, alreadyCompleted + attempted);
+    const progress = progressMetrics(selected.length, completed, attempted, startedAt);
+    trace('СЧЁТЧИК: обработано ' + count(completed) + '/' + count(selected.length) +
+      ' (' + progress.percent + ')' +
+      ' | за запуск ' + count(attempted) +
+      ' | скорость ' + progress.speed + ' зап/сек' +
+      ' | осталось ~ ' + progress.eta);
     if (attempted % 100 === 0) {
-      showSummary(selected, items, startedAt);
+      showProgress(selected, items, completed, attempted, startedAt);
     }
     if (attempted % 100 === 0 || attempted === selected.length) {
       // Полный CSV пересоздаём раз в 100 записей, а не после каждой:
@@ -606,8 +633,9 @@ async function main() {
     }
   }
   await atomicWrite(reportPath, reportCsv(rows, items));
-  const summary = showSummary(selected, items, startedAt);
-  log('Итог:', count(summary.processed) + '/' + count(selected.length),
+  const completed = Math.min(selected.length, alreadyCompleted + attempted);
+  const summary = showProgress(selected, items, completed, attempted, startedAt);
+  log('Итог:', count(completed) + '/' + count(selected.length),
     '| затрачено', formatSeconds(Date.now() - startedAt), '| отчёт:', reportPath);
   if (APPLY) log('Журнал:', journal.path, '| повтор с тем же CSV продолжит обработку');
   if (summary.errors || summary.review) process.exitCode = 1;
