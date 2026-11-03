@@ -28,6 +28,7 @@ const args = process.argv.slice(2);
 const APPLY = args.includes('--apply');
 const VERBOSE = args.includes('--verbose');
 const RETRY_ERRORS = args.includes('--retry-errors');
+const PROBE_MEDIA = args.includes('--probe-media');
 const ONLY = args.find(x => x.startsWith('--only='))?.slice(7) ?? null;
 const customPause = args.find(x => x.startsWith('--pause-ms='))?.slice(11);
 const PAUSE_MS = customPause == null ? CFG.pauseMs : Number(customPause);
@@ -35,8 +36,11 @@ if (!Number.isSafeInteger(PAUSE_MS) || PAUSE_MS < 0 || PAUSE_MS > 60000) {
   throw Error('Неверное --pause-ms (допустимо 0..60000)');
 }
 if (ONLY !== null && !/^[a-z0-9]+$/i.test(ONLY)) throw Error('Неверное --only=documentId');
+if (PROBE_MEDIA && (APPLY || !ONLY)) {
+  throw Error('Для проверки без записи используй --probe-media --only=DOCUMENT_ID без --apply');
+}
 for (const arg of args) {
-  if (!['--apply', '--verbose', '--retry-errors'].includes(arg) &&
+  if (!['--apply', '--verbose', '--retry-errors', '--probe-media'].includes(arg) &&
       !/^--only=[a-z0-9]+$/i.test(arg) &&
       !/^--pause-ms=\d+$/.test(arg)) throw Error('Неизвестный параметр: ' + arg);
 }
@@ -128,8 +132,16 @@ async function inputRows() {
   return { rows, hash: createHash('sha256').update(raw).digest('hex').slice(0, 16) };
 }
 
+function bitrixBlocked(message) {
+  const error = new Error(message);
+  error.code = 'BITRIX_BLOCKED';
+  return error;
+}
+
 async function http(url, options = {}, allowReadRetry = false) {
   const method = options.method ?? 'GET';
+  const target = new URL(url);
+  const fromBitrix = target.origin === new URL(CFG.bitrix).origin;
   const max = method === 'GET' && allowReadRetry ? 3 : 1;
   for (let attempt = 1; attempt <= max; attempt++) {
     let response;
@@ -145,8 +157,20 @@ async function http(url, options = {}, allowReadRetry = false) {
       await sleep(400 * attempt);
       continue;
     }
+    // При ограничении или истечении сессии Bitrix — немедленно стоп.
+    // Не делаем retry и не переходим к тысячам следующих карточек.
+    if (fromBitrix && ([401, 403, 429].includes(response.status) || response.status >= 500)) {
+      await response.body?.cancel().catch(() => {});
+      throw bitrixBlocked('Bitrix вернул HTTP ' + response.status + ' для ' +
+        target.pathname + '. Доступ ограничен; импорт остановлен, без повторов.');
+    }
     if (response.status >= 300 && response.status < 400) {
-      throw Error(method + ' ' + new URL(url).pathname + ': redirect ' + response.status);
+      if (fromBitrix) {
+        await response.body?.cancel().catch(() => {});
+        throw bitrixBlocked('Bitrix перенаправляет ' + target.pathname +
+          ' (HTTP ' + response.status + '). Сессия/публичный доступ не подтверждены.');
+      }
+      throw Error(method + ' ' + target.pathname + ': redirect ' + response.status);
     }
     if ((response.status === 429 || response.status >= 500) && attempt < max) {
       await response.body?.cancel().catch(() => {});
@@ -159,9 +183,15 @@ async function http(url, options = {}, allowReadRetry = false) {
   }
 }
 const sHeaders = () => ({ Authorization: 'Bearer ' + AUTH.jwtToken, Accept: 'application/json' });
-const bHeaders = (accept = 'text/html') => ({
+const bHeaders = () => ({
   Cookie: AUTH.bitrixCookies,
-  Accept: accept,
+  Accept: 'text/html',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/143.0 Safari/537.36'
+});
+// Оригиналы /upload/iblock скачиваем как публичные файлы, без сессии Bitrix.
+// При отказе доступа не подставляем Cookie автоматически.
+const publicImageHeaders = () => ({
+  Accept: 'image/*',
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/143.0 Safari/537.36'
 });
 
@@ -280,7 +310,15 @@ function parseBitrix(html, expectedBarcode, expectedId) {
 
 async function readBitrix(row) {
   const html = await (await http(row.bitrixUrl, { headers: bHeaders() }, true)).text();
-  return parseBitrix(html, row.barcode, row.bitrixId);
+  try {
+    return parseBitrix(html, row.barcode, row.bitrixId);
+  } catch (e) {
+    if (e.message.includes('Bitrix вернул не карточку предложения')) {
+      throw bitrixBlocked('Bitrix вернул не карточку предложения (возможно, сессия истекла). ' +
+        'Импорт остановлен, проверь авторизацию.');
+    }
+    throw e;
+  }
 }
 function getMime(ct) {
   const type = ct.split(';')[0].trim().toLowerCase();
@@ -329,24 +367,39 @@ function reportCsv(rows, items) {
   ].join('\r\n');
 }
 
-async function upload(image, bitrixId, markWrite, trace) {
+async function downloadOriginal(image, trace) {
   const url = new URL(image.url);
   if (url.origin !== new URL(CFG.bitrix).origin ||
       !url.pathname.startsWith('/upload/iblock/') ||
       url.pathname.includes('/resize_cache/')) {
     throw Error('Небезопасный URL оригинала изображения');
   }
-  trace('MEDIA_DOWNLOAD: скачиваю оригинал изображения Bitrix, fileId=' + image.fileId);
-  const response = await http(url.href, { headers: bHeaders('image/*') }, true);
-  const mime = getMime(response.headers.get('content-type') ?? '');
+  trace('MEDIA_DOWNLOAD_PUBLIC: GET оригинала без Cookie Bitrix, fileId=' + image.fileId);
+  // Без retry: если сервер ограничивает доступ, не увеличиваем нагрузку.
+  const response = await http(url.href, { headers: publicImageHeaders() });
+  const contentType = response.headers.get('content-type') ?? '';
+  let mime;
+  try {
+    mime = getMime(contentType);
+  } catch {
+    await response.body?.cancel().catch(() => {});
+    throw bitrixBlocked('Bitrix вернул вместо изображения ' + (contentType || 'неизвестный MIME') +
+      '. Публичный доступ не подтверждён, Cookie не используется.');
+  }
   const length = Number(response.headers.get('content-length'));
   if (Number.isFinite(length) && length > CFG.maxImageMB * 1048576) {
+    await response.body?.cancel().catch(() => {});
     throw Error('Слишком большой файл Bitrix');
   }
   const buf = Buffer.from(await response.arrayBuffer());
   if (!buf.length || buf.length > CFG.maxImageMB * 1048576) {
     throw Error('Пустой или слишком большой файл Bitrix');
   }
+  return { buf, mime };
+}
+
+async function upload(image, bitrixId, markWrite, trace) {
+  const { buf, mime } = await downloadOriginal(image, trace);
   const filename = 'bitrix-attribute-' + bitrixId + '-detail-' + image.fileId + '.' + mime.ext;
   const form = new FormData();
   form.append('files', new Blob([buf], { type: mime.type }), filename);
@@ -553,6 +606,22 @@ async function main() {
     throw Error('В локальной копии заполни AUTH: ' + missing.map(([k])=>k).join(', '));
   }
   const { rows, hash } = await inputRows();
+  if (PROBE_MEDIA) {
+    // Ровно одна карточка Bitrix + одно анонимное чтение оригинала, без Strapi POST/PUT.
+    const row = rows.find(item => item.documentId === ONLY);
+    if (!row?.bitrixUrl) throw Error('--only: нет подходящей карточки Bitrix в CSV');
+    log('PROBE_MEDIA: проверяю одну запись, без изменений Strapi:', row.documentId);
+    const offer = await readBitrix(row);
+    if (!offer.picture) {
+      log('PROBE_MEDIA: у выбранного предложения нет detail_picture в Bitrix. Записей нет.');
+      return;
+    }
+    const { buf, mime } = await downloadOriginal(offer.picture, log);
+    log('PROBE_MEDIA_OK: публичное изображение доступно без Cookie; тип',
+      mime.type, '| байт', buf.length, '| Bitrix fileId', offer.picture.fileId,
+      '| Strapi не менялся.');
+    return;
+  }
   const journal = await readJournal(hash);
   const reportPath = resolve(APPLY ? 'attributes-import-report.csv' : 'attributes-import-plan.csv');
   const items = APPLY ? journal.items : new Map();
@@ -613,6 +682,11 @@ async function main() {
       Object.assign(item, { status: writeStarted ? 'review' : 'error',
         message: e.message, updatedAt: new Date().toISOString() });
       console.error(LOG, prefix, 'ERROR (' + item.status + '):', item.message);
+      if (e.code === 'BITRIX_BLOCKED') {
+        requestedStop = true;
+        console.error(LOG, 'STOP: Bitrix ограничил доступ. ' +
+          'Не возобновляй массовый импорт до проверки. Checkpoint и отчёт сохраняются.');
+      }
     }
     if (APPLY) await journal.save(row.documentId, item);
     else items.set(row.documentId, item);
