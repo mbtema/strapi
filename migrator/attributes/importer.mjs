@@ -512,10 +512,12 @@ async function main() {
     }
     if (APPLY) await journal.save(row.documentId, item);
     else items.set(row.documentId, item);
-    if (attempted % 100 === 0 || attempted === selected.length) {
+    if (attempted % 10 === 0 || attempted === selected.length) {
       log('Обработано', attempted + '/' + selected.length,
         APPLY ? 'изменено:' : 'запланировано:', APPLY ? done : planned,
         'не требовалось/пропущено:', skipped, 'ошибок:', errors, 'проверить:', review);
+    }
+    if (attempted % 100 === 0 || attempted === selected.length) {
       // Полный CSV пересоздаём раз в 100 записей, а не после каждой:
       // на больших входных файлах это устраняет квадратичные дисковые записи.
       await atomicWrite(reportPath, reportCsv(rows, items));
