@@ -13,7 +13,7 @@
     maxPages: 4000,
     matchedFile: 'attributes-matched.csv',
     unmatchedFile: 'attributes-unmatched.csv',
-    checkpointVersion: 'v2'
+    checkpointVersion: 'v3-id-asc'
   };
   const AUTH = {
     // В DevTools браузер отправляет Bitrix Cookie сам (credentials: include).
@@ -135,6 +135,10 @@
     u.searchParams.set('lang', CFG.locale);
     u.searchParams.set('find_el_y', 'Y');
     u.searchParams.set('apply_filter', 'Y');
+    // Подтверждено Network: сортировка Bitrix main.ui.grid — by=id&order=asc.
+    // Применяем к КАЖДОЙ странице, а не полагаемся только на состояние сессии.
+    u.searchParams.set('by', 'id');
+    u.searchParams.set('order', 'asc');
     if (page === 1) u.searchParams.set('clear_filter', 'Y');
     else u.searchParams.set('PAGEN_1', String(page));
     return u.href;
@@ -262,6 +266,21 @@
     return { rows, total: parseTotal(totalText), totalText: trim(totalText) };
   }
 
+  // Не полагаемся на видимую стрелку в браузере: каждый ответ GET обязан
+  // содержать строго возрастающие ID, включая переход между страницами.
+  // BigInt исключает ошибки числового округления больших идентификаторов.
+  function ascendingIssue(rows, previousId) {
+    let prev = previousId == null ? null : BigInt(previousId);
+    for (const row of rows) {
+      const current = BigInt(row.id);
+      if (prev !== null && current <= prev) {
+        return 'нарушен ID ASC: ' + row.id + ' после ' + prev;
+      }
+      prev = current;
+    }
+    return null;
+  }
+
   function digest(text) {
     return crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
       .then(buffer => [...new Uint8Array(buffer)].slice(0, 12)
@@ -313,6 +332,11 @@
 
     console.log(LOG, 'Strapi:', inputRows.length, '| уникальных непустых barcode:', target.size);
     const first = parseGrid(await readPage(1), 1, target);
+    const firstOrderIssue = ascendingIssue(first.rows, null);
+    if (firstOrderIssue) {
+      throw Error('Страница 1: ' + firstOrderIssue +
+        '. Bitrix не применил сортировку ID ASC; не продолжаю без проверки Network.');
+    }
     if (first.total === null) {
       throw Error('Bitrix не вернул однозначный total списка (поле .main-grid-panel-total): ' +
         JSON.stringify(first.totalText) + '. Пришли Network/HTML grid для точной пагинации.');
@@ -337,7 +361,8 @@
           state?.pageCount !== pageCount || state?.firstSignature !== firstSignature ||
           !Number.isSafeInteger(state.nextPage) || state.nextPage < 2 ||
           state.nextPage > pageCount + 1 ||
-          !Array.isArray(state.seenIds) || !Array.isArray(state.hits)) {
+          !Array.isArray(state.seenIds) || !Array.isArray(state.hits) ||
+          (total > 0 && !/^\d+$/.test(state.lastId ?? ''))) {
         throw Error('Checkpoint не соответствует текущему списку Bitrix. ' +
           'Не продолжаю, чтобы не пропустить/дублировать предложения.');
       }
@@ -346,6 +371,7 @@
       state = {
         total, pageSize: size, pageCount, firstSignature, nextPage: 2,
         seenIds: first.rows.map(row => row.id),
+        lastId: first.rows.at(-1)?.id ?? null,
         hits: []
       };
       const initial = new Map();
@@ -392,16 +418,17 @@
             pageIds.add(row.id);
             return false;
           });
+          const orderIssue = ascendingIssue(data.rows, state.lastId);
           const stable = data.rows.length === expected &&
-            (data.total === null || data.total === total) && !repeated;
+            (data.total === null || data.total === total) && !repeated && !orderIssue;
           if (stable) {
             validData = data;
             break;
           }
-          const reason = repeated
+          const reason = orderIssue || (repeated
             ? 'повторился Bitrix ID ' + repeated.id
             : 'ожидалось ' + expected + ' записей и total=' + total +
-              ', получено ' + data.rows.length + ' и total=' + data.total;
+              ', получено ' + data.rows.length + ' и total=' + data.total);
           if (attempt === 3) {
             throw Error('Страница ' + page + ': ' + reason +
               ' после 3 последовательных чтений. Пагинация нестабильна; ' +
@@ -443,6 +470,7 @@
         }
       }
       state.nextPage = to + 1;
+      state.lastId = results.at(-1)?.data.rows.at(-1)?.id ?? state.lastId;
       state.seenIds = [...seen];
       state.hits = [...hits];
       localStorage.setItem(checkpointKey, JSON.stringify(state));
