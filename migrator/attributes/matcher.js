@@ -1,7 +1,7 @@
 // Этап 2: Bitrix Admin -> Console -> attributes-matched.csv
-// Вход: attributes-config.csv (documentId;barcode).
-// Выход: те же строки + bitrixUrl; у неподтверждённых совпадений URL пуст.
-// Чтение IBLOCK_ID=2 / PROPERTY_19, только GET; никакого изменения элементов.
+// Вход: attributes-config.csv (documentId;barcode;active;hasDetailPicture).
+// Выход: только кандидаты importer (documentId;barcode;bitrixUrl).
+// Чтение IBLOCK_ID=2 / PROPERTY_19 + ACTIVE, только GET.
 (async () => {
   'use strict';
 
@@ -12,7 +12,7 @@
     maxPages: 4000,
     matchedFile: 'attributes-matched.csv',
     unmatchedFile: 'attributes-unmatched.csv',
-    checkpointVersion: 'v1'
+    checkpointVersion: 'v2'
   };
   const AUTH = {
     // В DevTools браузер отправляет Bitrix Cookie сам (credentials: include).
@@ -179,7 +179,7 @@
     return Number.isSafeInteger(number) && number >= 0 ? number : null;
   }
 
-  function parseGrid(html, page) {
+  function parseGrid(html, page, target) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const matches = [...doc.querySelectorAll('table.main-grid-table')].map(table => {
       const head = [...table.querySelectorAll('thead tr.main-grid-row-head > th')];
@@ -191,6 +191,11 @@
         'Убедись, что колонка «Штрихкод» отображается в списке, либо пришли Network/HTML таблицы.');
     }
     const { table, barcodeIndex, heads } = matches[0];
+    const activeIndex = heads.findIndex(th => th.dataset.name === 'ACTIVE');
+    if (activeIndex < 0) {
+      throw Error('Страница ' + page + ': нет колонки ACTIVE. ' +
+        'В настройках таблицы Bitrix включи «Активность» и повтори matcher.');
+    }
     if (!heads.some(th => th.dataset.name === 'ID')) {
       throw Error('Страница ' + page + ': в таблице нет заголовка ID');
     }
@@ -225,7 +230,29 @@
         throw Error('Страница ' + page + ': ID ссылки не совпадает с ID строки ' + id);
       }
       const barcode = barcodeOf(cells[barcodeIndex].textContent);
-      return { id, barcode };
+      // Для проверки уникальности учитываем весь Bitrix, а ACTIVE читаем только
+      // для barcode из Strapi, иначе неизвестная разметка чужих строк остановит аудит.
+      if (!target.has(barcode)) return { id, barcode, active: null };
+      const activeCell = cells[activeIndex];
+      const content = activeCell?.querySelector('.main-grid-cell-content') ?? activeCell;
+      const value = trim(content?.textContent).toLowerCase();
+      const iconLabels = [...(content?.querySelectorAll('img[alt],img[title]') ?? [])]
+        .flatMap(img => [img.getAttribute('alt'), img.getAttribute('title')])
+        .map(v => trim(v).toLowerCase()).filter(Boolean);
+      const parseActive = text => {
+        if (['да','y','yes','true','1','активен'].includes(text)) return true;
+        if (['нет','n','no','false','0','неактивен'].includes(text)) return false;
+        return null;
+      };
+      const candidates = [...new Set([value, ...iconLabels].filter(Boolean))];
+      const parsed = candidates.map(parseActive).filter(v => v !== null);
+      if (!parsed.length || new Set(parsed).size !== 1 ||
+          (value && parseActive(value) === null)) {
+        throw Error('Страница ' + page + ', Bitrix ID ' + id +
+          ': не удалось прочитать ACTIVE (значение: ' +
+          JSON.stringify(value.slice(0, 70)) + '). Нужен HTML ячейки ACTIVE.');
+      }
+      return { id, barcode, active: parsed[0] };
     });
 
     const totalText = doc.querySelector(
@@ -253,12 +280,21 @@
     const fileText = await file.text();
     const csv = parseCsv(fileText);
     const header = csv.shift();
-    if (!header || header.join(';') !== 'documentId;barcode' || !csv.length ||
-        csv.some(row => row.length !== 2)) {
-      throw Error('Нужен непустой attributes-config.csv со строго двумя колонками: documentId;barcode');
+    if (!header || header.join(';') !== 'documentId;barcode;active;hasDetailPicture' ||
+        !csv.length || csv.some(row => row.length !== 4)) {
+      throw Error('Нужен новый attributes-config.csv: ' +
+        'documentId;barcode;active;hasDetailPicture. Запусти обновлённый config.js.');
     }
 
-    const inputRows = csv.map(([documentId, barcode]) => ({ documentId, barcode }));
+    const inputRows = csv.map(([documentId, barcode, active, hasDetailPicture], index) => {
+      if (!['true','false','null'].includes(active) ||
+          !['true','false'].includes(hasDetailPicture)) {
+        throw Error('CSV строка ' + (index + 2) + ': некорректные active/hasDetailPicture');
+      }
+      return { documentId, barcode,
+        active: active === 'null' ? null : active === 'true',
+        hasDetailPicture: hasDetailPicture === 'true' };
+    });
     if (inputRows.some(row => !row.documentId || row.documentId !== row.documentId.trim())) {
       throw Error('Пустой или некорректный documentId в исходном CSV');
     }
@@ -275,7 +311,7 @@
     const inputHash = await digest(fileText);
 
     console.log(LOG, 'Strapi:', inputRows.length, '| уникальных непустых barcode:', target.size);
-    const first = parseGrid(await readPage(1), 1);
+    const first = parseGrid(await readPage(1), 1, target);
     if (first.total === null) {
       throw Error('Bitrix не вернул однозначный total списка (поле .main-grid-panel-total): ' +
         JSON.stringify(first.totalText) + '. Пришли Network/HTML grid для точной пагинации.');
@@ -315,7 +351,7 @@
       for (const item of first.rows) {
         if (!target.has(item.barcode)) continue;
         const ids = initial.get(item.barcode) ?? [];
-        ids.push(item.id);
+        ids.push({ id: item.id, active: item.active });
         initial.set(item.barcode, ids);
       }
       state.hits = [...initial];
@@ -326,7 +362,8 @@
     const hits = new Map(state.hits);
     if (seen.size !== state.seenIds.length ||
         [...hits].some(([barcode, ids]) => !target.has(barcode) ||
-          !Array.isArray(ids) || ids.some(id => !/^\d+$/.test(id)))) {
+          !Array.isArray(ids) || ids.some(hit =>
+            !hit || !/^\d+$/.test(hit.id) || typeof hit.active !== 'boolean'))) {
       throw Error('Checkpoint повреждён (ID или barcode)');
     }
     if (seen.size !== Math.min(total, (state.nextPage - 1) * size)) {
@@ -344,7 +381,7 @@
       const to = Math.min(pageCount, from + CFG.pageConcurrency - 1);
       const results = await Promise.all(
         Array.from({ length: to - from + 1 }, (_, i) => from + i)
-          .map(async page => ({ page, data: parseGrid(await readPage(page), page) }))
+          .map(async page => ({ page, data: parseGrid(await readPage(page), page, target) }))
       );
 
       // Сначала валидируем ВСЮ группу, потом меняем checkpoint.
@@ -371,7 +408,7 @@
           seen.add(row.id);
           if (!target.has(row.barcode)) continue;
           const ids = hits.get(row.barcode) ?? [];
-          ids.push(row.id);
+          ids.push({ id: row.id, active: row.active });
           hits.set(row.barcode, ids);
         }
       }
@@ -394,7 +431,8 @@
     const diagnostics = [];
     const summary = {
       totalStrapi: inputRows.length, totalBitrix: total,
-      matched: 0, emptyBarcode: 0, notFound: 0,
+      candidates: 0, alreadySynced: 0, needsActive: 0, missingStrapiPicture: 0,
+      emptyBarcode: 0, notFound: 0,
       duplicateStrapiBarcode: 0, duplicateBitrixBarcode: 0
     };
     for (const row of inputRows) {
@@ -409,13 +447,26 @@
         else if (ids.length > 1) {
           status = 'DUPLICATE_BITRIX_BARCODE'; summary.duplicateBitrixBarcode++;
         } else {
-          status = 'MATCHED'; bitrixUrl = cardUrl(ids[0]); summary.matched++;
+          const hit = ids[0];
+          const activeDiffers = row.active !== hit.active;
+          const pictureMissing = !row.hasDetailPicture;
+          if (!activeDiffers && !pictureMissing) {
+            status = 'ALREADY_SYNCED';
+            summary.alreadySynced++;
+          } else {
+            status = 'MATCHED';
+            bitrixUrl = cardUrl(hit.id);
+            summary.candidates++;
+            if (activeDiffers) summary.needsActive++;
+            if (pictureMissing) summary.missingStrapiPicture++;
+          }
         }
       }
-      mapped.push({ ...row, bitrixUrl });
-      if (status !== 'MATCHED') {
+      if (status === 'MATCHED') {
+        mapped.push({ documentId: row.documentId, barcode: row.barcode, bitrixUrl });
+      } else if (status !== 'ALREADY_SYNCED') {
         diagnostics.push({ documentId: row.documentId, barcode: row.barcode,
-          status, bitrixIds: (hits.get(row.barcode) ?? []).join('|') });
+          status, bitrixIds: (hits.get(row.barcode) ?? []).map(hit => hit.id).join('|') });
       }
     }
 
@@ -434,7 +485,8 @@
     console.log(LOG, 'Готово. Проверено все', total,
       'Bitrix предложений за', ((performance.now() - started) / 1000).toFixed(1),
       'сек. Изменений в Bitrix нет.');
-    console.log(LOG, 'В attributes-matched.csv сохранены все строки Strapi; только уникальные точные совпадения имеют bitrixUrl.');
+    console.log(LOG, 'attributes-matched.csv: только кандидаты importer', mapped.length +
+      '; уже синхронизированы и исключены:', summary.alreadySynced + '.');
   } catch (error) {
     console.error(LOG, 'STOP. Итоговый CSV не создаётся при ошибке.', error);
   } finally {

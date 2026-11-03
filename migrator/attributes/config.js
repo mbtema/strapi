@@ -1,6 +1,6 @@
 // Этап 1: Strapi Admin -> Console -> attributes-config.csv
 // Только GET. Все торговые предложения locale=ru, без фильтров active/published.
-// CSV: documentId;barcode. Пустой barcode сохраняется пустой строкой.
+// CSV: documentId;barcode;active;hasDetailPicture. Только GET, без изменения CMS.
 (async () => {
   'use strict';
 
@@ -86,6 +86,9 @@
         sort: 'barcode:ASC',
         locale: CFG.locale
       });
+      // Для массового экспорта явно запрашиваем только ID медиа, а не весь файл.
+      // Если Content Manager не вернёт поле, экспорт остановится без CSV.
+      params.append('populate[detail_picture][fields][0]', 'id');
       return getJson('/content-manager/collection-types/' + UID + '?' + params, page);
     }
 
@@ -99,6 +102,19 @@
     }
 
     const pages = new Array(Math.max(pageCount, 1));
+
+    // Наличие Media подтверждаем по реальному ID. Не считаем любой непустой
+    // объект медиа: таблица может возвращать служебную структуру без файла.
+    function hasDetailPicture(raw, docId) {
+      const value = raw && typeof raw === 'object' && 'data' in raw ? raw.data : raw;
+      if (value == null || value === '') return false;
+      if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return true;
+      if (typeof value === 'string' && /^\\d+$/.test(value) && Number(value) > 0) return true;
+      if (value && !Array.isArray(value) && typeof value === 'object' &&
+          Number.isSafeInteger(value.id) && value.id > 0) return true;
+      throw Error('Strapi ' + docId + ': detail_picture получен в неизвестном формате. ' +
+        'Массовый список должен возвращать null или Media с числовым id; CSV не создан.');
+    }
 
     function parsePage(json, page) {
       const list = listOf(json);
@@ -129,9 +145,19 @@
           throw Error('Страница ' + page + ', ' + item.documentId +
             ': barcode не строка; экспорт остановлен во избежание потери ведущих нулей');
         }
+        if (!Object.prototype.hasOwnProperty.call(item, 'active') ||
+            (item.active !== true && item.active !== false && item.active !== null)) {
+          throw Error('Strapi ' + item.documentId + ': нет корректного active в list API; CSV не создан.');
+        }
+        if (!Object.prototype.hasOwnProperty.call(item, 'detail_picture')) {
+          throw Error('Strapi ' + item.documentId +
+            ': list API не вернул detail_picture. Проверь Network/populate; CSV не создан.');
+        }
         return {
           documentId: item.documentId,
-          barcode: item.barcode ?? ''
+          barcode: item.barcode ?? '',
+          active: item.active === null ? 'null' : String(item.active),
+          hasDetailPicture: String(hasDetailPicture(item.detail_picture, item.documentId))
         };
       });
     }
@@ -182,8 +208,9 @@
     // CSV без преобразования barcode в число: ведущие нули сохраняются.
     const quote = value => '"' + String(value).replace(/"/g, '""') + '"';
     const csv = '\uFEFF' + [
-      'documentId;barcode',
-      ...rows.map(row => [row.documentId, row.barcode].map(quote).join(';'))
+      'documentId;barcode;active;hasDetailPicture',
+      ...rows.map(row => [row.documentId, row.barcode, row.active, row.hasDetailPicture]
+        .map(quote).join(';'))
     ].join('\r\n');
 
     const blobUrl = URL.createObjectURL(new Blob([csv], {
@@ -204,6 +231,10 @@
       total: rows.length,
       withoutBarcode,
       duplicateBarcodeValues: duplicateBarcodes,
+      withDetailPicture: rows.filter(row => row.hasDetailPicture === 'true').length,
+      activeTrue: rows.filter(row => row.active === 'true').length,
+      activeFalse: rows.filter(row => row.active === 'false').length,
+      activeNull: rows.filter(row => row.active === 'null').length,
       pages: pageCount,
       filename: CFG.filename
     };
