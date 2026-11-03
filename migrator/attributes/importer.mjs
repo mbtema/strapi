@@ -164,7 +164,7 @@ const bHeaders = (accept = 'text/html') => ({
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/143.0 Safari/537.36'
 });
 
-async function readStrapi(id, status) {
+async function readStrapi(id, status, expectedBarcode) {
   const path = withLocale(id, status);
   const json = await (await http(strapiUrl(path), { headers: sHeaders() }, true)).json();
   const data = json.data ?? json;
@@ -179,6 +179,12 @@ async function readStrapi(id, status) {
   }
   if (value.active !== true && value.active !== false && value.active !== null) {
     throw Error('Strapi ' + id + ': неподдерживаемое значение active');
+  }
+  // CSV — снимок на момент matcher. Перед любыми изменениями и после Publish
+  // barcode Strapi должен по-прежнему совпадать с исходным точным значением.
+  if (expectedBarcode !== undefined &&
+      (typeof value.barcode !== 'string' || value.barcode !== expectedBarcode)) {
+    throw Error('Strapi ' + id + ': barcode изменился относительно исходного CSV');
   }
   return value;
 }
@@ -364,7 +370,7 @@ async function upload(image, bitrixId, markWrite) {
 async function migrateOne(row, markWrite) {
   if (!row.bitrixUrl) return { status: 'unmatched', changes: '', published: false,
     message: 'Для этого barcode Bitrix URL отсутствует' };
-  const [initial, bitrix] = await Promise.all([readStrapi(row.documentId), readBitrix(row)]);
+  const [initial, bitrix] = await Promise.all([readStrapi(row.documentId, null, row.barcode), readBitrix(row)]);
   const initialMedia = mediaId(initial.detail_picture);
   const needsActive = initial.active !== bitrix.active;
   const needsPicture = initialMedia === null && !!bitrix.picture;
@@ -383,7 +389,7 @@ async function migrateOne(row, markWrite) {
   if (!APPLY) return { ...base, status: 'dry_run', changes: planned.join('|'),
     published: false, message: 'План составлен, запись не выполнена' };
 
-  const fresh = await readStrapi(row.documentId);
+  const fresh = await readStrapi(row.documentId, null, row.barcode);
   if (snapshot(fresh) !== snapshot(initial)) {
     throw Error('Strapi изменился между чтением и записью, отменено');
   }
@@ -391,7 +397,7 @@ async function migrateOne(row, markWrite) {
   const payload = {};
   if (needsActive) payload.active = bitrix.active;
   if (needsPicture) payload.detail_picture = await upload(bitrix.picture, row.bitrixId, markWrite);
-  const beforePut = await readStrapi(row.documentId);
+  const beforePut = await readStrapi(row.documentId, null, row.barcode);
   if (snapshot(beforePut) !== snapshot(fresh)) {
     throw Error('Strapi изменился до сохранения, PUT отменён (загруженную Media нужно проверить)');
   }
@@ -406,7 +412,7 @@ async function migrateOne(row, markWrite) {
   } catch (e) {
     throw Error('PUT: результат неопределён, требуется проверка Strapi: ' + e.message);
   }
-  const saved = await readStrapi(row.documentId);
+  const saved = await readStrapi(row.documentId, null, row.barcode);
   if ((needsActive && saved.active !== bitrix.active) ||
       (needsPicture && mediaId(saved.detail_picture) !== payload.detail_picture)) {
     throw Error('Save выполнен, но проверка контента не прошла');
@@ -418,7 +424,7 @@ async function migrateOne(row, markWrite) {
     throw Error('Save неожиданно изменил существующее изображение');
   }
 
-  const beforePublish = await readStrapi(row.documentId);
+  const beforePublish = await readStrapi(row.documentId, null, row.barcode);
   if (snapshot(beforePublish) !== snapshot(saved)) {
     throw Error('Strapi изменился перед Publish, отменено');
   }
@@ -434,7 +440,7 @@ async function migrateOne(row, markWrite) {
   } catch (e) {
     throw Error('Publish: результат неопределён, требуется проверка Strapi: ' + e.message);
   }
-  const published = await readStrapi(row.documentId, 'published');
+  const published = await readStrapi(row.documentId, 'published', row.barcode);
   if (!published.publishedAt || Number.isNaN(Date.parse(published.publishedAt)) ||
       published.active !== saved.active ||
       mediaId(published.detail_picture) !== mediaId(saved.detail_picture)) {
