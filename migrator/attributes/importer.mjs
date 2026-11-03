@@ -1,8 +1,7 @@
-// Attributes: Bitrix IBLOCK_ID=2 -> Strapi api::attribute.attribute (locale=ru).
-// Node.js 20+; npm install cheerio. По умолчанию read-only dry-run; --apply записывает.
+// Attributes: CSV из Bitrix Matcher -> Strapi api::attribute.attribute (locale=ru).
+// Node.js 20+ без дополнительных npm-зависимостей. По умолчанию только dry-run.
+// Только публичное скачивание картинок Bitrix: без Cookie и чтения админ-карточек.
 // Рабочие CSV, журнал и отчёты — на рабочем столе Windows.
-// Перед --apply необходима проверка HTML реальной карточки предложения Bitrix.
-import * as cheerio from 'cheerio';
 import { readFile, writeFile, rename, appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -19,7 +18,7 @@ const CFG = {
 };
 const AUTH = {
   jwtToken: 'ВСТАВЬ_JWT_STRAPI',
-  bitrixCookies: 'ВСТАВЬ_COOKIE_BITRIX'
+  // Cookie Bitrix больше не требуются.
 };
 const DESKTOP = resolve(process.env.USERPROFILE || homedir(), 'Desktop');
 process.chdir(DESKTOP);
@@ -30,6 +29,12 @@ const VERBOSE = args.includes('--verbose');
 const RETRY_ERRORS = args.includes('--retry-errors');
 const PROBE_MEDIA = args.includes('--probe-media');
 const ONLY = args.find(x => x.startsWith('--only='))?.slice(7) ?? null;
+const customLimit = args.find(x => x.startsWith('--limit='))?.slice(8);
+const LIMIT = customLimit === undefined ? null : Number(customLimit);
+if (LIMIT !== null && (!Number.isSafeInteger(LIMIT) || LIMIT < 1 || LIMIT > 100000)) {
+  throw Error('Неверное --limit (допустимо 1..100000)');
+}
+if (LIMIT !== null && ONLY !== null) throw Error('Используй только один из --only и --limit');
 const customPause = args.find(x => x.startsWith('--pause-ms='))?.slice(11);
 const PAUSE_MS = customPause == null ? CFG.pauseMs : Number(customPause);
 if (!Number.isSafeInteger(PAUSE_MS) || PAUSE_MS < 0 || PAUSE_MS > 60000) {
@@ -42,7 +47,8 @@ if (PROBE_MEDIA && (APPLY || !ONLY)) {
 for (const arg of args) {
   if (!['--apply', '--verbose', '--retry-errors', '--probe-media'].includes(arg) &&
       !/^--only=[a-z0-9]+$/i.test(arg) &&
-      !/^--pause-ms=\d+$/.test(arg)) throw Error('Неизвестный параметр: ' + arg);
+      !/^--pause-ms=\d+$/.test(arg) &&
+      !/^--limit=\d+$/.test(arg)) throw Error('Неизвестный параметр: ' + arg);
 }
 const LOG = '[Attributes importer]';
 const log = (...v) => console.log(LOG, ...v);
@@ -86,45 +92,66 @@ function parseCsv(input) {
   return rows.filter(r => r.some(x => x !== ''));
 }
 
-function validatedCardUrl(value) {
-  let u;
-  try { u = new URL(value); } catch { throw Error('Некорректный bitrixUrl'); }
+function validatedImageUrl(value) {
+  if (!value) return '';
+  let url;
+  try { url = new URL(value); }
+  catch { throw Error('Некорректный pictureUrl в CSV'); }
   const root = new URL(CFG.bitrix);
-  if (u.origin !== root.origin || u.username || u.password ||
-      u.pathname !== '/bitrix/admin/iblock_element_edit.php' ||
-      u.searchParams.get('IBLOCK_ID') !== '2' ||
-      u.searchParams.get('type') !== 'catalog' ||
-      u.searchParams.get('lang') !== CFG.locale ||
-      !/^\d+$/.test(u.searchParams.get('ID') ?? '') ||
-      u.searchParams.has('action')) {
-    throw Error('bitrixUrl ведёт не на карточку предложения IBLOCK_ID=2');
+  if (url.origin !== root.origin || url.protocol !== 'https:' ||
+      url.username || url.password || url.search || url.hash ||
+      !/^\/upload\/iblock\/(?!resize_cache\/)[^?#]+\.(?:jpe?g|png|webp|gif)$/i.test(url.pathname) ||
+      /%2f|%5c/i.test(url.pathname)) {
+    throw Error('pictureUrl не ведёт на публичный оригинал Bitrix /upload/iblock/');
   }
-  return { url: u.href, id: u.searchParams.get('ID') };
+  return url.href;
 }
 
 async function inputRows() {
   const raw = await readFile(resolve(CFG.input), 'utf8');
   const lines = parseCsv(raw);
   const fields = lines.shift();
-  if (fields?.join(';') !== 'documentId;barcode;bitrixUrl' || !lines.length) {
-    throw Error('Ожидается attributes-matched.csv: documentId;barcode;bitrixUrl');
+  const expected = 'documentId;barcode;active;hasDetailPicture;bitrixId;bitrixActive;pictureUrl';
+  if (fields?.join(';') !== expected || !lines.length) {
+    throw Error('Ожидается новый attributes-matched.csv: ' + expected +
+      '. Старый CSV с bitrixUrl использовать нельзя.');
   }
-  const docIds = new Set(), bitrixIds = new Set();
+  const docIds = new Set(), barcodes = new Set(), bitrixIds = new Set();
   const rows = lines.map((cells, idx) => {
-    if (cells.length !== 3) throw Error('CSV строка ' + (idx + 2) + ': число колонок');
-    const [documentId, barcode, bitrixUrl] = cells;
+    if (cells.length !== 7) throw Error('CSV строка ' + (idx + 2) + ': число колонок');
+    const [documentId, barcode, active, hasDetailPicture, bitrixId, bitrixActive, imageUrl] = cells;
+    const where = 'CSV строка ' + (idx + 2) + ': ';
     if (!/^[a-z0-9]+$/i.test(documentId) || docIds.has(documentId)) {
-      throw Error('CSV строка ' + (idx + 2) + ': пустой/повторный documentId');
+      throw Error(where + 'пустой/повторный documentId');
     }
     docIds.add(documentId);
-    if (!bitrixUrl) return { documentId, barcode, bitrixUrl: '', bitrixId: '' };
-    if (!barcode || barcode !== barcode.trim()) {
-      throw Error('CSV строка ' + (idx + 2) + ': неверный barcode');
+    if (!barcode || barcode !== barcode.trim() ||
+        /^[+-]?\d+(?:[.,]\d+)?[eE][+-]?\d+$/.test(barcode) || barcodes.has(barcode)) {
+      throw Error(where + 'пустой, повторный или повреждённый barcode');
     }
-    const card = validatedCardUrl(bitrixUrl);
-    if (bitrixIds.has(card.id)) throw Error('CSV повторный Bitrix ID: ' + card.id);
-    bitrixIds.add(card.id);
-    return { documentId, barcode, bitrixUrl: card.url, bitrixId: card.id };
+    barcodes.add(barcode);
+    if (!/^\d+$/.test(bitrixId) || bitrixId === '0' || bitrixIds.has(bitrixId)) {
+      throw Error(where + 'неверный/повторный Bitrix ID');
+    }
+    bitrixIds.add(bitrixId);
+    if (!['true', 'false', 'null'].includes(active) ||
+        !['true', 'false'].includes(hasDetailPicture) ||
+        !['true', 'false'].includes(bitrixActive)) {
+      throw Error(where + 'некорректные значения active / Media');
+    }
+    const pictureUrl = validatedImageUrl(imageUrl);
+    if (hasDetailPicture === 'true' && pictureUrl) {
+      throw Error(where + 'в Strapi уже есть Media, но задан pictureUrl');
+    }
+    if (active === bitrixActive && (hasDetailPicture === 'true' || !pictureUrl)) {
+      throw Error(where + 'Matcher включил запись без изменений');
+    }
+    return {
+      documentId, barcode, bitrixId, pictureUrl,
+      active: active === 'null' ? null : active === 'true',
+      hasDetailPicture: hasDetailPicture === 'true',
+      bitrixActive: bitrixActive === 'true'
+    };
   });
   if (ONLY && !rows.some(row => row.documentId === ONLY)) {
     throw Error('--only: documentId отсутствует в CSV');
@@ -183,11 +210,6 @@ async function http(url, options = {}, allowReadRetry = false) {
   }
 }
 const sHeaders = () => ({ Authorization: 'Bearer ' + AUTH.jwtToken, Accept: 'application/json' });
-const bHeaders = () => ({
-  Cookie: AUTH.bitrixCookies,
-  Accept: 'text/html',
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/143.0 Safari/537.36'
-});
 // Оригиналы /upload/iblock скачиваем как публичные файлы, без сессии Bitrix.
 // При отказе доступа не подставляем Cookie автоматически.
 const publicImageHeaders = () => ({
@@ -236,90 +258,6 @@ function snapshot(item) {
   });
 }
 
-// Ищем файл по реальному fileId Bitrix + real_url оригинала (не resize_cache).
-function prop(source, key) {
-  const re = new RegExp("(?:['\\\"]" + key + "['\\\"]|\\b" + key + "\\b)\\s*:\\s*" +
-    "(?:'((?:\\\\.|[^'\\\\])*)'|\"((?:\\\\.|[^\"\\\\])*)\"|(\\d+))");
-  const m = source.match(re);
-  return m ? String(m[1] ?? m[2] ?? m[3])
-    .replace(/\\u002f/gi, '/').replace(/\\\//g, '/').replace(/\\(['"\\])/g, '$1') : null;
-}
-function imageFrom(text, id) {
-  if (!/^\d+$/.test(id)) return null;
-  const objects = text.replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-    .match(/\{[^{}]{0,10000}\}/g) ?? [];
-  for (const obj of objects) {
-    if (prop(obj, 'fileId') !== id) continue;
-    const raw = prop(obj, 'real_url');
-    if (!raw) continue;
-    let url;
-    try { url = new URL(raw, CFG.bitrix); } catch { continue; }
-    if (url.origin !== new URL(CFG.bitrix).origin ||
-        !url.pathname.startsWith('/upload/iblock/') ||
-        url.pathname.includes('/resize_cache/')) continue;
-    return { fileId: id, url: url.href };
-  }
-  return null;
-}
-
-function parseBitrix(html, expectedBarcode, expectedId) {
-  const $ = cheerio.load(html);
-  if (typeof $('input[name="NAME"]').first().val() !== 'string') {
-    throw Error('Bitrix вернул не карточку предложения (нет NAME)');
-  }
-  // В реальной форме Bitrix есть hidden ID. Проверяем саму карточку, а не только URL.
-  const elementIds = $('input[type="hidden"][name="ID"]').toArray()
-    .map(el => String($(el).val() ?? '').trim());
-  if (elementIds.length !== 1 || elementIds[0] !== expectedId) {
-    throw Error('Bitrix ID карточки не совпадает с ID из matcher: ' + expectedId);
-  }
-  // Подтверждение актуального barcode обязательно перед записью. Неподтверждённая
-  // разметка карточки -> ошибка чтения, а НЕ разрешение на импорт.
-  const barcodeInputs = $('input[name],textarea[name]').toArray().filter(el => {
-    const name = $(el).attr('name') ?? '';
-    return /^PROP\[19\]\[/.test(name) ||
-      /^FIELDS\[\d+\]\[PROPERTY_19\]\[/.test(name);
-  }).map(el => String($(el).val() ?? '').trim()).filter(Boolean);
-  const barcodes = [...new Set(barcodeInputs)];
-  if (barcodes.length !== 1 || barcodes[0] !== expectedBarcode) {
-    throw Error('Bitrix barcode не подтверждён: найдено ' + barcodes.length +
-      ' значений, ожидается точное ' + expectedBarcode);
-  }
-  const active = $('input[type="checkbox"][name="ACTIVE"]');
-  if (active.length !== 1) throw Error('Bitrix: невозможно определить ACTIVE (нет единственного checkbox)');
-  const pictureRow = $('#tr_DETAIL_PICTURE');
-  if (pictureRow.length !== 1) throw Error('Bitrix: нет строки DETAIL_PICTURE');
-  const ids = pictureRow.find('input[type="hidden"][name="DETAIL_PICTURE"]')
-    .toArray().map(el => String($(el).val() ?? '').trim()).filter(x => x && x !== '0');
-  if (ids.length > 1 || ids.some(id => !/^\d+$/.test(id))) {
-    throw Error('Bitrix: неоднозначный DETAIL_PICTURE fileId');
-  }
-  let picture = null;
-  if (ids.length) {
-    const sources = [$.html(pictureRow)];
-    $('script').each((_, el) => {
-      const script = $(el).html() ?? '';
-      if (script.includes(ids[0])) sources.push(script);
-    });
-    picture = sources.map(text => imageFrom(text, ids[0])).find(Boolean);
-    if (!picture) throw Error('Bitrix DETAIL_PICTURE существует (fileId=' +
-      ids[0] + '), но URL оригинала не подтверждён');
-  }
-  return { active: active.is(':checked'), picture };
-}
-
-async function readBitrix(row) {
-  const html = await (await http(row.bitrixUrl, { headers: bHeaders() }, true)).text();
-  try {
-    return parseBitrix(html, row.barcode, row.bitrixId);
-  } catch (e) {
-    if (e.message.includes('Bitrix вернул не карточку предложения')) {
-      throw bitrixBlocked('Bitrix вернул не карточку предложения (возможно, сессия истекла). ' +
-        'Импорт остановлен, проверь авторизацию.');
-    }
-    throw e;
-  }
-}
 function getMime(ct) {
   const type = ct.split(';')[0].trim().toLowerCase();
   const ext = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
@@ -355,28 +293,34 @@ async function readJournal(hash) {
   return { path, items, save };
 }
 
-const REPORT = ['documentId','barcode','bitrixUrl','status','activeStrapi',
-  'activeBitrix','pictureStrapi','pictureBitrix','changes','published','phase','message'];
+const REPORT = ['documentId','barcode','active','hasDetailPicture','bitrixId',
+  'bitrixActive','pictureUrl','status','activeStrapi','pictureStrapi',
+  'pictureBitrix','changes','published','phase','message'];
 function reportCsv(rows, items) {
   return '\uFEFF' + [
     REPORT.join(';'),
     ...rows.map(row => {
-      const result = items.get(row.documentId) ?? { status: row.bitrixUrl ? 'pending' : 'unmatched' };
-      return REPORT.map(field => quote(Object.hasOwn(result, field) ? result[field] : row[field])).join(';');
+      const result = items.get(row.documentId) ?? { status: 'pending' };
+      return REPORT.map(field => {
+        const value = Object.hasOwn(result, field) ? result[field] : row[field];
+        return quote(value == null ? (field === 'active' ? 'null' : '') : value);
+      }).join(';');
     })
   ].join('\r\n');
 }
 
 async function downloadOriginal(image, trace) {
-  const url = new URL(image.url);
-  if (url.origin !== new URL(CFG.bitrix).origin ||
-      !url.pathname.startsWith('/upload/iblock/') ||
-      url.pathname.includes('/resize_cache/')) {
-    throw Error('Небезопасный URL оригинала изображения');
-  }
-  trace('MEDIA_DOWNLOAD_PUBLIC: GET оригинала без Cookie Bitrix, fileId=' + image.fileId);
+  const url = validatedImageUrl(image.url);
+  trace('MEDIA_DOWNLOAD_PUBLIC: GET оригинала без Cookie Bitrix');
   // Без retry: если сервер ограничивает доступ, не увеличиваем нагрузку.
-  const response = await http(url.href, { headers: publicImageHeaders() });
+  let response;
+  try {
+    response = await http(url, { headers: publicImageHeaders() });
+  } catch (error) {
+    if (error.code === 'BITRIX_BLOCKED') throw error;
+    throw bitrixBlocked('Не удалось получить публичный файл Bitrix. ' +
+      'Импорт остановлен без повторов: ' + error.message);
+  }
   const contentType = response.headers.get('content-type') ?? '';
   let mime;
   try {
@@ -400,7 +344,8 @@ async function downloadOriginal(image, trace) {
 
 async function upload(image, bitrixId, markWrite, trace) {
   const { buf, mime } = await downloadOriginal(image, trace);
-  const filename = 'bitrix-attribute-' + bitrixId + '-detail-' + image.fileId + '.' + mime.ext;
+  const imageKey = createHash('sha256').update(image.url).digest('hex').slice(0, 12);
+  const filename = 'bitrix-attribute-' + bitrixId + '-detail-' + imageKey + '.' + mime.ext;
   const form = new FormData();
   form.append('files', new Blob([buf], { type: mime.type }), filename);
   form.append('fileInfo', JSON.stringify({ name: filename }));
@@ -424,10 +369,10 @@ async function upload(image, bitrixId, markWrite, trace) {
 }
 
 async function migrateOne(row, markWrite, markMediaUploaded, trace) {
-  if (!row.bitrixUrl) return { status: 'unmatched', changes: '', published: false,
-    message: 'Для этого barcode Bitrix URL отсутствует' };
-  trace('READ: проверяю Strapi и карточку Bitrix');
-  const [initial, bitrix] = await Promise.all([readStrapi(row.documentId, null, row.barcode), readBitrix(row)]);
+  trace('READ: проверяю только Strapi; значения Bitrix из CSV');
+  const initial = await readStrapi(row.documentId, null, row.barcode);
+  const bitrix = { active: row.bitrixActive,
+    picture: row.pictureUrl ? { url: row.pictureUrl } : null };
   const initialMedia = mediaId(initial.detail_picture);
   const needsActive = initial.active !== bitrix.active;
   const needsPicture = initialMedia === null && !!bitrix.picture;
@@ -435,7 +380,7 @@ async function migrateOne(row, markWrite, markMediaUploaded, trace) {
     activeStrapi: String(initial.active),
     activeBitrix: String(bitrix.active),
     pictureStrapi: initialMedia ?? '',
-    pictureBitrix: bitrix.picture?.fileId ?? ''
+    pictureBitrix: bitrix.picture ? 'есть URL' : ''
   };
   const planned = [needsActive ? 'active' : '', needsPicture ? 'detail_picture' : '']
     .filter(Boolean);
@@ -443,7 +388,7 @@ async function migrateOne(row, markWrite, markMediaUploaded, trace) {
   trace('PLAN: active ' + activeLabel(initial.active) + ' → ' + activeLabel(bitrix.active) +
     (needsActive ? ' (изменить)' : ' (совпадает)') +
     '; detail_picture Strapi=' + (initialMedia ?? 'пусто') +
-    ', Bitrix=' + (bitrix.picture?.fileId ?? 'пусто') +
+    ', Bitrix=' + (bitrix.picture ? 'публичный URL' : 'пусто') +
     (needsPicture ? ' (загрузить)' : ' (без загрузки)'));
   if (VERBOSE) trace('PLAN_FIELDS: ' + (planned.join(', ') || 'нет изменений'));
 
@@ -602,31 +547,32 @@ function showProgress(selected, items, completed, attempted, startedAt) {
 async function main() {
   const missing = Object.entries(AUTH).filter(([,v]) =>
     !v || ['ВСТАВЬ_', 'PASTE_', '__LOCAL_'].some(prefix => v.startsWith(prefix)));
-  if (missing.length) {
+  if (missing.length && !PROBE_MEDIA) {
     throw Error('В локальной копии заполни AUTH: ' + missing.map(([k])=>k).join(', '));
   }
   const { rows, hash } = await inputRows();
   if (PROBE_MEDIA) {
-    // Ровно одна карточка Bitrix + одно анонимное чтение оригинала, без Strapi POST/PUT.
+    // Ровно один публичный GET Media из CSV, без чтения Bitrix Admin и без Strapi POST/PUT.
     const row = rows.find(item => item.documentId === ONLY);
-    if (!row?.bitrixUrl) throw Error('--only: нет подходящей карточки Bitrix в CSV');
-    log('PROBE_MEDIA: проверяю одну запись, без изменений Strapi:', row.documentId);
-    const offer = await readBitrix(row);
-    if (!offer.picture) {
-      log('PROBE_MEDIA: у выбранного предложения нет detail_picture в Bitrix. Записей нет.');
-      return;
-    }
-    const { buf, mime } = await downloadOriginal(offer.picture, log);
-    log('PROBE_MEDIA_OK: публичное изображение доступно без Cookie; тип',
-      mime.type, '| байт', buf.length, '| Bitrix fileId', offer.picture.fileId,
-      '| Strapi не менялся.');
+    if (!row?.pictureUrl) throw Error('--only: в CSV для этой записи нет pictureUrl');
+    log('PROBE_MEDIA: проверяю публичную картинку без Cookie, Strapi не изменяется:', row.documentId);
+    const { buf, mime } = await downloadOriginal({ url: row.pictureUrl }, log);
+    log('PROBE_MEDIA_OK: тип', mime.type, '| байт', buf.length,
+      '| Bitrix ID', row.bitrixId, '| Strapi не менялся.');
     return;
   }
   const journal = await readJournal(hash);
   const reportPath = resolve(APPLY ? 'attributes-import-report.csv' : 'attributes-import-plan.csv');
   const items = APPLY ? journal.items : new Map();
-  const selected = rows.filter(row => (!ONLY || row.documentId === ONLY));
-  const totalMatched = selected.filter(row => row.bitrixUrl).length;
+  // --limit=N выбирает не более N ещё не обработанных строк в порядке CSV.
+  // После пилота checkpoint сохранится; массовый запуск с тем же CSV продолжит.
+  const eligible = rows.filter(row => (!ONLY || row.documentId === ONLY));
+  const selected = LIMIT === null ? eligible : eligible.filter(row => {
+    const old = journal.items.get(row.documentId);
+    return !(APPLY && old && (['done','skipped_already','unmatched','review'].includes(old.status) ||
+      (old.status === 'error' && !RETRY_ERRORS)));
+  }).slice(0, LIMIT);
+  const totalPictures = selected.filter(row => Boolean(row.pictureUrl)).length;
   const startedAt = Date.now();
   let requestedStop = false;
   process.on('SIGINT', () => {
@@ -634,7 +580,7 @@ async function main() {
     log('Ctrl+C: завершу текущую запись, затем сохраню отчёт');
   });
   log(APPLY ? 'APPLY' : 'DRY-RUN', 'строк для обработки:', selected.length,
-    '| с URL Bitrix:', totalMatched, '| пауза:', PAUSE_MS + 'ms');
+    '| с публичным Media URL:', totalPictures, '| пауза:', PAUSE_MS + 'ms');
   let attempted = 0;
   const alreadyCompleted = getProgress(selected, items).processed;
   showProgress(selected, items, alreadyCompleted, attempted, startedAt);
@@ -684,8 +630,8 @@ async function main() {
       console.error(LOG, prefix, 'ERROR (' + item.status + '):', item.message);
       if (e.code === 'BITRIX_BLOCKED') {
         requestedStop = true;
-        console.error(LOG, 'STOP: Bitrix ограничил доступ. ' +
-          'Не возобновляй массовый импорт до проверки. Checkpoint и отчёт сохраняются.');
+        console.error(LOG, 'STOP: публичный доступ к файлу Bitrix ограничен. ' +
+          'Checkpoint и отчёт сохраняются; проверь проблему перед продолжением.');
       }
     }
     if (APPLY) await journal.save(row.documentId, item);
