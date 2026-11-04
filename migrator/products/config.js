@@ -184,9 +184,12 @@
             throw Error('Product ' + id + ': Content Manager не вернул ' + field);
           }
         }
-        if (typeof product.active !== 'boolean' ||
+        if (typeof product.active !== 'boolean') {
+          throw Error('Product ' + id + ': active должен быть boolean');
+        }
+        if (product.newFrom1C !== null &&
             typeof product.newFrom1C !== 'boolean') {
-          throw Error('Product ' + id + ': active/newFrom1C должны быть boolean');
+          throw Error('Product ' + id + ': newFrom1C должен быть true/false/null');
         }
         const [attributes, categories] = await Promise.all([
           relations(id, 'attributes'),
@@ -241,7 +244,7 @@
           preview_picture: filled(product.preview_picture),
           pictures: filled(product.pictures),
           active: product.active,
-          newFrom1C: product.newFrom1C,
+          newFrom1C: product.newFrom1C === null ? 'null' : product.newFrom1C,
           attributes: values.join('|'),
           categories: categoryValues.join('|'),
           detail_text: filled(product.detail_text)
