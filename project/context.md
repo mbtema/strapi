@@ -319,7 +319,9 @@ CSV: `products-missing-content.csv` (без timestamp). `missingFields` соде
 
 Content Manager pagination/response должны соответствовать ожидаемому контракту; при ошибке чтения, отсутствии требуемого field в detail или несовпадении данных аудит прерывается без частичного CSV. Проверка read-only.
 
-Изменение условий реализовано 2026-10-30; production-прогон с реальным CMS API после изменения пока не подтверждён.
+Пустая связь — не ошибка: для `brand` или `categories` валиден ответ с `results: []` и `pagination.total: 0` (на первой странице `pageCount` может быть 0 или 1). Такой Product должен попасть в CSV с отсутствующим relation field, а аудит — продолжиться. Но пустая страница при `total > 0`, неожиданное изменение пагинации или malformed response — ошибка чтения; неполный CSV не формировать. Исправление учтено в tool v2.0.1. **Не переносить правило “любая пустая страница = ошибка” на пустые relations.**
+
+Изменение условий реализовано 2026-10-30; полный verified production-прогон с реальным CMS API после изменения пока не подтверждён.
 
 ## CANONICAL — Product attributes relation endpoint
 
@@ -354,6 +356,19 @@ Body может быть partial, например:
 
 После write, если изменение должно быть опубликовано, одного успешного admin response недостаточно: нужна публикация и итоговая проверка опубликованного состояния подходящим API.
 
+## CANONICAL — Product Save/Publish по Strapi Admin Network
+
+Наблюдение из `network-recorder.json` (2026-10-30, одна карточка Product, локаль `ru`): штатные Save и Publish выполняются по следующим путям:
+
+```text
+PUT  /content-manager/collection-types/api::product.product/<productDocumentId>?locale=ru
+POST /content-manager/collection-types/api::product.product/<productDocumentId>/actions/publish?locale=ru
+```
+
+При Save UI отправил **полный payload карточки**, в том числе `newFrom1C: true` и `active: false`; HTTP 200 вернул `data.status: "modified"` и `data.publishedAt: null`. Затем Publish UI снова отправил **полный payload**, включая те же boolean; HTTP 200 вернул `data.status: "published"` и ненулевой `data.publishedAt`. Это подтверждает штатную последовательность **Save → Publish**, но не доказывает, что **один** `POST actions/publish` с `{"newFrom1C":true}` или `{"active":false}` безопасно изменяет scalar field и публикует его без отдельного PUT. Такие минимальные payload были лишь предложены в одноразовых Console-скриптах, production-результат не подтверждён. Перед массовым использованием провести пилот с GET verify и при необходимости вернуться к подтверждённой последовательности.
+
+Не путать с отдельно подтверждённым для category sync минимальным `actions/publish` с `categories.connect` — его успех нельзя автоматически обобщать на scalar fields. При массовой записи не отправлять сохранённый ранее полный объект Product без проверки: это создаёт риск перезаписать актуальные fields/relations. URL и контракт всегда повторно сверять по live Network при изменении версии Strapi.
+
 ## HISTORICAL — backfill `attribute.active` 2026-10-05
 
 После добавления boolean `active` у `attribute` legacy-данные оказались частично инициализированы. Перед миграцией Content Manager audit по всем `ru` attributes дал:
@@ -383,6 +398,19 @@ active=null: 9717
 ---
 
 # 4. CANONICAL workflows
+
+## CANONICAL — одноразовые массовые Product write из CSV / relation-аудита
+
+Это reusable **порядок работы**, а не runtime tool в repo: одноразовые Console-скрипты и конкретные CSV/brand IDs не сохранять в `tools/` или README без отдельного требования.
+
+- Источник задач: файл аудита `products-missing-content.csv` (`documentId;missingFields`) либо точная проверка relation `brand` по заданному набору `documentId` через Content Manager. Для CSV поддерживать UTF-8 BOM, `;` и quoted cells, валидировать заголовки/ID и убирать или блокировать дубли **до write**. Для relation-аудита читать все страницы Product `ru`, затем связанные `brand` и сравнивать **relation documentId**, не название; не фильтровать исходный список по `active` или status, если задача этого не требует.
+- Сначала полный read-only dry-run, количество кандидатов и уже соответствующих целевому состоянию, затем явный confirm. Делать небольшой пилот (исторически 5 Product), проверить реальные результаты Save/Publish, только затем отдельное confirm на весь оставшийся объём.
+- Перед каждым write повторно читать текущий Product / целевую relation и сверять критерий. Для `active=false` достаточно skip только если `active === false` **и** status уже `published`; статус `draft/modified` может требовать Publish даже при совпадающем boolean. Scope локали задавать явно (`ru`), другие поля и relations не менять.
+- Write проводить небольшим контролируемым concurrency/batches с progress, counters, Stop. При больших объёмах хранить checkpoint по устойчивой сигнатуре input и фиксировать отдельно `updated`, `already`, `skipped/changed`, `error`, `review`, `pending`; после перезапуска пропускать только подтверждённые completed записи. По итогам автоматически отдавать CSV-отчёт, а не только Console.
+- После Save/Publish проверять результат новым GET Content Manager (целевой boolean и статус), при необходимости отдельно published view. `POST actions/publish` не ретраить вслепую при timeout/network/429/5xx: запрос мог успеть примениться; сначала GET verify, неоднозначное состояние → `review`. Временные GET допускают bounded retry. Если пилот не подтвердился — не начинать массовые write.
+- Публикация прежде draft Product может сделать его доступным клиенту даже при `active=false` (зависит от downstream-фильтров). Это осознанный эффект команды Publish, не просто сохранение boolean. Не обещать, что опубликованные товары останутся скрыты без проверки клиентского API.
+
+HISTORICAL: в чате 2026-10-30 были собраны два одноразовых Console workflow — по CSV включить `newFrom1C=true` с Save/Publish и по выбранным relation `brand` сделать `active=false` с Save/Publish. Код не коммитился и не проходил подтверждённый массовый production-run. Сохранять только переносимые правила выше, не конкретные brand `documentId` и не исходные CSV.
 
 ## Fragrance concentration classification
 
