@@ -470,29 +470,58 @@
         },
         body: form
       });
-      const doc = new DOMParser().parseFromString(gridHtml, 'text/html');
-      const table = doc.querySelector('table.main-grid-table');
-      if (!table) throw Error('Bitrix grid не найден');
-      const columns = [...table.querySelectorAll(
-        'thead tr.main-grid-row-head > th'
-      )].map(th => th.dataset.name || '');
-      if (!columns.includes('NAME')) {
-        throw Error('В Bitrix grid нет колонки NAME');
+      function readGridResult(html, source) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const table = doc.querySelector('table.main-grid-table');
+        if (!table) throw Error('Bitrix grid не найден (' + source + ')');
+        const columns = [...table.querySelectorAll(
+          'thead tr.main-grid-row-head > th'
+        )].map(th => th.dataset.name || '');
+        if (!columns.includes('NAME')) {
+          throw Error('В Bitrix grid нет колонки NAME (' + source + ')');
+        }
+        const ids = [...new Set(
+          [...table.querySelectorAll('tbody > tr.main-grid-row-body[data-id]')]
+            .map(tr => tr.dataset.id)
+            .filter(id => /^\d+$/.test(id))
+        )];
+        const totalText = doc.querySelector(
+          '.main-grid-panel-total .main-grid-panel-content-text'
+        )?.textContent?.trim() ?? '';
+        const total = /^\d+$/.test(totalText) ? Number(totalText) : null;
+        // Нулевой результат корректен: товар может отсутствовать в Bitrix.
+        // Отсутствие подтверждённого total — не доказательство отсутствия.
+        const complete = total !== null && total === ids.length &&
+          ids.length <= CFG.maxVisibleRows;
+        return { ids, total, totalText, complete, source };
       }
-      const ids = [...new Set(
-        [...table.querySelectorAll('tbody > tr.main-grid-row-body[data-id]')]
-          .map(tr => tr.dataset.id)
-          .filter(id => /^\d+$/.test(id))
-      )];
-      const totalText = doc.querySelector(
-        '.main-grid-panel-total .main-grid-panel-content-text'
-      )?.textContent?.trim() ?? '';
-      const total = /^\d+$/.test(totalText) ? Number(totalText) : null;
-      if (total === null || total > ids.length || ids.length > CFG.maxVisibleRows) {
-        throw Error('Неполный результат поиска: total=' +
-          (totalText || '?') + ', rows=' + ids.length);
+
+      const ajax = readGridResult(gridHtml, 'AJAX');
+      if (ajax.complete) return ajax.ids;
+
+      // Иногда Bitrix после пустого поиска возвращает в AJAX общий каталог:
+      // total=все товары, rows=100. Это НЕ 100 кандидатов и НЕ доказанное
+      // отсутствие товара. Независимо проверяем обычную страницу с тем же
+      // фильтром текущей сессии, без clear_filter.
+      console.warn('[Matcher] AJAX не подтвердил поиск NAME: total=' +
+        (ajax.totalText || '?') + ', rows=' + ajax.ids.length +
+        '. Проверяю обычную страницу списка.');
+      const plainUrl = makeUrl(LIST_PATH, {
+        ...listParams,
+        apply_filter: 'Y'
+      });
+      const plainHtml = await request(plainUrl);
+      const plain = readGridResult(plainHtml, 'обычная страница');
+      if (plain.complete) {
+        console.log('[Matcher] Поиск подтверждён обычной страницей: ' +
+          plain.ids.length + ' кандидатов');
+        return plain.ids;
       }
-      return ids;
+      throw Error('Фильтр Bitrix не подтвердил результат NAME. AJAX: total=' +
+        (ajax.totalText || '?') + ', rows=' + ajax.ids.length +
+        '; обычная страница: total=' + (plain.totalText || '?') +
+        ', rows=' + plain.ids.length +
+        '. Нельзя считать товар отсутствующим или использовать общий каталог.');
     }
 
 
