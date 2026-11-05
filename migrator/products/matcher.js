@@ -192,6 +192,16 @@
     return '';
   }
 
+  function originalFromRow(row, field) {
+    if (!row) return '';
+    const urls = new Set([...row.querySelectorAll('a[href]')]
+      .map(a => isOriginalUrl(a.getAttribute('href')))
+      .filter(Boolean));
+    if (urls.size > 1) fail('MEDIA_URL_INCOMPLETE',
+      field + ': в одной строке Bitrix несколько оригинальных URL');
+    return urls.size ? [...urls][0] : '';
+  }
+
   function parseBitrixContent(doc, bitrixId) {
     const scripts = [...doc.querySelectorAll('script')].map(s => s.textContent ?? '');
     const property = number => {
@@ -211,7 +221,7 @@
         return '';
       }
       const local = [row.outerHTML, ...scripts.filter(s => s.includes(fileId))];
-      const url = mediaFromSources(local, fileId);
+      const url = mediaFromSources(local, fileId) || originalFromRow(row, field);
       if (!url) fail('MEDIA_URL_INCOMPLETE', field + ': File ID ' + fileId +
         ', оригинальный URL не подтверждён');
       return url;
