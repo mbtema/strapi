@@ -299,28 +299,35 @@ async function loadJob(hash,rows) {
 }
 
 async function migrateOne(row, markWrite, verbose) {
-
-  const [product,oldCats,html]=await Promise.all([
+  const [product,oldCats]=await Promise.all([
     detail('api::product.product',row.documentId),
-    relations(row.documentId,'categories'),
-    bGet(cardUrl(row.bitrixId))
+    relations(row.documentId,'categories')
   ]);
-  const bitrix=extractBitrix(html);
-  if(product.newFrom1C!==true) {
-    log('SKIP: newFrom1C уже false, Bitrix ID '+row.bitrixId);
-    return {status:'skipped_already',changes:0,missing:[],newFrom1C:false,published:null,message:'newFrom1C уже false'};
-  }
-  if(verbose) {
-    log('Перенос по CSV: Bitrix ID '+row.bitrixId+' -> Strapi '+row.documentId);
-    log('Bitrix: '+cardUrl(row.bitrixId));
-  }
+  const bitrix={
+    name1:row.bitrixName1,
+    name2:row.bitrixName2,
+    detail_text:row.bitrixDetailText,
+    preview_picture:row.bitrixPreviewPictureUrl ? {url:row.bitrixPreviewPictureUrl} : null,
+    detail_picture:row.bitrixDetailPictureUrl ? {url:row.bitrixDetailPictureUrl} : null,
+    pictures:row.bitrixPictures,
+    active:row.bitrixActive==='true',
+    sections:[row.bitrixSectionId]
+  };
+  if(verbose)log('Из CSV: Bitrix '+row.bitrixId+' → Strapi '+row.documentId);
 
   const mapping=[];
   for(const section of bitrix.sections) {
     const category=await categoryBySection(section);
     mapping.push({section,category});
   }
-  const missingCats=mapping.filter(x=>x.category && !oldCats.some(c=>c.documentId===x.category.documentId)).map(x=>x.category);
+  const unmapped=mapping.filter(x=>!x.category);
+  if(unmapped.length){
+    return {status:'category_not_found',changes:0,missing:[],
+      newFrom1C:product.newFrom1C,published:false,
+      message:'CATEGORY_NOT_FOUND: SECTION_ID='+unmapped.map(x=>x.section).join('|')+
+        ' — категории с таким bitrix_id нет в Strapi'};
+  }
+  const missingCats=mapping.filter(x=>!oldCats.some(c=>c.documentId===x.category.documentId)).map(x=>x.category);
   const byField=new Map();
   const actions=[];
   function add(field,action,note=''){
@@ -350,13 +357,13 @@ async function migrateOne(row, markWrite, verbose) {
     if(!filled(projected[field]) && bitrix[field]?.url)projected[field]={id:1};
   }
   const plannedMissing=missingRequired(projected,[...oldCats,...missingCats]);
-  add('newFrom1C',plannedMissing.length?'KEEP_INCOMPLETE':'CLEAR_AFTER_VERIFY',
-    plannedMissing.length?`останутся пустыми: ${plannedMissing.join(', ')}`:'отдельный PUT после успешной проверки всех полей');
+  add('newFrom1C',plannedMissing.length?'SET_TRUE_IF_NEEDED':'SET_FALSE_IF_NEEDED',
+    plannedMissing.length?`останутся пустыми: ${plannedMissing.join(', ')}`:'обновить флаг после проверки');
   add('publish','PUBLISH_AFTER_SAVE','после Save и проверки записи, только locale=ru');
   if(verbose)console.table(actions);
   const missingSource=actions.filter(x=>['SOURCE_EMPTY','SOURCE_UNAVAILABLE','SOURCE_INCOMPLETE'].includes(x.action));
   log(`План: ${actions.filter(x=>['FILL','UPLOAD_AND_LINK','SYNC','CONNECT'].includes(x.action)).length} изменений, ${missingSource.length} полей без источника`);
-  if(!APPLY) return {status:'dry_run',changes:actions.filter(x=>['FILL','UPLOAD_AND_LINK','SYNC','CONNECT'].includes(x.action)).length,missing:plannedMissing,newFrom1C:product.newFrom1C,published:false,message:'План составлен, записей нет'};
+  if(!APPLY) return {status:'dry_run',changes:actions.filter(x=>['FILL','UPLOAD_AND_LINK','SYNC','CONNECT'].includes(x.action)).length+(product.newFrom1C!==Boolean(plannedMissing.length)?1:0),missing:plannedMissing,newFrom1C:product.newFrom1C,published:false,message:'План составлен, записей нет'};
 
   // Прямо перед записью заново проверяем значения целевых полей.
   const snapshot=p=>JSON.stringify(['name1','name2','detail_text','preview_picture','detail_picture','pictures','active','name','newFrom1C'].map(f=>p[f]));
@@ -421,37 +428,34 @@ async function migrateOne(row, markWrite, verbose) {
   const stillMissing=missingRequired(after,afterCats);
   let finalSaved=after;
   let finalCats=afterCats;
-  if(stillMissing.length) {
-    // Частичный перенос разрешён: остаётся признак незавершённой миграции.
-    log(`FLAG_KEEP: newFrom1C=true; карточка неполная: ${stillMissing.join(', ')}`);
-    if(!Object.keys(payload).length) {
-      log('SAVE_SKIP: изменений нет; Publish не выполняется');
-      return {status:'partial',changes:0,missing:stillMissing,newFrom1C:true,published:false,message:'Нет изменений; обязательный контент неполный'};
-    }
-  } else {
-    // Отдельный Save флага после того, как все шесть обязательных полей проверены.
+  const expectedFlag=stillMissing.length>0;
+  if(after.newFrom1C!==expectedFlag){
     const beforeFlag=await detail('api::product.product',row.documentId);
     const catsBeforeFlag=await relations(row.documentId,'categories');
-    if(snapshot(beforeFlag)!==snapshot(after) || catIds(catsBeforeFlag)!==catIds(afterCats)) {
-      throw Error('Карточка изменилась перед сбросом newFrom1C; Publish отменён');
+    if(snapshot(beforeFlag)!==snapshot(after)||catIds(catsBeforeFlag)!==catIds(afterCats)){
+      throw Error('Товар изменился перед обновлением newFrom1C; Publish отменён');
     }
     await markWrite('PUT_NEWFROM1C');
     try {
       await http(strapiUrl(productPath),{
-        method:'PUT',headers:{Authorization:`Bearer ${AUTH.strapiJwt}`,'Content-Type':'application/json'},
-        body:JSON.stringify({newFrom1C:false})
+        method:'PUT',headers:{Authorization:'Bearer '+AUTH.strapiJwt,'Content-Type':'application/json'},
+        body:JSON.stringify({newFrom1C:expectedFlag})
       });
-    } catch(e) {
-      throw Error(`PUT newFrom1C: исход требует проверки; контент уже сохранён, Publish не выполнялся (${e.message})`);
+    }catch(e){
+      throw Error('PUT newFrom1C: исход требует проверки, не повторять вслепую ('+e.message+')');
     }
     finalSaved=await detail('api::product.product',row.documentId);
     finalCats=await relations(row.documentId,'categories');
-    if(finalSaved.newFrom1C!==false ||
-       missingRequired(finalSaved,finalCats).length ||
-       catIds(finalCats)!==catIds(afterCats)) {
-      throw Error('newFrom1C / обязательный контент не прошли проверку после PUT; Publish отменён');
+    if(finalSaved.newFrom1C!==expectedFlag||
+       missingRequired(finalSaved,finalCats).length!==stillMissing.length||
+       catIds(finalCats)!==catIds(afterCats)){
+      throw Error('newFrom1C / обязательный контент не прошли проверку');
     }
-    log('FLAG_VERIFIED: newFrom1C=false сохранён и проверен');
+    log('FLAG_VERIFIED: newFrom1C='+expectedFlag);
+  }else if(!Object.keys(payload).length){
+    log('SKIP: сохранённые данные и newFrom1C уже актуальны');
+    return {status:'skipped_already',changes:0,missing:stillMissing,
+      newFrom1C:expectedFlag,published:null,message:'Изменений нет'};
   }
 
   // Последнее действие: Publish только после всех Save и подтверждённых проверок.
@@ -523,7 +527,7 @@ async function main() {
   for(let idx=0;idx<rows.length && !stopRequested;idx++) {
     const row=rows[idx];
     const previous=items[row.documentId];
-    if(APPLY && previous && (['done','skipped_already','review'].includes(previous.status) ||
+    if(APPLY && previous && (['done','skipped_already','category_not_found','review'].includes(previous.status) ||
         (previous.status==='error' && !RETRY_ERRORS) ||
         (previous.status==='partial' && !RETRY_PARTIAL))) {
       skipped++;
@@ -557,13 +561,19 @@ async function main() {
         ', ошибки чтения '+failed+', ручная проверка '+manual);
   }
   await atomicWrite(job.reportFile,reportCsv(rows,items));
+  const unknownCategory=rows.filter(row=>items[row.documentId]?.status==='category_not_found');
+  if(unknownCategory.length){
+    const file=resolve('products-category-not-found.csv');
+    await atomicWrite(file,reportCsv(unknownCategory,items));
+    log('Отсутствующие категории: '+unknownCategory.length+'; отчёт: '+file);
+  }
   log('ИТОГО за запуск: '+attempted+' обработано, '+successful+' успешно/частично, '+
       failed+' ошибок, '+manual+' требуется проверить вручную, '+skipped+
       ' пропущено по checkpoint. Прошло '+Math.round((Date.now()-started)/1000)+' сек.');
   log('CSV-отчёт: '+job.reportFile);
   if(APPLY) {
     log('Checkpoint: '+job.file+'; следующий запуск с тем же CSV продолжит обработку');
-    const totals={done:0,partial:0,skipped_already:0,error:0,review:0,pending:0};
+    const totals={done:0,partial:0,skipped_already:0,category_not_found:0,error:0,review:0,pending:0};
     for(const row of rows){
       const status=items[row.documentId]?.status||'pending';
       totals[status in totals ? status : 'pending']++;
