@@ -10,10 +10,10 @@
     iblockId: '1',
     locale: 'ru',
     checkpointEvery: 10,
-    maxVisibleRows: 100,
+    maxPages: 1000,
     cardConcurrency: 3,
     maxPendingProducts: 4,
-    checkpointVersion: 'v3-content'
+    checkpointVersion: 'v4-catalog-index'
   };
 
   const INPUT_FIELDS = [
@@ -382,152 +382,162 @@
     console.log('[Matcher] Всего: ' + products.length + ', из checkpoint: ' + completed.size);
     const startedAt = performance.now();
 
-    const listParams = {
-      IBLOCK_ID: CFG.iblockId, type: 'catalog', lang: CFG.locale
-    };
-    const listHtml = await request(makeUrl(LIST_PATH, listParams));
-    const listDoc = new DOMParser().parseFromString(listHtml, 'text/html');
-    const grid = listDoc.querySelector('.main-grid[id^="tbl_iblock_element_"]');
-    const gridId = grid?.id;
-    const ajaxId = grid?.dataset.ajaxid;
-    const sessid = listDoc.querySelector('input[name="sessid"]')?.value;
-    if (!gridId || !ajaxId || !sessid) {
-      throw Error('Не найдены gridId, ajaxId или sessid Bitrix');
-    }
+    // Bitrix main.ui.filter иногда возвращает весь каталог вместо нулевого
+    // результата. Поэтому используем проверенный в attributes/matcher.js
+    // путь: один read-only обход всех страниц по ID ASC, далее точное
+    // сопоставление NAME на клиенте и обязательная проверка ШК по карточке.
+    async function indexBitrixCatalog() {
+      const names = new Set(products.map(row => row.name));
+      const index = new Map();
+      const seenIds = new Set();
+      let previousId = null;
+      let expectedTotal = null;
+      let pageSize = null;
+      let pages = null;
+      let received = 0;
 
-    async function searchByName(name) {
-      const filterBody = new URLSearchParams({
-        'params[FILTER_ID]': gridId,
-        'params[GRID_ID]': gridId,
-        'params[action]': 'setFilter',
-        'params[forAll]': 'false',
-        'params[commonPresetsId]': '',
-        'params[apply_filter]': 'Y',
-        'params[clear_filter]': 'N',
-        'params[with_preset]': 'N',
-        'params[save]': 'Y',
-        'data[fields][FIND]': '',
-        'data[fields][NAME]': name,
-        'data[rows]':
-          'NAME,PROPERTY_19,PROPERTY_580,PROPERTY_4,' +
-          'ACTIVE,SECTION_ID,CATALOG_AVAILABLE,ID,' +
-          'PROPERTY_641,CODE,EXTERNAL_ID,PROPERTY_10',
-        'data[preset_id]': 'tmp_filter',
-        'data[name]': 'Фильтр',
-        sessid
-      });
-      for (const field of [
-        'PROPERTY_19', 'PROPERTY_580', 'PROPERTY_4', 'PROPERTY_4_label',
-        'ACTIVE', 'SECTION_ID', 'CATALOG_AVAILABLE',
-        'ID_from', 'ID_to', 'PROPERTY_641', 'CODE',
-        'EXTERNAL_ID', 'PROPERTY_10'
-      ]) {
-        filterBody.set('data[fields][' + field + ']', '');
-      }
-      filterBody.set('data[fields][ID_numsel]', 'exact');
-
-      const filterUrl = makeUrl('/bitrix/services/main/ajax.php', {
-        'analyticsLabel[FILTER_ID]': gridId,
-        'analyticsLabel[GRID_ID]': gridId,
-        mode: 'ajax',
-        c: 'bitrix:main.ui.filter',
-        action: 'setFilter'
-      });
-      const text = await request(filterUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Bx-ajax': 'true'
-        },
-        body: filterBody.toString()
-      });
-      let answer;
-      try { answer = JSON.parse(text); }
-      catch { throw Error('Bitrix вернул не JSON при установке фильтра'); }
-      if (answer?.status === 'error' || answer?.errors?.length) {
-        throw Error('Bitrix отклонил фильтр NAME');
+      function pageUrl(page) {
+        const params = {
+          IBLOCK_ID: CFG.iblockId, type: 'catalog', lang: CFG.locale,
+          find_el_y: 'Y', apply_filter: 'Y',
+          by: 'id', order: 'asc'
+        };
+        // Очищаем старый фильтр только на первой странице.
+        // На остальных — та же пагинация, что в attributes/matcher.js.
+        if (page === 1) params.clear_filter = 'Y';
+        else params.PAGEN_1 = String(page);
+        return makeUrl(LIST_PATH, params);
       }
 
-      const gridUrl = makeUrl(LIST_PATH, {
-        ...listParams,
-        find_el_y: 'Y',
-        clear_filter: 'Y',
-        sessid,
-        internal: 'true',
-        grid_id: gridId,
-        apply_filter: 'Y',
-        clear_nav: 'Y',
-        grid_action: 'showpage',
-        bxajaxid: ajaxId
-      });
-      const form = new FormData();
-      form.set('apply_filter', 'Y');
-      form.set('clear_nav', 'Y');
-      const gridHtml = await request(gridUrl, {
-        method: 'POST',
-        headers: {
-          'Bx-ajax': 'true',
-          'X-Ajax-Grid-Req': '{"action":"showpage"}',
-          'X-Ajax-Grid-UID': ajaxId
-        },
-        body: form
-      });
-      function readGridResult(html, source) {
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-        const table = doc.querySelector('table.main-grid-table');
-        if (!table) throw Error('Bitrix grid не найден (' + source + ')');
-        const columns = [...table.querySelectorAll(
-          'thead tr.main-grid-row-head > th'
-        )].map(th => th.dataset.name || '');
-        if (!columns.includes('NAME')) {
-          throw Error('В Bitrix grid нет колонки NAME (' + source + ')');
+      async function readPage(page) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try { return await request(pageUrl(page), {
+            headers:{Accept:'text/html'}
+          }); }
+          catch (error) {
+            if (attempt === 3) throw Error('Страница каталога ' + page +
+              ': ' + error.message);
+            await new Promise(resolve => setTimeout(resolve, attempt * 600));
+          }
         }
-        const ids = [...new Set(
-          [...table.querySelectorAll('tbody > tr.main-grid-row-body[data-id]')]
-            .map(tr => tr.dataset.id)
-            .filter(id => /^\d+$/.test(id))
-        )];
-        const totalText = doc.querySelector(
+      }
+
+      function parsePage(html, page) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const tables = [...doc.querySelectorAll('table.main-grid-table')]
+          .map(table => ({
+            table,
+            columns:[...table.querySelectorAll(
+              'thead tr.main-grid-row-head > th'
+            )].map(th => th.dataset.name || '')
+          })).filter(x => x.columns.includes('NAME') &&
+            x.columns.includes('ID'));
+        if (tables.length !== 1) throw Error('Страница ' + page +
+          ': не найден единственный grid с колонками NAME и ID');
+        const {table, columns} = tables[0];
+        const nameIndex = columns.indexOf('NAME');
+        const rows = [...table.querySelectorAll(
+          'tbody > tr.main-grid-row-body[data-id]'
+        )].filter(tr => !(
+          tr.classList.contains('main-grid-not-count') &&
+          tr.hasAttribute('hidden') &&
+          /^template_\d+$/.test(tr.dataset.id ?? '')
+        )).map(tr => {
+          const id = tr.dataset.id;
+          const cells = [...tr.querySelectorAll(':scope > td')];
+          if (!/^\d+$/.test(id) || cells.length !== columns.length) {
+            throw Error('Страница ' + page +
+              ': некорректная строка/ID ' + id);
+          }
+          const links = [...cells[nameIndex].querySelectorAll('a[href]')]
+            .filter(link => {
+              try {
+                const url = new URL(link.getAttribute('href'), location.origin);
+                return url.origin === location.origin &&
+                  url.pathname === CARD_PATH &&
+                  url.searchParams.get('IBLOCK_ID') === CFG.iblockId &&
+                  url.searchParams.get('ID') === id;
+              } catch { return false; }
+            });
+          if (links.length !== 1) throw Error('Страница ' + page +
+            ': нет однозначной ссылки NAME для ID ' + id);
+          // Без trim/clean и без изменения регистра или пробелов.
+          return {id, name:links[0].textContent};
+        });
+        const rawTotal = doc.querySelector(
           '.main-grid-panel-total .main-grid-panel-content-text'
-        )?.textContent?.trim() ?? '';
-        const total = /^\d+$/.test(totalText) ? Number(totalText) : null;
-        // Нулевой результат корректен: товар может отсутствовать в Bitrix.
-        // Отсутствие подтверждённого total — не доказательство отсутствия.
-        const complete = total !== null && total === ids.length &&
-          ids.length <= CFG.maxVisibleRows;
-        return { ids, total, totalText, complete, source };
+        )?.textContent ?? '';
+        const normalized = rawTotal.replace(/[\u00a0\u202f]/g,' ').trim();
+        const match = normalized.match(/(?:всего|total)\s*:?\s*([\d., ]+)/i) ??
+          normalized.match(/^([\d., ]+)$/);
+        const total = match
+          ? Number(match[1].replace(/[., ]/g,'')) : NaN;
+        if (!Number.isSafeInteger(total) || total < 0) {
+          throw Error('Страница ' + page +
+            ': не определён total Bitrix: ' + JSON.stringify(normalized));
+        }
+        return {total, rows};
       }
 
-      const ajax = readGridResult(gridHtml, 'AJAX');
-      if (ajax.complete) return ajax.ids;
-
-      // Иногда Bitrix после пустого поиска возвращает в AJAX общий каталог:
-      // total=все товары, rows=100. Это НЕ 100 кандидатов и НЕ доказанное
-      // отсутствие товара. Независимо проверяем обычную страницу с тем же
-      // фильтром текущей сессии, без clear_filter.
-      console.warn('[Matcher] AJAX не подтвердил поиск NAME: total=' +
-        (ajax.totalText || '?') + ', rows=' + ajax.ids.length +
-        '. Проверяю обычную страницу списка.');
-      const plainUrl = makeUrl(LIST_PATH, {
-        ...listParams,
-        find_el_y: 'Y',
-        clear_filter: 'Y',
-        apply_filter: 'Y'
-      });
-      const plainHtml = await request(plainUrl);
-      const plain = readGridResult(plainHtml, 'обычная страница');
-      if (plain.complete) {
-        console.log('[Matcher] Поиск подтверждён обычной страницей: ' +
-          plain.ids.length + ' кандидатов');
-        return plain.ids;
+      const first = parsePage(await readPage(1), 1);
+      expectedTotal = first.total;
+      pageSize = first.rows.length;
+      if (expectedTotal > 0 && (pageSize < 1 || pageSize > expectedTotal)) {
+        throw Error('Некорректная первая страница каталога');
       }
-      throw Error('Фильтр Bitrix не подтвердил результат NAME. AJAX: total=' +
-        (ajax.totalText || '?') + ', rows=' + ajax.ids.length +
-        '; обычная страница: total=' + (plain.totalText || '?') +
-        ', rows=' + plain.ids.length +
-        '. Нельзя считать товар отсутствующим или использовать общий каталог.');
+      pages = expectedTotal === 0 ? 1 : Math.ceil(expectedTotal / pageSize);
+      if (pages > CFG.maxPages) {
+        throw Error('Каталог содержит ' + pages +
+          ' страниц — больше разрешённых ' + CFG.maxPages);
+      }
+      console.log('[Matcher] Индексирую Bitrix: ' + expectedTotal +
+        ' товаров, ' + pages + ' страниц (строго по ID ASC)');
+
+      function acceptPage(data, page) {
+        if (data.total !== expectedTotal) throw Error('Страница ' + page +
+          ': total изменился во время обхода (' + data.total +
+          ' вместо ' + expectedTotal + ')');
+        const expectedSize = page === pages
+          ? expectedTotal - (pages - 1) * (pageSize || 0)
+          : pageSize;
+        if (data.rows.length !== expectedSize) throw Error('Страница ' + page +
+          ': ожидалось ' + expectedSize + ' строк, получили ' +
+          data.rows.length + '. Невозможно гарантировать полный каталог');
+        for (const {id,name} of data.rows) {
+          if (seenIds.has(id) ||
+              (previousId != null && BigInt(id) <= BigInt(previousId))) {
+            throw Error('Страница ' + page +
+              ': повторяющийся или несортированный ID ' + id);
+          }
+          seenIds.add(id);
+          previousId = id;
+          if (names.has(name)) {
+            const hits = index.get(name) ?? [];
+            hits.push(id);
+            index.set(name,hits);
+          }
+        }
+        received += data.rows.length;
+        if (page === 1 || page % 5 === 0 || page === pages) {
+          console.log('[Matcher] Каталог Bitrix: ' + received + '/' +
+            expectedTotal + ', страница ' + page + '/' + pages);
+        }
+      }
+
+      acceptPage(first,1);
+      for (let page = 2; page <= pages; page++) {
+        if (window.bitrixMatchStop) {
+          throw Error('Обход каталога остановлен. Товары Strapi не изменены.');
+        }
+        acceptPage(parsePage(await readPage(page),page),page);
+      }
+      if (received !== expectedTotal || seenIds.size !== expectedTotal) {
+        throw Error('Индекс каталога неполный — сопоставление запрещено');
+      }
+      console.log('[Matcher] Каталог Bitrix проверен: ' + received +
+        ' уникальных ID. Теперь строгое сопоставление NAME + ШК.');
+      return index;
     }
-
 
     async function readCard(bitrixId) {
       const html = await request(cardUrl(bitrixId));
@@ -661,6 +671,7 @@
     } : {status:'ERROR', details:String(error?.message ?? error)};
     const pending = new Set();
     let fatal = null;
+    const catalogIndex = await indexBitrixCatalog();
     function schedule(product, ids) {
       const task = verifyCandidates(product, ids)
         .then(result => recordResult(product, result),
@@ -688,7 +699,7 @@
           continue;
         }
         try {
-          const ids = await searchByName(product.name);
+          const ids = catalogIndex.get(product.name) ?? [];
           schedule(product, ids);
           if (pending.size >= CFG.maxPendingProducts) await Promise.race(pending);
           if (dirty.size >= CFG.checkpointEvery) await persist();
