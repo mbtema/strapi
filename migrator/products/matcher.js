@@ -604,6 +604,7 @@
     function recordResult(product, result) {
       if (result.status === 'ERROR') {
         errors.set(product.documentId, result);
+        fatal ??= Error('Техническая ошибка '+product.documentId+': '+result.details);
       } else {
         completed.set(product.documentId, result);
         dirty.set(product.documentId, result);
