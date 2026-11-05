@@ -37,7 +37,7 @@ const getNumberOption = (key, fallback, min, max) => {
   if (!Number.isSafeInteger(n) || n < min || n > max) throw Error('Некорректное значение ' + key);
   return n;
 };
-const PAUSE_MS = getNumberOption('--pause-ms', 1500, 500, 60000);
+const PAUSE_MS = getNumberOption('--pause-ms', 0, 0, 60000);
 for (const a of args) {
   if (!['--apply','--verbose','--retry-errors','--retry-partial'].includes(a) &&
       !/^--confirm=\d+$/.test(a) &&
@@ -543,7 +543,7 @@ async function main() {
       skipped++;
       continue;
     }
-    if(attempted>0)await sleep(PAUSE_MS);
+    if(attempted > 0 && PAUSE_MS > 0) await sleep(PAUSE_MS);
     attempted++;
     let writeStarted=false;
     const item={status:'running',attempts:(previous?.attempts||0)+1,bitrixId:row.bitrixId,
