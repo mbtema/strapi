@@ -2,7 +2,7 @@
 // Вход: products-config.csv (12 колонок Config, все товары Strapi ru).
 // Выход: products-matched.csv (Config + данные Bitrix, только необходимые изменения)
 // и products-unmatched.csv (ошибки сопоставления/проверки).
-// Checkpoint: IndexedDB, по хешу входного CSV; неполные CSV не экспортируются.
+// Checkpoint: IndexedDB, по хешу входного CSV и версии; неполные CSV не экспортируются.
 (async () => {
   'use strict';
 
@@ -13,7 +13,7 @@
     maxPages: 1000,
     cardConcurrency: 3,
     maxPendingProducts: 4,
-    checkpointVersion: 'v4-catalog-index'
+    checkpointVersion: 'v5-media-flag'
   };
 
   const INPUT_FIELDS = [
@@ -27,7 +27,6 @@
     'bitrixPreviewPictureUrl', 'bitrixDetailPictureUrl', 'bitrixPicturesJson'
   ];
   const OUTPUT_FIELDS = [...INPUT_FIELDS, ...BITRIX_FIELDS];
-  const REQUIRED = ['name1', 'name2', 'detail_text', 'preview_picture', 'detail_picture'];
 
   if (!location.pathname.startsWith('/bitrix/admin/')) {
     throw Error('Открой Bitrix Admin');
@@ -202,8 +201,14 @@
     return urls.size ? [...urls][0] : '';
   }
 
-  function parseBitrixContent(doc, bitrixId) {
-    const scripts = [...doc.querySelectorAll('script')].map(s => s.textContent ?? '');
+  function parseBitrixContent(doc, bitrixId, product) {
+    // URL нужны только для пустых Media Strapi; заполненные поля не переносим.
+    const needPreview = !hasStrapiContent(product, 'preview_picture');
+    const needDetail = !hasStrapiContent(product, 'detail_picture');
+    const needPictures = !hasStrapiContent(product, 'pictures');
+    const scripts = needPreview || needDetail || needPictures
+      ? [...doc.querySelectorAll('script')].map(s => s.textContent ?? '')
+      : [];
     const property = number => {
       const re = new RegExp('^PROP\\[' + number + '\\]\\[');
       const inputs = [...doc.querySelectorAll('input[name], textarea[name]')]
@@ -226,12 +231,16 @@
         ', оригинальный URL не подтверждён');
       return url;
     };
-    const galleryNodes = [...doc.querySelectorAll('input[name]')].filter(el =>
-      /^PROP\[28\]\[\d+\]$/.test(el.getAttribute('name') ?? '') &&
-      /^\d+$/.test(String(el.value)) && el.value !== '0');
+    const galleryNodes = needPictures
+      ? [...doc.querySelectorAll('input[name]')].filter(el =>
+          /^PROP\[28\]\[\d+\]$/.test(el.getAttribute('name') ?? '') &&
+          /^\d+$/.test(String(el.value)) && el.value !== '0')
+      : [];
     const gallerySources = [...new Set(galleryNodes.map(el => el.closest('tr')).filter(Boolean))]
       .map(el => el.outerHTML);
-    gallerySources.push(...scripts.filter(s => galleryNodes.some(el => s.includes(el.value))));
+    if (needPictures) {
+      gallerySources.push(...scripts.filter(s => galleryNodes.some(el => s.includes(el.value))));
+    }
     const pictures = galleryNodes.map((el, index) => ({
       order: index + 1,
       fileId: el.value,
@@ -258,8 +267,8 @@
       name1: property(216),
       name2: property(217),
       detail_text: String(detailText.value ?? ''),
-      preview_picture: single('PREVIEW_PICTURE'),
-      detail_picture: single('DETAIL_PICTURE'),
+      preview_picture: needPreview ? single('PREVIEW_PICTURE') : '',
+      detail_picture: needDetail ? single('DETAIL_PICTURE') : '',
       pictures, active: active.checked,
       sectionId: sections[0]
     };
@@ -278,16 +287,11 @@
     const needGallery = row.pictures === 'false' && bitrix.pictures.length > 0;
     const needCategory = !row.categories.split('|').includes(bitrix.sectionId);
     const needActive = row.active !== String(bitrix.active);
-    const futureComplete = REQUIRED.every(f =>
-      hasStrapiContent(row, f) || Boolean(
-        ['preview_picture', 'detail_picture'].includes(f) ? bitrix[f] : bitrix[f].trim()
-      )
-    );
-    // Пустая галерея в обеих CMS допустима, при наличии в Bitrix — импортируем.
-    const desiredFlag = futureComplete ? 'false' : 'true';
-    const needFlag = row.newFrom1C !== desiredFlag;
-    return { needed: needContent || needGallery || needCategory || needActive || needFlag,
-      desiredFlag };
+    // Matcher не определяет целевой newFrom1C: после Save это делает Importer.
+    // true/null передаём даже без контентных изменений для нормализации флага.
+    const needFlagReview = row.newFrom1C === 'true' || row.newFrom1C === 'null';
+    return { needed: needContent || needGallery || needCategory ||
+      needActive || needFlagReview };
   }
 
   async function checkpoint(hash) {
@@ -627,7 +631,7 @@
         status: match.card.barcodes.length ? 'BARCODE_MISMATCH' : 'BITRIX_BARCODE_MISSING',
         details: 'Bitrix ID ' + match.bitrixId + ': общего штрихкода нет'
       };
-      const bitrix = parseBitrixContent(match.card.doc, match.bitrixId);
+      const bitrix = parseBitrixContent(match.card.doc, match.bitrixId, product);
       const decision = needsImport(product, bitrix);
       if (!decision.needed) return {
         status:'ALREADY_SYNCED', bitrixId:match.bitrixId
