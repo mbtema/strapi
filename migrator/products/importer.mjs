@@ -572,11 +572,9 @@ async function main() {
   }
   await atomicWrite(job.reportFile,reportCsv(rows,items));
   const unknownCategory=rows.filter(row=>items[row.documentId]?.status==='category_not_found');
-  if(unknownCategory.length){
-    const file=resolve('products-category-not-found.csv');
-    await atomicWrite(file,reportCsv(unknownCategory,items));
-    log('Отсутствующие категории: '+unknownCategory.length+'; отчёт: '+file);
-  }
+  const categoryReport=resolve('products-category-not-found.csv');
+  await atomicWrite(categoryReport,reportCsv(unknownCategory,items));
+  if(unknownCategory.length)log('Отсутствующие категории: '+unknownCategory.length+'; отчёт: '+categoryReport);
   log('ИТОГО за запуск: '+attempted+' обработано, '+successful+' успешно/частично, '+
       failed+' ошибок, '+manual+' требуется проверить вручную, '+skipped+
       ' пропущено по checkpoint. Прошло '+Math.round((Date.now()-started)/1000)+' сек.');
