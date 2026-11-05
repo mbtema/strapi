@@ -302,5 +302,5 @@
     file: CFG.filename
   }]);
   console.log('[Config] Готово. Только GET; изменений в Strapi нет.');
-  console.warn('[Config] Этот новый CSV пока НЕ совместим с текущим products/matcher.js.');
+  console.log('[Config] CSV совместим с migrator/products/matcher.js (12 колонок).');
 })();
