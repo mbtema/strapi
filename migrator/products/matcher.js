@@ -383,8 +383,7 @@
     const startedAt = performance.now();
 
     const listParams = {
-      IBLOCK_ID: CFG.iblockId, type: 'catalog', lang: CFG.locale,
-      find_section_section: '-1'
+      IBLOCK_ID: CFG.iblockId, type: 'catalog', lang: CFG.locale
     };
     const listHtml = await request(makeUrl(LIST_PATH, listParams));
     const listDoc = new DOMParser().parseFromString(listHtml, 'text/html');
@@ -450,7 +449,10 @@
       }
 
       const gridUrl = makeUrl(LIST_PATH, {
-        ...listParams, sessid,
+        ...listParams,
+        find_el_y: 'Y',
+        clear_filter: 'Y',
+        sessid,
         internal: 'true',
         grid_id: gridId,
         apply_filter: 'Y',
@@ -508,6 +510,8 @@
         '. Проверяю обычную страницу списка.');
       const plainUrl = makeUrl(LIST_PATH, {
         ...listParams,
+        find_el_y: 'Y',
+        clear_filter: 'Y',
         apply_filter: 'Y'
       });
       const plainHtml = await request(plainUrl);
