@@ -537,7 +537,7 @@ async function main() {
   for(let idx=0;idx<rows.length && !stopRequested;idx++) {
     const row=rows[idx];
     const previous=items[row.documentId];
-    if(APPLY && previous && (['done','skipped_already','category_not_found','review'].includes(previous.status) ||
+    if(APPLY && previous && (['done','skipped_already','review'].includes(previous.status) ||
         (previous.status==='error' && !RETRY_ERRORS) ||
         (previous.status==='partial' && !RETRY_PARTIAL))) {
       skipped++;
@@ -589,7 +589,7 @@ async function main() {
       totals[status in totals ? status : 'pending']++;
     }
     log('Сводка CSV: '+JSON.stringify(totals));
-    if(totals.error || totals.review || totals.pending && !attempted)process.exitCode=1;
+    if(totals.error || totals.review || totals.category_not_found || (totals.pending && !attempted))process.exitCode=1;
   } else if(failed)process.exitCode=1;
 }
 main().catch(e=>{console.error('[Importer] STOP:',e.message);process.exitCode=1;});
