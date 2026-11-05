@@ -197,7 +197,11 @@ async function categoryBySection(sectionId) {
   if(!rows)throw Error(`Category ${sectionId}: неизвестный формат`);
   const m=rows.map(unwrap).filter(x=>String(x.bitrix_id)===sectionId && x.locale===CFG.locale);
   const total=Number(pageOf(j)?.total??m.length);
-  return (m.length===1 && total===1 && m[0].documentId && Number.isInteger(m[0].id))?m[0]:null;
+  if(m.length!==1 || total!==1 || !m[0].documentId || !Number.isInteger(m[0].id))return null;
+  const category=typeof m[0].custom==='boolean'?m[0]:
+    await detail('api::category.category',m[0].documentId);
+  // Custom разделы не относятся к основному дереву каталога.
+  return category.custom===false ? category : null;
 }
 
 function mediaId(v) {
@@ -210,7 +214,7 @@ function mediaIds(v) {
   const arr=Array.isArray(v)?v:Array.isArray(v?.data)?v.data:[];
   return arr.map(mediaId);
 }
-// Те же шесть обязательных полей, по которым config.js отбирает товары.
+// Пять обязательных контентных полей и хотя бы одна категория.
 // Галерея (pictures) необязательна; active не является критерием полноты.
 const requiredContent = ['name1','name2','preview_picture','detail_picture','detail_text'];
 const missingRequired = (product, categories) => [
@@ -227,18 +231,24 @@ async function storeState(state) {
   await rename(temp,stateFile);
 }
 async function upload(image,field,order,id,state,markWrite) {
-  const key=`${id}:${field}:${image.fileId}`;
-  const known=state.uploads[key];
-  if(known){log(`Media checkpoint: ${field} -> ${known}`);return known;}
   const u=new URL(image.url);
   validateMediaUrl(u.href);
+  const imageKey=image.fileId || createHash('sha256').update(u.href).digest('hex').slice(0,12);
+  const key=`${id}:${field}:${imageKey}`;
+  const known=state.uploads[key];
+  if(known){log(`Media checkpoint: ${field} -> ${known}`);return known;}
   const r=await http(u.href,{headers:{'User-Agent':'Mozilla/5.0','Accept':'image/*'}});
   const mime=r.headers.get('content-type')?.split(';')[0].trim();
   const ext=({'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif'})[mime];
   if(!ext)throw Error(`Изображение ${image.fileId}: MIME ${mime}`);
+  const declaredSize=Number(r.headers.get('content-length'));
+  if(Number.isFinite(declaredSize) && declaredSize>CFG.maxImageMB*1024*1024){
+    await r.body?.cancel().catch(()=>{});
+    throw Error('Изображение превышает допустимый размер');
+  }
   const buf=Buffer.from(await r.arrayBuffer());
   if(!buf.length||buf.length>CFG.maxImageMB*1024*1024)throw Error('Неверный размер изображения');
-  const filename=`bitrix-${id}-${field}${order?'-'+String(order).padStart(2,'0'):''}-${image.fileId}.${ext}`;
+  const filename=`bitrix-${id}-${field}${order?'-'+String(order).padStart(2,'0'):''}-${imageKey}.${ext}`;
   const form=new FormData();
   form.append('files',new Blob([buf],{type:mime}),filename);
   // POST /upload — без retry. Если ответ неясен, проверить Media Library вручную.
