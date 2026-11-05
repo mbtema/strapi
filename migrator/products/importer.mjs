@@ -1,8 +1,7 @@
-// Bitrix -> Strapi: этап 3. Node.js 20+, npm install cheerio.
+// Этап 3: импорт из готового CSV Matcher. Node.js 20+, без запросов к карточкам Bitrix.
 // Читает весь products-matched.csv: по одному товару за раз до конца файла.
 // По умолчанию dry-run; --apply для последовательной записи всех товаров.
-// JWT Strapi и Cookie Bitrix нужно один раз вставить в const AUTH ниже; отдельные файлы не нужны.
-import * as cheerio from 'cheerio';
+// Нужен только JWT Strapi; медиа скачиваются по публичным URL без Cookie.
 import { readFile, writeFile, rename, appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -22,8 +21,7 @@ const CFG = {
 };
 const AUTH = {
   // Один раз вставь свои значения в кавычки, потом только запускай скрипт.
-  strapiJwt: "ВСТАВЬ_JWT_STRAPI",
-  bitrixCookie: "ВСТАВЬ_COOKIE_BITRIX"
+  strapiJwt: "ВСТАВЬ_JWT_STRAPI"
 };
 const args = process.argv.slice(2);
 const APPLY = args.includes('--apply');
@@ -55,16 +53,6 @@ const unwrap = x => x?.attributes && !Array.isArray(x.attributes) && !x.document
 const listOf = x => Array.isArray(x?.results) ? x.results : Array.isArray(x?.data) ? x.data : null;
 const pageOf = x => x?.pagination ?? x?.meta?.pagination;
 const strapiUrl = path => new URL(path, CFG.strapi).href;
-const bitrixUrl = (path, params={}) => {
-  const u = new URL(path, CFG.bitrix);
-  for (const [k,v] of Object.entries(params)) u.searchParams.set(k, String(v));
-  return u.href;
-};
-const cardUrl = id => bitrixUrl('/bitrix/admin/iblock_element_edit.php', {
-  IBLOCK_ID: '1', type: 'catalog', lang: 'ru', ID: id,
-  find_section_section: '-1', WF: 'Y'
-});
-
 async function http(url, opts={}) {
   let response;
   try {
@@ -83,11 +71,6 @@ async function http(url, opts={}) {
 const sGet = async path => (await http(strapiUrl(path), {
   headers: { Authorization: `Bearer ${AUTH.strapiJwt}`, Accept: 'application/json' }
 })).json();
-const bGet = async url => (await http(url, { headers: {
-  Cookie: AUTH.bitrixCookie, Accept: 'text/html',
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/143.0 Safari/537.36'
-}})).text();
-
 function parseCsv(text) {
   const rows=[]; let row=[], cell='', quoted=false;
   const src=text.replace(/^\uFEFF/, '');
@@ -108,29 +91,73 @@ function parseCsv(text) {
   if(cell || row.length) {row.push(cell.replace(/\r$/, ''));if(row.some(Boolean))rows.push(row);}
   return rows;
 }
+
+const INPUT_FIELDS = [
+ 'documentId','name','name1','name2','detail_picture','preview_picture',
+ 'pictures','active','newFrom1C','attributes','categories','detail_text',
+ 'bitrixId','matchedBarcode','bitrixActive','bitrixSectionId','bitrixName1',
+ 'bitrixName2','bitrixDetailText','bitrixPreviewPictureUrl',
+ 'bitrixDetailPictureUrl','bitrixPicturesJson'
+];
+function validateMediaUrl(value) {
+ if (!value) return '';
+ let url;
+ try { url = new URL(value); } catch { throw Error('Некорректный URL медиа из CSV'); }
+ const root = new URL(CFG.bitrix);
+ if (url.origin !== root.origin || url.protocol !== 'https:' ||
+     url.username || url.password || url.search || url.hash ||
+     !/^\/upload\/iblock\/(?!resize_cache\/)[^?#]+\.(?:jpe?g|png|webp|gif)$/i.test(url.pathname) ||
+     /%2f|%5c/i.test(url.pathname)) {
+   throw Error('URL не является публичным оригиналом Bitrix /upload/iblock/');
+ }
+ return url.href;
+}
 async function inputRows() {
-  const raw = await readFile(resolve(CFG.input), 'utf8');
-  const data = parseCsv(raw);
-  const heads = data.shift();
-  const expected = ['documentId','name','barcodes','bitrixId','bitrixCardUrl','matchedBarcode'];
-  if(JSON.stringify(heads)!==JSON.stringify(expected)) {
-    throw Error('Неверные колонки CSV: ' + heads?.join(';'));
-  }
-  if (!data.length) throw Error('В products-matched.csv нет товаров');
-  const ids=new Set(), bitrixIds=new Set();
-  const rows=data.map((cells,index)=>{
-    if(cells.length!==heads.length)throw Error('CSV: неверное число колонок в строке '+(index+2));
-    const row=Object.fromEntries(heads.map((h,i)=>[h,cells[i]]));
-    if(!/^[a-z0-9]+$/i.test(row.documentId) || !/^\d+$/.test(row.bitrixId)) {
-      throw Error('CSV: некорректные ID в строке '+(index+2));
-    }
-    if(ids.has(row.documentId)||bitrixIds.has(row.bitrixId)) {
-      throw Error('CSV: повторяющийся documentId или bitrixId в строке '+(index+2));
-    }
-    ids.add(row.documentId); bitrixIds.add(row.bitrixId);
-    return row;
-  });
-  return {rows, hash:createHash('sha256').update(raw).digest('hex').slice(0,16)};
+ const raw = await readFile(resolve(CFG.input), 'utf8');
+ const data = parseCsv(raw);
+ const heads = data.shift();
+ if (JSON.stringify(heads) !== JSON.stringify(INPUT_FIELDS)) {
+   throw Error('Ожидаются 22 колонки нового products-matched.csv из Matcher');
+ }
+ if (!data.length) throw Error('В products-matched.csv нет кандидатов');
+ const ids=new Set(), bIds=new Set();
+ const rows=data.map((cells,index) => {
+   const where='CSV строка '+(index+2)+': ';
+   if (cells.length !== heads.length) throw Error(where+'число колонок');
+   const row=Object.fromEntries(heads.map((h,i)=>[h,cells[i]]));
+   if (!/^[a-z0-9]+$/i.test(row.documentId) ||
+       !/^\d+$/.test(row.bitrixId) || row.bitrixId==='0' ||
+       !/^\d+$/.test(row.bitrixSectionId) || row.bitrixSectionId==='0') {
+     throw Error(where+'неверный идентификатор');
+   }
+   if (ids.has(row.documentId) || bIds.has(row.bitrixId)) throw Error(where+'дубликат ID');
+   if (!['true','false'].includes(row.bitrixActive) ||
+       !['true','false'].includes(row.active) ||
+       !['true','false','null'].includes(row.newFrom1C) ||
+       ['detail_picture','preview_picture','pictures','detail_text']
+         .some(f=>!['true','false'].includes(row[f]))) {
+     throw Error(where+'некорректные флаги');
+   }
+   if (!row.matchedBarcode || !row.attributes.split('|').includes(row.matchedBarcode)) {
+     throw Error(where+'нет matchedBarcode среди attributes');
+   }
+   row.bitrixPreviewPictureUrl=validateMediaUrl(row.bitrixPreviewPictureUrl);
+   row.bitrixDetailPictureUrl=validateMediaUrl(row.bitrixDetailPictureUrl);
+   let images;
+   try { images=JSON.parse(row.bitrixPicturesJson); }
+   catch { throw Error(where+'bitrixPicturesJson не JSON'); }
+   if (!Array.isArray(images)) throw Error(where+'галерея не массив');
+   images.forEach((image,i)=>{
+     if (!image || image.order!==i+1 || !/^\d+$/.test(String(image.fileId)) || !image.url) {
+       throw Error(where+'неполная галерея');
+     }
+     image.url=validateMediaUrl(image.url);
+   });
+   row.bitrixPictures=images;
+   ids.add(row.documentId);bIds.add(row.bitrixId);
+   return row;
+ });
+ return {rows,hash:createHash('sha256').update(raw).digest('hex').slice(0,16)};
 }
 
 async function detail(uid,id,status=null) {
@@ -162,67 +189,6 @@ async function relations(id, field) {
   throw Error(`Relations ${field}: более 100 страниц`);
 }
 
-function prop(source,key) {
-  const re=new RegExp(`(?:['"]${key}['"]|\\b${key}\\b)\\s*:\\s*(?:'((?:\\\\.|[^'\\\\])*)'|"((?:\\\\.|[^"\\\\])*)"|(\\d+))`);
-  const m=source.match(re);
-  return m ? String(m[1]??m[2]??m[3]).replace(/\\u002f/gi,'/').replace(/\\\//g,'/').replace(/\\(['"\\])/g,'$1') : null;
-}
-function imageFrom(source,id) {
-  if(!/^\d+$/.test(String(id??'')))return null;
-  const objects=source.replace(/&quot;/g,'"').replace(/&amp;/g,'&').match(/\{[^{}]{0,10000}\}/g)??[];
-  for(const obj of objects) {
-    if(prop(obj,'fileId')!==String(id))continue;
-    const path=prop(obj,'real_url');
-    if(!path)continue;
-    let u;try{u=new URL(path,CFG.bitrix);}catch{continue;}
-    if(u.origin!==CFG.bitrix || !u.pathname.startsWith('/upload/iblock/') || u.pathname.includes('/resize_cache/'))continue;
-    return {fileId:String(id),url:u.href};
-  }
-  return null;
-}
-function extractBitrix(html) {
-  const $=cheerio.load(html);
-  if(typeof $('input[name="NAME"]').first().val()!=='string') {
-    throw Error('Bitrix: не найдена карточка товара');
-  }
-  const property=id => {
-    const matches=$('input[name], textarea[name]').toArray().filter(el=>
-      new RegExp(`^PROP\\[${id}\\]\\[`).test($(el).attr('name')??''));
-    return matches.length===1 ? String($(matches[0]).val()??'') : null;
-  };
-  const single=field=>{
-    const row=$(`#tr_${field}`);
-    if(!row.length)return null;
-    const fileId=row.find(`input[type="hidden"][name="${field}"]`).first().val();
-    if(!/^\d+$/.test(String(fileId??'')))return null;
-    // Ищем метаданные в строке, затем в JS карточки.
-    const fromRow=imageFrom($.html(row),fileId);
-    if(fromRow)return fromRow;
-    for(const s of $('script').toArray()) {
-      const text=$(s).html()??'';
-      if(text.includes(String(fileId))){const img=imageFrom(text,fileId);if(img)return img;}
-    }
-    return null;
-  };
-  const imgs=$('input[name]').toArray().filter(el=>
-    /^PROP\[28\]\[\d+\]$/.test($(el).attr('name')??'') && /^\d+$/.test(String($(el).val())));
-  const sources=[...new Set(imgs.map(el=>$(el).closest('tr').get(0)).filter(Boolean))].map(row=>$.html(row));
-  $('script').each((_,s)=>{const t=$(s).html()??'';if(imgs.some(el=>t.includes(String($(el).val()))))sources.push(t);});
-  const pictures=imgs.map((el,index)=>{
-    const id=String($(el).val());
-    return {order:index+1,fileId:id,...(sources.map(s=>imageFrom(s,id)).find(Boolean)??{})};
-  });
-  const selects=$('select[name^="IBLOCK_SECTION"]');
-  const sections=[...new Set(selects.find('option:selected').toArray()
-    .map(el=>String($(el).attr('value')??'')).filter(s=>/^\d+$/.test(s)&&Number(s)>0))];
-  const activeInput=$('input[type="checkbox"][name="ACTIVE"]');
-  const active=activeInput.length ? activeInput.is(':checked') : null;
-  const detailText=$('textarea[name="DETAIL_TEXT"]');
-  return {name1:property(216),name2:property(217),
-    preview_picture:single('PREVIEW_PICTURE'),detail_picture:single('DETAIL_PICTURE'),
-    pictures,detail_text:detailText.length?String(detailText.first().val()??''):null,
-    active,sections};
-}
 async function categoryBySection(sectionId) {
   const q=new URLSearchParams({locale:CFG.locale,page:'1',pageSize:'20'});
   q.set('filters[bitrix_id][$eq]',sectionId);
@@ -265,8 +231,8 @@ async function upload(image,field,order,id,state,markWrite) {
   const known=state.uploads[key];
   if(known){log(`Media checkpoint: ${field} -> ${known}`);return known;}
   const u=new URL(image.url);
-  if(u.origin!==CFG.bitrix || !u.pathname.startsWith('/upload/iblock/'))throw Error('Небезопасный URL изображения');
-  const r=await http(u.href,{headers:{Cookie:AUTH.bitrixCookie,'User-Agent':'Mozilla/5.0','Accept':'image/*'}});
+  validateMediaUrl(u.href);
+  const r=await http(u.href,{headers:{'User-Agent':'Mozilla/5.0','Accept':'image/*'}});
   const mime=r.headers.get('content-type')?.split(';')[0].trim();
   const ext=({'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif'})[mime];
   if(!ext)throw Error(`Изображение ${image.fileId}: MIME ${mime}`);
@@ -537,10 +503,10 @@ async function migrateOne(row, markWrite, verbose) {
 
 }
 async function main() {
-  const missingAuth=['strapiJwt','bitrixCookie'].filter(k=>{
+  const missingAuth=['strapiJwt'].filter(k=>{
     const v=AUTH[k];return !v || ['ВСТАВЬ_','__LOCAL_','PASTE_'].some(p=>v.startsWith(p));
   });
-  if(missingAuth.length)throw Error('Заполни JWT и Cookie в const AUTH: '+missingAuth.join(', '));
+  if(missingAuth.length)throw Error('Заполни JWT Strapi в const AUTH: '+missingAuth.join(', '));
   const {rows,hash}=await inputRows();
   // --apply обрабатывает все строки файла; старый --confirm доступен только для одиночного теста.
   if(APPLY && confirmation && (rows.length!==1 || confirmation!==rows[0].bitrixId)) {
