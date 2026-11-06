@@ -37,7 +37,7 @@
         const publishButton = findPublishButton();
 
         if (!publishButton) {
-            console.warn('[ctrl-enter-publisher] Publish button not found');
+            console.warn('[alt-enter-publisher] Publish button not found');
             return;
         }
 

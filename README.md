@@ -43,8 +43,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 ## Features
 
-- `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
-- `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
+- `alt-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
 - `tools-launcher.js` — `Alt+P`, открывает browser tools из `extension/manifests/tools.json` колонками `audits`, `sync`, `diagnostics`; `group` обязан совпадать с первой папкой в `file`, валидируются path / semver / group и дубли файлов; блокирует повторный параллельный запуск async tool и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 
 ## UI/UX
@@ -152,8 +151,7 @@ README обновляется, когда меняются структура, �
 │   │   ├── ui-ux.json
 │   │   └── tools.json
 │   ├── features/
-│   │   ├── barcode-extractor.js
-│   │   ├── ctrl-enter-publisher.js
+│   │   ├── alt-enter-publisher.js
 │   │   └── tools-launcher.js
 │   ├── ui-ux/
 │   │   ├── entry-relocate.js

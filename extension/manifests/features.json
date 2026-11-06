@@ -2,15 +2,9 @@
   "schemaVersion": 1,
   "extensions": [
     {
-      "id": "barcode-extractor",
-      "path": "features/barcode-extractor.js",
-      "version": "1.4.3",
-      "enabled": true
-    },
-    {
-      "id": "ctrl-enter-publisher",
-      "path": "features/ctrl-enter-publisher.js",
-      "version": "1.2.1",
+      "id": "alt-enter-publisher",
+      "path": "features/alt-enter-publisher.js",
+      "version": "1.2.2",
       "enabled": true
     },
     {
