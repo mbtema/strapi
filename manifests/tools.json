@@ -17,6 +17,11 @@
       "group": "audits"
     },
     {
+      "file": "audits/lux-normalizer.js",
+      "version": "1.0.0",
+      "group": "audits"
+    },
+    {
       "file": "audits/products-wrong-variants.js",
       "version": "1.3.0",
       "group": "audits"
