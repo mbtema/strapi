@@ -4,11 +4,7 @@
 
 | Папка | Назначение |
 |---|---|
-| [`extension/`](./extension) | Единый Tampermonkey loader |
-| [`manifests/`](./manifests) | Централизованные реестры extensions и tools |
-| [`features/`](./features) | Функции: горячие клавиши, barcode и Tools Launcher |
-| [`ui-ux/`](./ui-ux) | UI/UX-кастомы Strapi |
-| [`tools/`](./tools) | Browser tools по назначению: `audits/`, `sync/`, `diagnostics/` |
+| [`extension/`](./extension) | Модули Strapi Admin: loader, manifests, features, UI/UX и browser tools |
 | [`migrator/`](./migrator) | Независимые pipeline Bitrix → Strapi: `products/` — товары, `attributes/` — торговые предложения |
 | [`helpdesk/`](./helpdesk) | n8n workflows Telegram-бота MonAmie Helpdesk |
 | [`translator/`](./translator) | RU → KK переводчик: полная версия, compressed-версия и extractor для накопленного translation context |
@@ -25,21 +21,23 @@ Userscript metadata (`==UserScript==`, `@name`, `@version`, `@match` и т.д.) 
 Loader при открытии Strapi:
 
 1. мгновенно запускает последнюю сохранённую копию extensions из кеша;
-2. в фоне загружает корневой `manifests/extensions.json`;
-3. по нему загружает `manifests/ui-ux.json` и `manifests/features.json`;
+2. в фоне загружает корневой `extension/manifests/extensions.json`;
+3. по нему загружает `extension/manifests/ui-ux.json` и `extension/manifests/features.json`;
 4. объединяет и валидирует их как единый registry;
 5. при изменении версий или путей скачивает только изменившиеся файлы и сохраняет новый кеш;
 6. обновлённые extensions применяются после следующей перезагрузки Strapi.
 
 Старые отдельные Tampermonkey-скрипты после установки loader нужно отключить или удалить, иначе один функционал будет запускаться дважды.
 
+После переноса всех модулей в `extension/` нужен loader версии `1.3.5` или новее. Обновите установленный userscript через Tampermonkey (или дождитесь его штатного обновления), затем откройте Strapi: loader загрузит новый registry в кеш. Обновления дочерних extensions применятся после следующей перезагрузки страницы.
+
 Для ручной проверки обновлений в Console доступна команда `checkUpdates()`. Она проверяет установленную версию loader и все дочерние manifests, скачивает изменившиеся extensions в кеш и сообщает, нужна ли перезагрузка Strapi. Если в repo появилась новая версия самого loader, команда сообщает, что userscript нужно обновить через Tampermonkey.
 
 ### Manifest
 
-`manifests/` — единое место для runtime-реестров. `manifests/extensions.json` содержит список extension manifests, сейчас `manifests/features.json` и `manifests/ui-ux.json`. Все manifests используют `schemaVersion: 1`; это версия формата конкретного manifest, а не версия скриптов.
+`extension/manifests/` — единое место для runtime-реестров. `extension/manifests/extensions.json` содержит список extension manifests, сейчас `extension/manifests/features.json` и `extension/manifests/ui-ux.json`. Все manifests используют `schemaVersion: 1`; это версия формата конкретного manifest, а не версия скриптов.
 
-Метаданные конкретных extensions (`id`, `path`, semver `version`, `enabled`) хранятся в `manifests/features.json` и `manifests/ui-ux.json`. При изменении extension увеличивается его `version` в соответствующем manifest. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
+Метаданные конкретных extensions (`id`, `path`, semver `version`, `enabled`) хранятся в `extension/manifests/features.json` и `extension/manifests/ui-ux.json`. При изменении extension увеличивается его `version` в соответствующем manifest. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
 
 Loader валидирует каждый дочерний manifest и итоговый объединённый registry: формат путей, соответствие имени файла `id`, semver и глобальные дубли `id/path`. Если root/child manifest недоступен или некорректен, новый кеш не записывается, а при наличии старого loader продолжает использовать его.
 
@@ -47,7 +45,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 - `barcode-extractor.js` — `Alt+B`, копирует barcode из поля `input[name="barcode"]` в карточке товара и показывает toast.
 - `ctrl-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `tools-launcher.js` — `Alt+P`, открывает browser tools из `manifests/tools.json` колонками `audits`, `sync`, `diagnostics`; `group` обязан совпадать с первой папкой в `file`, валидируются path / semver / group и дубли файлов; блокирует повторный параллельный запуск async tool и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
+- `tools-launcher.js` — `Alt+P`, открывает browser tools из `extension/manifests/tools.json` колонками `audits`, `sync`, `diagnostics`; `group` обязан совпадать с первой папкой в `file`, валидируются path / semver / group и дубли файлов; блокирует повторный параллельный запуск async tool и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 
 ## UI/UX
 
@@ -63,11 +61,11 @@ Loader валидирует каждый дочерний manifest и итого
 - minor (`1.4`) — заметное новое поведение;
 - major (`2.0`) — крупная переработка.
 
-Версия extension независима от версии loader. Единственный источник версии для extension — его запись в `manifests/features.json` или `manifests/ui-ux.json`; отдельные metadata-блоки и `@version` внутри этих файлов не используются.
+Версия extension независима от версии loader. Единственный источник версии для extension — его запись в `extension/manifests/features.json` или `extension/manifests/ui-ux.json`; отдельные metadata-блоки и `@version` внутри этих файлов не используются.
 
 ## Tools
 
-Browser tools запускаются через `Alt+P`. `audits/` содержит массовые проверки данных, `sync/` — инструменты синхронизации/изменения данных, `diagnostics/` — диагностические утилиты. Data-audit tools проверяют текущее состояние CMS только через Content Manager API, включая draft/modified записи; Public API `/api/...` для этих проверок не используется. Массовые tools проходят данные постранично, показывают progress/counters и при необходимости автоматически скачивают CSV. Для девяти длительных tools реализована одинаковая плавающая панель прогресса внутри CMS с мягкой остановкой; массовые независимые задания адаптируют параллельность, последовательные UI/DOM-операции сохраняют исходный порядок. Кнопка Stop не отменяет уже начатые операции записи, а дожидается завершения текущей группы с её проверкой. При запуске через Tools Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация tool и его версия (`file`, semver `version`, `group`) хранятся только в `manifests/tools.json`; metadata-блоки внутри tool-файлов не используются.
+Browser tools запускаются через `Alt+P`. `audits/` содержит массовые проверки данных, `sync/` — инструменты синхронизации/изменения данных, `diagnostics/` — диагностические утилиты. Data-audit tools проверяют текущее состояние CMS только через Content Manager API, включая draft/modified записи; Public API `/api/...` для этих проверок не используется. Массовые tools проходят данные постранично, показывают progress/counters и при необходимости автоматически скачивают CSV. Для девяти длительных tools реализована одинаковая плавающая панель прогресса внутри CMS с мягкой остановкой; массовые независимые задания адаптируют параллельность, последовательные UI/DOM-операции сохраняют исходный порядок. Кнопка Stop не отменяет уже начатые операции записи, а дожидается завершения текущей группы с её проверкой. При запуске через Tools Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация tool и его версия (`file`, semver `version`, `group`) хранятся только в `extension/manifests/tools.json`; metadata-блоки внутри tool-файлов не используются.
 
 - `audits/attributes-wrong-prices.js` — attributes активных товаров в текущем состоянии CMS с пустой, нечисловой, нулевой, отрицательной или дробной ценой; CSV включает `documentId` предложения.
 - `audits/products-missing-content.js` — проверяет критичные контентные поля активных товаров с учётом `categories.active`: товары только в отключённых категориях пропускаются, а товары без categories или со смешанными active/inactive categories всегда попадают в отчёт как edge cases.
@@ -80,9 +78,9 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 - `diagnostics/network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
 - `diagnostics/style-stealer.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
 - `sync/layout-sync.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, во вкладке `Фильтры` учитывает порядок смысловых групп, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
-- `manifests/tools.json` — runtime-источник `file`, semver `version` и `group` для Tools Launcher; `file` хранит путь относительно `tools/`, а `group` обязан совпадать с первой папкой пути (`audits`, `sync`, `diagnostics`).
+- `extension/manifests/tools.json` — runtime-источник `file`, semver `version` и `group` для Tools Launcher; `file` хранит путь относительно `extension/tools/`, а `group` обязан совпадать с первой папкой пути (`audits`, `sync`, `diagnostics`).
 
-Для нового tool добавь файл в подходящую подпапку `tools/` (`audits/`, `sync/` или `diagnostics/`) и зарегистрируй его в `manifests/tools.json` через `file`, `version` и `group`. `version` и `group` внутри tool-файла не дублируются.
+Для нового tool добавь файл в подходящую подпапку `extension/tools/` (`audits/`, `sync/` или `diagnostics/`) и зарегистрируй его в `extension/manifests/tools.json` через `file`, `version` и `group`. `version` и `group` внутри tool-файла не дублируются.
 
 Рабочие группы: `audits`, `sync`, `diagnostics`.
 
@@ -147,36 +145,38 @@ README обновляется, когда меняются структура, �
 ```text
 .
 ├── extension/
-│   └── loader.js
-├── manifests/
-│   ├── extensions.json
-│   ├── features.json
-│   ├── ui-ux.json
-│   └── tools.json
-├── features/
-│   ├── barcode-extractor.js
-│   ├── ctrl-enter-publisher.js
-│   └── tools-launcher.js
-├── ui-ux/
-│   ├── sidebar.js
-│   ├── entry-relocate.js
-│   ├── product-attributes-navigator.js
-│   ├── product-sections.js
-│   └── record-list.js
-├── tools/
-│   ├── audits/
-│   │   ├── attributes-wrong-prices.js
-│   │   ├── products-missing-content.js
-│   │   ├── lux-normalizer.js
-│   │   └── products-wrong-variants.js
-│   ├── sync/
-│   │   ├── layout-sync.js
-│   │   ├── products-category-forward-sync.js
-│   │   └── products-category-mirror-sync.js
-│   └── diagnostics/
-│       ├── dom-stealer.js
-│       ├── network-recorder.js
-│       └── style-stealer.js
+│   ├── loader.js
+│   ├── manifests/
+│   │   ├── extensions.json
+│   │   ├── features.json
+│   │   ├── ui-ux.json
+│   │   └── tools.json
+│   ├── features/
+│   │   ├── barcode-extractor.js
+│   │   ├── ctrl-enter-publisher.js
+│   │   └── tools-launcher.js
+│   ├── ui-ux/
+│   │   ├── entry-relocate.js
+│   │   ├── product-attributes-navigator.js
+│   │   ├── product-sections.js
+│   │   ├── record-list.js
+│   │   └── sidebar.js
+│   └── tools/
+│       ├── audits/
+│       │   ├── attributes-wrong-prices.js
+│       │   ├── catalog-tree-products.js
+│       │   ├── lux-normalizer.js
+│       │   ├── products-attributes-locale-audit.js
+│       │   ├── products-missing-content.js
+│       │   └── products-wrong-variants.js
+│       ├── sync/
+│       │   ├── layout-sync.js
+│       │   ├── products-category-forward-sync.js
+│       │   └── products-category-mirror-sync.js
+│       └── diagnostics/
+│           ├── dom-stealer.js
+│           ├── network-recorder.js
+│           └── style-stealer.js
 ├── migrator/
 │   ├── products/
 │   │   ├── config.js

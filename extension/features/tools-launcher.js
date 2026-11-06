@@ -2,7 +2,7 @@
   'use strict';
 
   const RAW_ROOT =
-    'https://raw.githubusercontent.com/mbtema/strapi/main/';
+    'https://raw.githubusercontent.com/mbtema/strapi/main/extension/';
   const TOOLS_BASE = `${RAW_ROOT}tools/`;
   const MANIFEST_URL = `${RAW_ROOT}manifests/tools.json`;
   const OVERLAY_ID = 'tm-tools-launcher-overlay';

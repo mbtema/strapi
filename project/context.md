@@ -67,14 +67,16 @@ bitrix_id, xml_id, code_1c
 
 Общая инфраструктура extensions:
 - единый Tampermonkey loader;
-- централизованные registries в `manifests/`;
+- централизованные registries в `extension/manifests/`;
 - shared cache/update mechanism.
 
+Весь Strapi Admin runtime хранится в `extension/`: `loader.js`, `manifests/`, `features/`, `ui-ux/`, `tools/`. Пути manifest entries (`path` и `file`) относительны к `extension/` и `extension/tools/` соответственно. `migrator/` остаётся в корне как отдельные pipelines `products/` и `attributes/` для Bitrix ↔ Strapi.
+
 Registry разделён по зонам ответственности, а не объединён в один огромный файл:
-- `manifests/extensions.json` — root registry extension manifests;
-- `manifests/features.json` — registry feature extensions;
-- `manifests/ui-ux.json` — registry UI/UX extensions;
-- `manifests/tools.json` — registry browser tools.
+- `extension/manifests/extensions.json` — root registry extension manifests;
+- `extension/manifests/features.json` — registry feature extensions;
+- `extension/manifests/ui-ux.json` — registry UI/UX extensions;
+- `extension/manifests/tools.json` — registry browser tools.
 
 Сами сервисы остаются в своих папках; manifests — только регистрация/версии.
 
@@ -82,12 +84,12 @@ Loader использует cached extensions для быстрого старт
 
 ## CANONICAL — Tools Launcher
 
-Tools Launcher получает registry из `manifests/tools.json`, а код tools — из `tools/`. `file` в manifest хранит относительный путь внутри `tools/`, включая подпапку назначения.
+Tools Launcher получает registry из `extension/manifests/tools.json`, а код tools — из `extension/tools/`. `file` в manifest хранит относительный путь внутри `extension/tools/`, включая подпапку назначения.
 
 Физическая структура tools:
-- `tools/audits/` — массовые проверки и отчёты;
-- `tools/sync/` — синхронизации и управляемые write-инструменты;
-- `tools/diagnostics/` — диагностические utilities.
+- `extension/tools/audits/` — массовые проверки и отчёты;
+- `extension/tools/sync/` — синхронизации и управляемые write-инструменты;
+- `extension/tools/diagnostics/` — диагностические utilities.
 
 Manifest tool содержит:
 
@@ -99,14 +101,14 @@ group
 
 `group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `audits`, `sync`, `diagnostics`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
 
-Tool-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `manifests/tools.json`. Userscript metadata используется только в `extension/loader.js`, потому что только loader устанавливается напрямую в Tampermonkey.
+Tool-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `extension/manifests/tools.json`. Userscript metadata используется только в `extension/loader.js`, потому что только loader устанавливается напрямую в Tampermonkey.
 
 Managed regular tools получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
 
 
 ## CANONICAL — Network Recorder
 
-`tools/diagnostics/network-recorder.js` — отдельный diagnostics tool для быстрого Network-контекста Strapi; `tools/diagnostics/dom-stealer.js` остаётся только DOM snapshot utility.
+`extension/tools/diagnostics/network-recorder.js` — отдельный diagnostics tool для быстрого Network-контекста Strapi; `extension/tools/diagnostics/dom-stealer.js` остаётся только DOM snapshot utility.
 
 Workflow:
 - первый запуск через Tools Launcher → Start;
@@ -179,7 +181,7 @@ Admin JWT доступен в LocalStorage как `jwtToken`.
 
 ## CANONICAL — source для массовых data-audit tools
 
-Массовые audit tools из `tools/audits/` проверяют фактическое текущее состояние CMS только через Content Manager API. Public REST `/api/...` не используется как source для таких проверок, потому что published view не отражает draft/modified current state; Public API проверяется отдельно через Postman/client/API diagnostics.
+Массовые audit tools из `extension/tools/audits/` проверяют фактическое текущее состояние CMS только через Content Manager API. Public REST `/api/...` не используется как source для таких проверок, потому что published view не отражает draft/modified current state; Public API проверяется отдельно через Postman/client/API diagnostics.
 
 Базовый read pattern:
 - list/detail: `/content-manager/collection-types/api::...`;
@@ -293,7 +295,7 @@ Progress разделён по фазам: list loading → price precheck → i
 
 Назначение: найти все Product с незаполненными критичными полями, независимо от `product.active`, статуса публикации (draft/modified/published) и активности категорий.
 
-Parser: `tools/audits/products-missing-content.js`. Source — Content Manager API, локаль `ru`. Проверяется фактическое текущее состояние каждой записи в CMS; Public REST не используется.
+Parser: `extension/tools/audits/products-missing-content.js`. Source — Content Manager API, локаль `ru`. Проверяется фактическое текущее состояние каждой записи в CMS; Public REST не используется.
 
 Логика:
 - загрузить все страницы Product; никакие записи по `active` или status не исключать;
@@ -401,7 +403,7 @@ active=null: 9717
 
 ## CANONICAL — одноразовые массовые Product write из CSV / relation-аудита
 
-Это reusable **порядок работы**, а не runtime tool в repo: одноразовые Console-скрипты и конкретные CSV/brand IDs не сохранять в `tools/` или README без отдельного требования.
+Это reusable **порядок работы**, а не runtime tool в repo: одноразовые Console-скрипты и конкретные CSV/brand IDs не сохранять в `extension/tools/` или README без отдельного требования.
 
 - Источник задач: файл аудита `products-missing-content.csv` (`documentId;missingFields`) либо точная проверка relation `brand` по заданному набору `documentId` через Content Manager. Для CSV поддерживать UTF-8 BOM, `;` и quoted cells, валидировать заголовки/ID и убирать или блокировать дубли **до write**. Для relation-аудита читать все страницы Product `ru`, затем связанные `brand` и сравнивать **relation documentId**, не название; не фильтровать исходный список по `active` или status, если задача этого не требует.
 - Сначала полный read-only dry-run, количество кандидатов и уже соответствующих целевому состоянию, затем явный confirm. Делать небольшой пилот (исторически 5 Product), проверить реальные результаты Save/Publish, только затем отдельное confirm на весь оставшийся объём.
@@ -801,7 +803,7 @@ shareUrl
 
 ### CANONICAL — Product card layout + sections
 
-`ui-ux/product-sections.js` отвечает только за вкладки `Контент / Фильтры / Системное`, show/hide полей и смысловые заголовки групп. Нативные React fields не перемещать между DOM-контейнерами: это конфликтует с внутренним SPA/focus Strapi. Для временного визуального порядка групп допустим CSS `order` на существующих top-level rows (без reparent): после этого `layout-sync.js` переносит тот же порядок в штатный `layouts.edit`.
+`extension/ui-ux/product-sections.js` отвечает только за вкладки `Контент / Фильтры / Системное`, show/hide полей и смысловые заголовки групп. Нативные React fields не перемещать между DOM-контейнерами: это конфликтует с внутренним SPA/focus Strapi. Для временного визуального порядка групп допустим CSS `order` на существующих top-level rows (без reparent): после этого `layout-sync.js` переносит тот же порядок в штатный `layouts.edit`.
 
 Штатный порядок карточки хранится в Content Manager configuration:
 
@@ -809,13 +811,13 @@ shareUrl
 GET/PUT /content-manager/content-types/api::product.product/configuration
 ```
 
-Source of truth для физического порядка — `layouts.edit`. Service `tools/sync/layout-sync.js` используется после layout-изменений: читает текущий UI; для вкладки `Фильтры` учитывает `data-tm-product-filter-group-order`, выставленный `product-sections`, поэтому смысловые группы сохраняются в заданном порядке; делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
+Source of truth для физического порядка — `layouts.edit`. Service `extension/tools/sync/layout-sync.js` используется после layout-изменений: читает текущий UI; для вкладки `Фильтры` учитывает `data-tm-product-filter-group-order`, выставленный `product-sections`, поэтому смысловые группы сохраняются в заданном порядке; делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
 
 ## Style-stealer UI origin semantics
 
 **Статус:** CANONICAL.
 
-Для design snapshot страницы `tools/diagnostics/style-stealer.js` делит UI на три происхождения:
+Для design snapshot страницы `extension/tools/diagnostics/style-stealer.js` делит UI на три происхождения:
 
 - `native` — нативный Strapi без наших маркеров;
 - `modified` — нативный DOM-узел, изменённый extension; обычные `data-tm-*` / `tm-*` на самом элементе означают modified;
@@ -1062,12 +1064,12 @@ Outbound contract:
 
 # 12. SUPERSEDED / historical architecture
 
-- Folder-local manifests вида `extension/manifest.json`, `features/manifest.json`, `ui-ux/manifest.json`, `parsers/manifest.json` были заменены централизованным `manifests/` 2026-09-23. Не использовать старые paths как default.
+- Folder-local manifests вида `extension/manifest.json`, `features/manifest.json`, `ui-ux/manifest.json`, `parsers/manifest.json` были заменены централизованным `manifests/` 2026-09-23; 2026-11-06 registry перенесён в `extension/manifests/`. Не использовать старые paths как default.
 - В 2026-09-23 папки `migrator/` и `postman/` были удалены при упрощении repo. Исторические workflows выше сохранены как knowledge, но наличие текущей реализации всегда проверять в live repo.
 
 ## CANONICAL — зеркальная синхронизация категорий Products
 
-Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser tool `tools/sync/products-category-mirror-sync.js` через `MIRROR_SYNC_GROUPS`; рабочая locale только `ru`.
+Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser tool `extension/tools/sync/products-category-mirror-sync.js` через `MIRROR_SYNC_GROUPS`; рабочая locale только `ru`.
 
 Бизнес-правило для одной mirror group:
 - собрать union Products всех Category группы;
@@ -1136,13 +1138,13 @@ Concurrency:
 
 HISTORICAL live benchmark 2026-10-19 для первой mirror group из двух Category: 308 Products были опубликованы без ошибок, verify дал C1=317/C2=317/missing=0 за 37.7 сек. Throughput вырос до ~9.23 req/s на concurrency 20, а ступени 25–40 не дали улучшения и увеличили latency; это подтвердило throughput-aware rollback вместо роста только по отсутствию ошибок.
 
-Current configured groups не дублировать в context: source of truth — live `MIRROR_SYNC_GROUPS` в `tools/sync/products-category-mirror-sync.js`.
+Current configured groups не дублировать в context: source of truth — live `MIRROR_SYNC_GROUPS` в `extension/tools/sync/products-category-mirror-sync.js`.
 
 Пересечение Category между разными mirror groups сейчас не запрещается и специально не объединяется. Если реальный каталог выявит пересекающиеся группы, сначала отдельно определить бизнес-семантику такого сценария, затем менять workflow.
 
 ## CANONICAL — односторонняя синхронизация категорий Products
 
-Назначение: поддерживать одностороннее включение Products из настроенной source Category в соответствующую target Category. Runtime tool: `tools/sync/products-category-forward-sync.js`; рабочая locale только `ru`.
+Назначение: поддерживать одностороннее включение Products из настроенной source Category в соответствующую target Category. Runtime tool: `extension/tools/sync/products-category-forward-sync.js`; рабочая locale только `ru`.
 
 Группы задаются вручную через `FORWARD_SYNC_GROUPS` по контракту:
 
@@ -1186,7 +1188,7 @@ CANONICAL run:
 
 Concurrency полностью наследует подтверждённый throughput-aware adaptive механизм mirror-sync parser: старт 10, шаг 5, min 5, max 40, оценка ступени после 20 успешных requests, новая ступень должна улучшить best throughput минимум на 3%, после двух подряд неулучшающих ступеней rollback/lock на best concurrency; найденный уровень переносится между groups. На `429`/`5xx`/network error concurrency снижается и benchmark перезапускается. `POST actions/publish` автоматически не ретраить.
 
-Current configured forward-sync groups не дублировать в context: source of truth — live `FORWARD_SYNC_GROUPS` в `tools/sync/products-category-forward-sync.js`.
+Current configured forward-sync groups не дублировать в context: source of truth — live `FORWARD_SYNC_GROUPS` в `extension/tools/sync/products-category-forward-sync.js`.
 
 ---
 
