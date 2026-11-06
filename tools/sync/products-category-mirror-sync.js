@@ -129,7 +129,27 @@
       // Группа: Наборы по уходу за волосами (Ж)
       'z20lqspttx2u4bp8z4ryocpc',
       'ce192gec9vkw4c4t7baallyq'
-    ]
+    ],
+    [ 
+      //  Группа: Заколки
+      'i3ndqp4iok0ph0d1gjybx4hm',
+      'v0nwhgahn9x6f51vxrujpay7'
+    ],
+    [
+      // Группа: Наборы для ногтей
+      'k856h9iqhsq9n8rlds8w8hj8',
+      'qjk230tz6sg5dzdlwn0osb28'
+    ],
+    [
+      // Группа: Ободки
+      'c9a05whhgl73nhozy5h8e8sv',
+      'phqd42665omyvh3k8sjb6cda'
+    ],
+    [
+      // Группа: Резинки
+      'x6gzlcr5cwqi16zsj9s36ou7',
+      'tgf1oz0q21j9lektdyxapwzc'
+    ],
 
     // Добавляй следующие группы сюда по тому же принципу:
     // [
