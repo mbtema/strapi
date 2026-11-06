@@ -70,7 +70,7 @@ bitrix_id, xml_id, code_1c
 - централизованные registries в `extension/manifests/`;
 - shared cache/update mechanism.
 
-Весь Strapi Admin runtime хранится в `extension/`: `loader.js`, `manifests/`, `features/`, `ui-ux/`, `tools/`. Пути manifest entries (`path` и `file`) относительны к `extension/` и `extension/tools/` соответственно. `migrator/` остаётся в корне как отдельные pipelines `products/` и `attributes/` для Bitrix ↔ Strapi.
+Весь Strapi Admin runtime хранится в `extension/`: `extension.js`, `manifests/`, `features/`, `ui-ux/`, `tools/`. Пути manifest entries (`path` и `file`) относительны к `extension/` и `extension/tools/` соответственно. `migrator/` остаётся в корне как отдельные pipelines `products/` и `attributes/` для Bitrix ↔ Strapi.
 
 Registry разделён по зонам ответственности, а не объединён в один огромный файл:
 - `extension/manifests/extensions.json` — root registry extension manifests;
@@ -101,7 +101,7 @@ group
 
 `group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `audits`, `sync`, `diagnostics`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
 
-Tool-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `extension/manifests/tools.json`. Userscript metadata используется только в `extension/loader.js`, потому что только loader устанавливается напрямую в Tampermonkey.
+Tool-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `extension/manifests/tools.json`. Userscript metadata используется только в `extension/extension.js`, потому что только loader устанавливается напрямую в Tampermonkey.
 
 Managed regular tools получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
 

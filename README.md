@@ -14,7 +14,7 @@
 
 В Tampermonkey устанавливается только:
 
-`extension/loader.js`
+`extension/extension.js`
 
 Userscript metadata (`==UserScript==`, `@name`, `@version`, `@match` и т.д.) нужна только этому loader. Дочерние extensions и tools загружаются через manifests и не содержат собственные metadata-блоки.
 
@@ -29,7 +29,7 @@ Loader при открытии Strapi:
 
 Старые отдельные Tampermonkey-скрипты после установки loader нужно отключить или удалить, иначе один функционал будет запускаться дважды.
 
-После переноса всех модулей в `extension/` нужен loader версии `1.3.5` или новее. Обновите установленный userscript через Tampermonkey (или дождитесь его штатного обновления), затем откройте Strapi: loader загрузит новый registry в кеш. Обновления дочерних extensions применятся после следующей перезагрузки страницы.
+После переименования установочного файла используйте [`extension/extension.js`](./extension/extension.js), версия `1.3.6`. Старый `extension/loader.js` удалён: ранее установленный Tampermonkey-скрипт с прежним `@updateURL` не сможет обновиться автоматически. Один раз откройте новый URL и установите скрипт в Tampermonkey, затем отключите/удалите старую копию во избежание двойного запуска. После этого перезагрузите страницу Strapi, чтобы loader обновил кеш; ещё одна перезагрузка применит скачанные extensions.
 
 Для ручной проверки обновлений в Console доступна команда `checkUpdates()`. Она проверяет установленную версию loader и все дочерние manifests, скачивает изменившиеся extensions в кеш и сообщает, нужна ли перезагрузка Strapi. Если в repo появилась новая версия самого loader, команда сообщает, что userscript нужно обновить через Tampermonkey.
 
@@ -145,7 +145,7 @@ README обновляется, когда меняются структура, �
 ```text
 .
 ├── extension/
-│   ├── loader.js
+│   ├── extension.js
 │   ├── manifests/
 │   │   ├── extensions.json
 │   │   ├── features.json
