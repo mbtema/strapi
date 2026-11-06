@@ -5,7 +5,7 @@
 | Папка | Назначение |
 |---|---|
 | [`extension/`](./extension) | Модули Strapi Admin: loader, manifests, features, UI/UX и browser tools |
-| [`migrator/`](./migrator) | Независимые pipeline Bitrix → Strapi: `products/` — товары, `attributes/` — торговые предложения |
+| [`migrator/`](./migrator) | Независимые pipeline: `products/` — товары, `attributes/` — торговые предложения, `shades-volumes/` — оттенки/объёмы предложений |
 | [`helpdesk/`](./helpdesk) | n8n workflows Telegram-бота MonAmie Helpdesk |
 | [`translator/`](./translator) | RU → KK переводчик: полная версия, compressed-версия и extractor для накопленного translation context |
 | [`project/`](./project) | Sync/staging copies для Project Instructions и источника `context.md` |
@@ -85,7 +85,7 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 
 ## Migrator
 
-Pipeline разделены по типу записей и не используют общие конфиги. `products/` содержит существующий pipeline для товаров; все его CSV, media checkpoint, journal и отчёты теперь используют префикс `products-` вместо `migration-`. При переходе не смешивать новые файлы со старыми checkpoint. `attributes/` предназначен для торговых предложений (`api::attribute.attribute`, Bitrix `IBLOCK_ID=2`).
+Pipeline разделены по типу записей и не используют общие конфиги. `products/` содержит существующий pipeline для товаров; все его CSV, media checkpoint, journal и отчёты теперь используют префикс `products-` вместо `migration-`. При переходе не смешивать новые файлы со старыми checkpoint. `attributes/` предназначен для торговых предложений (`api::attribute.attribute`, Bitrix `IBLOCK_ID=2`). `shades-volumes/` — отдельный pipeline для выбора вариантов предложения в мобильном приложении; пока реализован только Config.
 
 ### Attributes — `migrator/attributes/`
 
@@ -103,6 +103,12 @@ Pipeline разделены по типу записей и не использ�
 
 **Запуск Products Importer из PowerShell:** помести `importer.mjs` и `products-matched.csv` на рабочий стол; `node --use-system-ca "$env:USERPROFILE\Desktop\importer.mjs"` — dry-run всех кандидатов с `products-import-plan.csv`; добавь `--apply` только после пилотной проверки для записи в Strapi. Обработка последовательная без обязательной паузы (по умолчанию `--pause-ms=0`); при необходимости можно задать `--pause-ms=N` до 60000 мс. `--confirm=<BitrixID>` разрешён только для входного CSV с одной записью. Результаты: `products-import-report.csv`, при отсутствии категорий — `products-category-not-found.csv`, журнал `products-import-journal-<hash>.jsonl`, Media checkpoint `products-media-checkpoint.json`. Для повтора используй тот же CSV: завершённые записи пропускаются, `--retry-errors` позволяет повторить ошибки чтения, `--retry-partial` — неполные карточки; статусы `review` не повторяются без ручной проверки.
 
+
+### Shades/Volumes — `migrator/shades-volumes/`
+
+1. **Config** — [`config.js`](./migrator/shades-volumes/config.js) запускается в DevTools Console авторизованной Strapi Admin. Только GET: получает все `Product` локали `ru` без фильтров по `active`/status, для каждого полностью читает native relation `attributes` через Content Manager и выбирает товары **с двумя и более связанными предложениями**. Список атрибутов включает и записи без штрихкода. Для кандидатов дополнительно получает `name`, `name1`, `name2` и пары `documentId`/`barcode` каждого Attribute. Скачивает `shades-volumes-config.csv` с полями `documentId;name;name1;name2;attributesCount;attributes`, где `attributes` — JSON-массив пар `documentId`/`barcode` в порядке relation API. CSV содержит только кандидатов для будущего Matcher; shade/volume пока не классифицирует и не изменяет. В Console показывает прогресс и итоговые счётчики (`window.shadesVolumesConfigReport`). Мягкая остановка: `window.shadesVolumesConfigStop = true`; при остановке/ошибке частичный CSV не создаётся.
+
+**Запуск:** открой Strapi Admin, скопируй содержимое `config.js` в Console и выполни. Полученный CSV передавай в будущий Matcher без пересохранения в Excel. Matcher и Importer для этого pipeline пока не реализованы.
 
 ## Helpdesk
 
@@ -181,11 +187,13 @@ README обновляется, когда меняются структура, �
 │   │   ├── matcher.js
 │   │   ├── importer.mjs
 │   │   └── starter.ps1
-│   └── attributes/
-│       ├── config.js
-│       ├── matcher.js
-│       ├── importer.mjs
-│       └── starter.ps1
+│   ├── attributes/
+│   │   ├── config.js
+│   │   ├── matcher.js
+│   │   ├── importer.mjs
+│   │   └── starter.ps1
+│   └── shades-volumes/
+│       └── config.js
 ├── helpdesk/
 │   ├── workflow.json
 │   └── notifications.json
