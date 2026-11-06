@@ -1,7 +1,8 @@
 // Этап 1: Strapi Admin -> Console -> attributes-config.csv
 // Только GET. Все торговые предложения locale=ru, без фильтров active/published.
 // CSV: documentId;barcode;active;hasDetailPicture;shade;shadeDocumentId;volume;volumeDocumentId.
-// shade/volume — name связанных записей; *DocumentId — их идентификаторы Strapi.
+// shade/volume — name связанных записей (может отсутствовать); *DocumentId — их идентификаторы Strapi.
+// Если имя целевой записи недоступно, сохраняем её documentId и фиксируем случай в отчёте.
 // Только GET, без привязки к Product.
 (async () => {
   'use strict';
@@ -232,18 +233,75 @@
       }
       const item = unwrap(data);
       if (item && typeof item === 'object' &&
-          typeof item.documentId === 'string' && item.documentId.trim() &&
-          typeof item.name === 'string' && item.name.trim()) {
-        return { name: item.name, documentId: item.documentId };
+          typeof item.documentId === 'string' && item.documentId.trim()) {
+        // В Content Manager для отдельных связей name отсутствует или заменяется ID.
+        // Это не делает существующий relation пустым.
+        return {
+          name: typeof item.name === 'string' ? item.name : '',
+          documentId: item.documentId
+        };
       }
       return null;
     }
 
     let relationFallbacks = 0;
+    let relationNameLookups = 0;
+    let nameLookupFailures = 0;
+    let missingRelationNames = 0;
+    const missingNameSamples = [];
+    const targetNameCache = new Map();
+
+    async function targetName(field, documentId) {
+      const cacheKey = field + ':' + documentId;
+      if (!targetNameCache.has(cacheKey)) {
+        targetNameCache.set(cacheKey, (async () => {
+          relationNameLookups++;
+          const targetUid = field === 'shade' ? 'api::shade.shade' : 'api::volume.volume';
+          const url = '/content-manager/collection-types/' + targetUid + '/' +
+            encodeURIComponent(documentId) + '?locale=' + CFG.locale;
+          try {
+            const json = await getJson(url, targetUid + '/' + documentId);
+            const raw = json?.data ?? json;
+            const item = unwrap(Array.isArray(raw) ? raw[0] : raw);
+            if (item?.documentId !== documentId) {
+              nameLookupFailures++;
+              return '';
+            }
+            return typeof item.name === 'string' ? item.name : '';
+          } catch (error) {
+            // Полное значение relation уже известно по documentId.
+            // Ошибка чтения только его подписи не должна отменять весь экспорт.
+            nameLookupFailures++;
+            return '';
+          }
+        })());
+      }
+      return targetNameCache.get(cacheKey);
+    }
+
+    async function fillRelationName(value, field, attributeId) {
+      if (!value.documentId) return value;
+      if (!value.name.trim() || value.name.trim() === value.documentId) {
+        const name = await targetName(field, value.documentId);
+        if (name.trim()) value = { ...value, name };
+      }
+      if (!value.name.trim() || value.name.trim() === value.documentId) {
+        missingRelationNames++;
+        if (missingNameSamples.length < 10) {
+          missingNameSamples.push({
+            attributeDocumentId: attributeId,
+            relation: field,
+            targetDocumentId: value.documentId
+          });
+        }
+      }
+      return value;
+    }
+
     async function readRelation(attributeId, field, inline) {
       const context = 'Attribute ' + attributeId + '/' + field;
       const fromList = relationValue(inline, context);
-      if (fromList !== null) return fromList;
+      if (fromList !== null) return fillRelationName(fromList, field, attributeId);
 
       relationFallbacks++;
       const params = new URLSearchParams({
@@ -267,9 +325,11 @@
       if (total === 0) return { name: '', documentId: '' };
       const value = relationValue(list[0], context);
       if (!value || !value.documentId) {
-        throw Error(context + ': relation API не вернул documentId/name; проверь Network');
+        const keys = list[0] && typeof list[0] === 'object'
+          ? Object.keys(list[0]).slice(0, 12).join(', ') : typeof list[0];
+        throw Error(context + ': relation API не вернул documentId (поля: ' + keys + ')');
       }
-      return value;
+      return fillRelationName(value, field, attributeId);
     }
 
     console.log(LOG, 'Проверяю shade и volume у ' + rows.length + ' Attributes...');
@@ -314,6 +374,10 @@
     }, relationWorker));
     if (relationFailure) throw relationFailure;
     stopped();
+    if (missingRelationNames) {
+      console.warn(LOG, 'Relations с недоступным названием:', missingRelationNames,
+        '(documentId сохранён). Примеры:', missingNameSamples);
+    }
 
     // CSV без преобразования barcode в число: ведущие нули сохраняются.
     const quote = value => '"' + String(value).replace(/"/g, '""') + '"';
@@ -347,6 +411,10 @@
       withVolume,
       withBoth,
       relationFallbacks,
+      relationNameLookups,
+      nameLookupFailures,
+      missingRelationNames,
+      missingNameSamples,
       activeTrue: rows.filter(row => row.active === 'true').length,
       activeFalse: rows.filter(row => row.active === 'false').length,
       activeNull: rows.filter(row => row.active === 'null').length,
