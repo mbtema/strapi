@@ -5,7 +5,7 @@
 | Папка | Назначение |
 |---|---|
 | [`extension/`](./extension) | Модули Strapi Admin: loader, manifests, features, UI/UX и browser tools |
-| [`migrator/`](./migrator) | Независимые pipeline: `products/` — товары, `attributes/` — торговые предложения, `shades-volumes/` — оттенки/объёмы предложений |
+| [`migrator/`](./migrator) | Независимые pipeline: `products/` — товары, `attributes/` — торговые предложения (включая shade/volume) |
 | [`helpdesk/`](./helpdesk) | n8n workflows Telegram-бота MonAmie Helpdesk |
 | [`translator/`](./translator) | RU → KK переводчик: полная версия, compressed-версия и extractor для накопленного translation context |
 | [`project/`](./project) | Sync/staging copies для Project Instructions и источника `context.md` |
@@ -85,11 +85,11 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 
 ## Migrator
 
-Pipeline разделены по типу записей и не используют общие конфиги. `products/` содержит существующий pipeline для товаров; все его CSV, media checkpoint, journal и отчёты теперь используют префикс `products-` вместо `migration-`. При переходе не смешивать новые файлы со старыми checkpoint. `attributes/` предназначен для торговых предложений (`api::attribute.attribute`, Bitrix `IBLOCK_ID=2`). `shades-volumes/` — отдельный pipeline для выбора вариантов предложения в мобильном приложении; пока реализован только Config.
+Pipeline разделены по типу записей и не используют общие конфиги. `products/` содержит существующий pipeline для товаров; все его CSV, media checkpoint, journal и отчёты теперь используют префикс `products-` вместо `migration-`. При переходе не смешивать новые файлы со старыми checkpoint. `attributes/` предназначен для торговых предложений (`api::attribute.attribute`, Bitrix `IBLOCK_ID=2`). Новые данные shade/volume включены в Config существующего `attributes/`, отдельного pipeline нет.
 
 ### Attributes — `migrator/attributes/`
 
-1. **Config** — [`config.js`](./migrator/attributes/config.js) запускается в Console Strapi Admin. Только GET, все Attribute локали `ru` (включая draft, неактивные и пустой barcode); результат `attributes-config.csv`: `documentId;barcode;active;hasDetailPicture`. Получает ID `detail_picture` через минимальный populate. Статистика, пагинация и остановка при неизвестном формате полей сохранены.
+1. **Config** — [`config.js`](./migrator/attributes/config.js) запускается в Console Strapi Admin. Только GET, все Attribute локали `ru` (включая draft, неактивные и пустой barcode), без проверок Product. Результат `attributes-config.csv` (8 колонок): `documentId;barcode;active;hasDetailPicture;shade;shadeDocumentId;volume;volumeDocumentId`. Поля `shade` и `volume` содержат точные `name` существующих relations; рядом сохраняется `documentId` связанной записи для последующего точного сопоставления. Отсутствующая связь — две пустые колонки. Media запрашивается через минимальный populate по `id`; shade/volume — через точный populate по `name`, с fallback на native Content Manager relation endpoint, если список не содержит полного значения. Прогресс, ограниченная параллельность, проверка данных и отсутствие частичных CSV при ошибке. Остановить длинный экспорт: `window.attributesConfigStop = true`. **Matcher/Importer пока ожидают старый четырёхколоночный CSV; следующий этап — обновить их контракт, до этого новый CSV им не передавать.**
 2. **Matcher** — [`matcher.js`](./migrator/attributes/matcher.js) запускается в Console Bitrix Admin, принимает `attributes-config.csv`. Для `IBLOCK_ID=2` последовательно обходит grid (ID ASC), читает видимые колонки «Штрихкод» (`PROPERTY_19`), «Активность» (`ACTIVE`) и «Детальная картинка» (`DETAIL_PICTURE`). По точному barcode дополняет данные Bitrix и исключает уже синхронизированные записи, а также записи, которым нечего менять. Ссылка `pictureUrl` извлекается из `a[href]` ячейки таблицы — **оригинал** `/upload/iblock/`, не preview `/upload/resize_cache/`; карточки Bitrix не открываются. Выход `attributes-matched.csv`: `documentId;barcode;active;hasDetailPicture;bitrixId;bitrixActive;pictureUrl`; диагностика — `attributes-unmatched.csv`. При неожиданной разметке, неоднозначном URL, нарушении сортировки или дубликатах — STOP без итогового CSV. Progress, мягкая остановка и checkpoint `v4-picture-url` сохранены.
 3. **Importer** — [`importer.mjs`](./migrator/attributes/importer.mjs) запускается через Node.js 20+ **без npm-пакетов**, читает исключительно новый семиколоночный `attributes-matched.csv`. Укажи только `AUTH.jwtToken` в локальной копии, сохрани файл как `Desktop\importer.mjs`. Чтения Bitrix Admin и Cookie Bitrix **нет**; если Media в Strapi отсутствует, изображение скачивается только по публичному `pictureUrl` без Cookie и загружается в Strapi. Значение `bitrixActive` берётся из CSV, а текущие `barcode`, `active` и `detail_picture` Strapi проверяются непосредственно перед записью. Сохраняются только изменившиеся поля, затем Save → Verify → Publish ru → Verify. При неизвестном результате записи сохраняется checkpoint для ручной проверки; при проблеме с публичным изображением Bitrix массовая обработка останавливается. Прогресс и CSV-отчёты сохраняются.
 
@@ -104,11 +104,6 @@ Pipeline разделены по типу записей и не использ�
 **Запуск Products Importer из PowerShell:** помести `importer.mjs` и `products-matched.csv` на рабочий стол; `node --use-system-ca "$env:USERPROFILE\Desktop\importer.mjs"` — dry-run всех кандидатов с `products-import-plan.csv`; добавь `--apply` только после пилотной проверки для записи в Strapi. Обработка последовательная без обязательной паузы (по умолчанию `--pause-ms=0`); при необходимости можно задать `--pause-ms=N` до 60000 мс. `--confirm=<BitrixID>` разрешён только для входного CSV с одной записью. Результаты: `products-import-report.csv`, при отсутствии категорий — `products-category-not-found.csv`, журнал `products-import-journal-<hash>.jsonl`, Media checkpoint `products-media-checkpoint.json`. Для повтора используй тот же CSV: завершённые записи пропускаются, `--retry-errors` позволяет повторить ошибки чтения, `--retry-partial` — неполные карточки; статусы `review` не повторяются без ручной проверки.
 
 
-### Shades/Volumes — `migrator/shades-volumes/`
-
-1. **Config** — [`config.js`](./migrator/shades-volumes/config.js) запускается в DevTools Console авторизованной Strapi Admin. Только GET: получает все `Product` локали `ru` без фильтров по `active`/status, для каждого полностью читает native relation `attributes` через Content Manager и выбирает товары **с двумя и более связанными предложениями**. Список атрибутов включает и записи без штрихкода. Для кандидатов дополнительно получает `name`, `name1`, `name2` и пары `documentId`/`barcode` каждого Attribute. Скачивает `shades-volumes-config.csv` с полями `documentId;name;name1;name2;attributesCount;attributes`, где `attributes` — JSON-массив пар `documentId`/`barcode` в порядке relation API. CSV содержит только кандидатов для будущего Matcher; shade/volume пока не классифицирует и не изменяет. В Console показывает прогресс и итоговые счётчики (`window.shadesVolumesConfigReport`). Мягкая остановка: `window.shadesVolumesConfigStop = true`; при остановке/ошибке частичный CSV не создаётся.
-
-**Запуск:** открой Strapi Admin, скопируй содержимое `config.js` в Console и выполни. Полученный CSV передавай в будущий Matcher без пересохранения в Excel. Matcher и Importer для этого pipeline пока не реализованы.
 
 ## Helpdesk
 
@@ -187,13 +182,11 @@ README обновляется, когда меняются структура, �
 │   │   ├── matcher.js
 │   │   ├── importer.mjs
 │   │   └── starter.ps1
-│   ├── attributes/
-│   │   ├── config.js
-│   │   ├── matcher.js
-│   │   ├── importer.mjs
-│   │   └── starter.ps1
-│   └── shades-volumes/
-│       └── config.js
+│   └── attributes/
+│       ├── config.js
+│       ├── matcher.js
+│       ├── importer.mjs
+│       └── starter.ps1
 ├── helpdesk/
 │   ├── workflow.json
 │   └── notifications.json
