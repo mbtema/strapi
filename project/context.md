@@ -1258,3 +1258,22 @@ Matcher работает через авторизованную вкладку 
 ## Следующий шаг при продолжении этой работы
 
 Ориентироваться на реальные результаты и ограничения раздела 13: первый массовый Products Importer подтвердил 12 671 `done`, обновлённый Matcher v5 выдал 599 кандидатов. При продолжении запросить свежий `products-import-report.csv` для волны на 599 строк и отдельное подтверждение повторной обработки 301 `category_not_found`; не объявлять их выполненными без отчёта. При проблемах Media сверять `fileId/real_url` именно с сырым Network Response карточки Bitrix; при оптимизации Config сначала проверить ответы Content Manager list/relations. Для восстановления старого запуска сохранить **тот же исходный CSV и его journal**, а также использовавшуюся версию Importer. Исторический итог прежней миграции на 5 281 товаре (2026-11-02) по-прежнему не подтверждён.
+
+
+---
+
+## CANONICAL — Attributes Config: shade/volume в существующем pipeline (2026-11-06)
+
+Решение: новый независимый `migrator/shades-volumes/` не нужен. Для Attribute (`api::attribute.attribute`) расширяем существующие `migrator/attributes/config.js` → `matcher.js` → `importer.mjs`. Product для этого pipeline **не читаем**: торговые предложения Strapi и Bitrix сопоставляются по собственным идентификаторам/штрихкодам. `migrator/shades-volumes/config.js` удалён; дальнейшие разработки идут в `migrator/attributes/`.
+
+**Config output** `attributes-config.csv` (8 колонок):
+
+```text
+documentId;barcode;active;hasDetailPicture;shade;shadeDocumentId;volume;volumeDocumentId
+```
+
+Все Attribute locale=ru, включая draft/inactive/пустой barcode; старые поля сохранены. `shade` и `volume` — точные `name` связанных сущностей; `shadeDocumentId` и `volumeDocumentId` — идентификаторы этих target records для точного дальнейшего сопоставления. Пустая связь = обе колонки пусты. Новая проверка не меняет фильтрацию записей и не запрашивает relation Product.
+
+Source: Content Manager list с точным populate Media `detail_picture.id` и relations `shade.name`/`volume.name`; если сокращённый список не даёт однозначного значения, native endpoint `/content-manager/relations/api::attribute.attribute/<documentId>/<shade|volume>?locale=ru&page=1&pageSize=10`. При неполном/неизвестном ответе abort без CSV. Только GET, bounded concurrency, progress, `window.attributesConfigStop=true` для мягкой остановки. CSV писать только после полного завершения, не пересохранять через Excel. В unit mocks проверены нулевые/заполненные relations, ведущие нули barcode и отсутствие CSV при некорректном relation response. **Полный реальный прогон в CMS ещё не подтверждён.**
+
+**Переходный контракт:** текущий Matcher и Importer `migrator/attributes/` ещё ожидают 4/7 колонок соответственно. `attributes-config.csv` нового восьмиколоночного формата не подавать в Matcher до изменения его входного контракта. Следующий этап — обновление Matcher, затем Importer без потери старой логики active/detail_picture.
