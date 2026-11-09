@@ -77,19 +77,19 @@
     const refId = target.searchParams.get('ID');
     if (target.origin !== location.origin || target.pathname !== CARD_PATH ||
         target.searchParams.get('IBLOCK_ID') !== VOLUME_IBLOCK_ID ||
-        !/^\\d+$/.test(refId ?? '') ||
+        !/^\d+$/.test(refId ?? '') ||
         trim(anchors[0].textContent) !== refId) {
       throw Error(context + ': ссылка не указывает на ожидаемый справочник Volume');
     }
     // Пример: "100 [62913]" или нестандартное значение "2х5 [107307]".
     // Строго подтверждаем ID по ссылке, но не пытаемся преобразовать 2х5 в 10.
-    const display = /^(.+?)\\s*\\[\\s*(\\d+)\\s*\\]$/.exec(rawText);
+    const display = /^(.+?)\s*\[\s*(\d+)\s*\]$/.exec(rawText);
     if (!display || display[2] !== refId) {
       throw Error(context + ': ID в ячейке не совпадает со ссылкой или формат повреждён: ' +
         JSON.stringify(rawText.slice(0, 90)));
     }
     const raw = trim(display[1]);
-    if (!/^\\d+(?:[.,]\\d+)?$/.test(raw)) {
+    if (!/^\d+(?:[.,]\d+)?$/.test(raw)) {
       return { status: 'manual', value: '', raw, refId };
     }
     return { status: 'known', value: volumeNumber(raw, context), raw, refId };
