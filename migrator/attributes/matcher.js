@@ -23,6 +23,7 @@
     bitrixCookies: ''
   };
   const LOG = '[Attributes matcher]';
+  const BUILD = 'v5.1-volume-brackets';
   const LIST_PATH = '/bitrix/admin/iblock_element_admin.php';
   const CARD_PATH = '/bitrix/admin/iblock_element_edit.php';
   const VOLUME_IBLOCK_ID = '12';
@@ -387,6 +388,7 @@
     if (AUTH.bitrixCookies.trim()) {
       console.warn(LOG, 'AUTH.bitrixCookies не применяется в браузере: Cookie отправляются текущей сессией Bitrix.');
     }
+    console.log(LOG, 'Версия:', BUILD, '| volume из текста «100 [62913]»');
     console.log(LOG, 'Выбери attributes-config.csv из Strapi.');
     const file = await chooseFile();
     if (!file) {
