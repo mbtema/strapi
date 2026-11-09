@@ -293,13 +293,157 @@ function mediaId(raw) {
   if (typeof v === 'object' && Number.isSafeInteger(v.id) && v.id > 0) return v.id;
   throw Error('Неизвестный формат Strapi detail_picture: нельзя безопасно определить наличие Media');
 }
-function snapshot(item) {
+function snapshot(item, volume) {
   return JSON.stringify({
     active: item.active,
     detail_picture: mediaId(item.detail_picture),
+    volumeDocumentId: volume?.documentId ?? '',
+    volumeId: volume?.id ?? null,
     updatedAt: item.updatedAt ?? null,
     publishedAt: item.publishedAt ?? null
   });
+}
+
+// Подтверждено Network: native GET relations Attribute/volume с locale=ru.
+async function readVolumeRelation(documentId) {
+  const query = new URLSearchParams({ locale: CFG.locale, pageSize: '5', page: '1' });
+  const path = '/content-manager/relations/' + UID + '/' +
+    encodeURIComponent(documentId) + '/volume?' + query;
+  const data = await (await http(strapiUrl(path), { headers: sHeaders() }, true)).json();
+  const entries = data?.results;
+  const total = data?.pagination?.total;
+  const pages = data?.pagination?.pageCount;
+  if (!Array.isArray(entries) || !Number.isSafeInteger(total) || total > 1 ||
+      total < 0 || !Number.isSafeInteger(pages) || pages < 0 || pages > 1 ||
+      entries.length !== total || (data.pagination?.page != null && data.pagination.page !== 1)) {
+    throw Error('Strapi ' + documentId + ': невозможно подтвердить to-one relation Volume');
+  }
+  if (!entries.length) return null;
+  const entry = entries[0];
+  if (!Number.isSafeInteger(entry?.id) || entry.id <= 0 ||
+      typeof entry.documentId !== 'string' || !/^[a-z0-9]+$/i.test(entry.documentId)) {
+    throw Error('Strapi ' + documentId + ': Volume relation без числового id/documentId');
+  }
+  return { id: entry.id, documentId: entry.documentId };
+}
+
+function unwrapRecord(value) {
+  if (value && typeof value === 'object' && value.attributes && !value.documentId) {
+    return { ...value.attributes, id: value.id };
+  }
+  return value;
+}
+
+// 447 Volume в справочнике: постранично загружаем ОДИН раз до любых записей.
+async function readVolumeCatalog() {
+  const byId = new Map();
+  const byNumber = new Map();
+  let page = 1, total = null, pageCount = null;
+  do {
+    const q = new URLSearchParams({
+      page: String(page), pageSize: String(CFG.dictionaryPageSize),
+      sort: 'id:ASC', locale: CFG.locale
+    });
+    q.append('fields[0]', 'name');
+    q.append('fields[1]', 'value');
+    const path = '/content-manager/collection-types/' + VOLUME_UID + '?' + q;
+    const json = await (await http(strapiUrl(path), { headers: sHeaders() }, true)).json();
+    const list = json?.results ?? json?.data;
+    const pagination = json?.pagination ?? json?.meta?.pagination;
+    if (!Array.isArray(list) || !pagination ||
+        !Number.isSafeInteger(pagination.total) ||
+        !Number.isSafeInteger(pagination.pageCount) ||
+        pagination.pageCount < 1 || pagination.pageCount > 100 ||
+        pagination.total < 0 || pagination.page !== page ||
+        list.length > CFG.dictionaryPageSize ||
+        (page < pagination.pageCount && list.length !== CFG.dictionaryPageSize)) {
+      throw Error('Некорректная пагинация справочника Volume, страница ' + page);
+    }
+    if (total === null) { total = pagination.total; pageCount = pagination.pageCount; }
+    if (total !== pagination.total || pageCount !== pagination.pageCount) {
+      throw Error('Справочник Volume менялся во время чтения; запись отменена');
+    }
+    for (const raw of list) {
+      const item = unwrapRecord(raw);
+      if (!Number.isSafeInteger(item?.id) || item.id <= 0 ||
+          typeof item.documentId !== 'string' || !/^[a-z0-9]+$/i.test(item.documentId) ||
+          typeof item.name !== 'string' || !Object.hasOwn(item, 'value')) {
+        throw Error('В справочнике Volume запись без id/documentId/name/value');
+      }
+      if (byId.has(item.documentId)) throw Error('Дубли documentId в справочнике Volume');
+      const entry = { id: item.id, documentId: item.documentId, name: item.name, value: item.value };
+      byId.set(entry.documentId, entry);
+      if (entry.value != null && entry.value !== '') {
+        const value = quantity(entry.value, 'Volume ' + entry.documentId);
+        if (value && exactVolumeName(entry.name, value)) {
+          const options = byNumber.get(value) ?? [];
+          options.push(entry);
+          byNumber.set(value, options);
+        }
+      }
+    }
+    page++;
+  } while (page <= pageCount);
+  if (byId.size !== total) {
+    throw Error('Неполный список Volume: ожидалось ' + total + ', получено ' + byId.size);
+  }
+  log('Справочник Volume:', total, 'записей; уникальных числовых ключей:',
+    byNumber.size, '| повторные пары name/value:',
+    [...byNumber.values()].filter(items => items.length > 1).length);
+  return { byId, byNumber };
+}
+
+async function currentVolumeValue(relation, catalog) {
+  if (!relation) return '';
+  let entry = catalog.byId.get(relation.documentId);
+  if (!entry) {
+    // Для существующего отношения, отсутствующего в list, читаем target напрямую.
+    const path = '/content-manager/collection-types/' + VOLUME_UID + '/' +
+      encodeURIComponent(relation.documentId) + '?locale=' + CFG.locale;
+    const json = await (await http(strapiUrl(path), { headers: sHeaders() }, true)).json();
+    entry = unwrapRecord(json?.data ?? json);
+    if (entry?.documentId !== relation.documentId || entry.id !== relation.id ||
+        !Object.hasOwn(entry, 'value')) {
+      throw Error('Volume ' + relation.documentId + ': target не подтверждён');
+    }
+    catalog.byId.set(entry.documentId, entry);
+  }
+  if (entry.id !== relation.id) {
+    throw Error('Volume ' + relation.documentId + ': изменился числовой ID relation');
+  }
+  return entry.value == null || entry.value === '' ? '' :
+    quantity(entry.value, 'Volume ' + relation.documentId);
+}
+
+// Network 2026-11-09: Content Manager отправляет full data + delta relations
+// в POST /actions/publish, не PUT. Передаём только поля, которые UI отправил
+// в подтверждённом запросе; неизвестные/служебные поля не перезаписываем.
+const PUBLISH_FIELDS = [
+  'name','barcode','bitrix_id','xml_id','price','product_number','code_1c',
+  'label_new','label_hit','home_new_priority','home_hit_priority','label_sales',
+  'label_exclusive','shareUrl','key','color_info','isInStock','name_web','active'
+];
+function publishWithVolumePayload(item, action) {
+  const payload = {};
+  for (const key of PUBLISH_FIELDS) {
+    if (Object.hasOwn(item, key)) payload[key] = item[key];
+  }
+  if (!Object.hasOwn(payload, 'name') || !Object.hasOwn(payload, 'barcode') ||
+      !Object.hasOwn(payload, 'active') || !Object.hasOwn(item, 'detail_picture')) {
+    throw Error('Publish: в live Attribute отсутствует обязательное поле');
+  }
+  payload.detail_picture = item.detail_picture;
+  for (const name of ['product','shade','color_variant1C','filtry']) {
+    // Структура подтверждена запросом Publish; не трогаем другие relations.
+    payload[name] = { connect: [], disconnect: [] };
+  }
+  payload.volume = {
+    connect: action?.target ?
+      [{ id: action.target.id, documentId: action.target.documentId, isTemporary: true }] : [],
+    disconnect: action?.previous ?
+      [{ id: action.previous.id, documentId: action.previous.documentId }] : []
+  };
+  return payload;
 }
 
 function getMime(ct) {
