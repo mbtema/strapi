@@ -1,5 +1,5 @@
 // Attributes: CSV из Bitrix Matcher -> Strapi api::attribute.attribute (locale=ru).
-// Node.js 20+ без дополнительных npm-зависимостей. По умолчанию только dry-run.
+// Node.js 20+ без npm-зависимостей: --apply для записи, иначе dry-run.
 // Только публичное скачивание картинок Bitrix: без Cookie и чтения админ-карточек.
 // Рабочие CSV, журнал и отчёты — на рабочем столе Windows.
 import { readFile, writeFile, rename, appendFile } from 'node:fs/promises';
@@ -14,7 +14,8 @@ const CFG = {
   input: 'attributes-matched.csv',
   timeoutMs: 30000,
   maxImageMB: 20,
-  pauseMs: 0
+  pauseMs: 150,
+  dictionaryPageSize: 100
 };
 const AUTH = {
   jwtToken: 'ВСТАВЬ_JWT_STRAPI',
@@ -54,6 +55,7 @@ const LOG = '[Attributes importer]';
 const log = (...v) => console.log(LOG, ...v);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const UID = 'api::attribute.attribute';
+const VOLUME_UID = 'api::volume.volume';
 const strapiUrl = path => new URL(path, CFG.strapi).href;
 const withLocale = (id, status) => {
   const q = new URLSearchParams({ locale: CFG.locale });
@@ -92,6 +94,24 @@ function parseCsv(input) {
   return rows.filter(r => r.some(x => x !== ''));
 }
 
+// Одинаковое числовое значение в двух CMS, независимо от запятой/точки.
+// Название Volume должно быть СТРОГО числовым, без «МЛ»/«ГР».
+function quantity(value, context) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const match = /^(\d+)(?:[.,](\d+))?$/.exec(raw);
+  if (!match) throw Error(context + ': ожидалось числовое значение: ' + JSON.stringify(raw));
+  const whole = match[1].replace(/^0+(?=\d)/, '');
+  const fraction = (match[2] ?? '').replace(/0+$/, '');
+  return whole + (fraction ? '.' + fraction : '');
+}
+// «50» → value=50 + name «50»; «50МЛ» не подходит.
+// Для десятичных чисел «0,1» и «0.1» считаются одинаковой цифровой записью.
+function exactVolumeName(name, normalized) {
+  const raw = String(name ?? '').trim();
+  return raw === normalized || (normalized.includes('.') && raw === normalized.replace('.', ','));
+}
+
 function validatedImageUrl(value) {
   if (!value) return '';
   let url;
@@ -111,15 +131,16 @@ async function inputRows() {
   const raw = await readFile(resolve(CFG.input), 'utf8');
   const lines = parseCsv(raw);
   const fields = lines.shift();
-  const expected = 'documentId;barcode;active;hasDetailPicture;bitrixId;bitrixActive;pictureUrl';
+  const expected = 'documentId;barcode;active;hasDetailPicture;bitrixId;' +
+    'bitrixActive;pictureUrl;volumeDocumentId;volumeValue;bitrixVolumeValue;bitrixVolumeStatus';
   if (fields?.join(';') !== expected || !lines.length) {
-    throw Error('Ожидается новый attributes-matched.csv: ' + expected +
-      '. Старый CSV с bitrixUrl использовать нельзя.');
+    throw Error('Нужен attributes-matched.csv из Matcher v5.2+ (11 колонок): ' + expected);
   }
   const docIds = new Set(), barcodes = new Set(), bitrixIds = new Set();
   const rows = lines.map((cells, idx) => {
-    if (cells.length !== 7) throw Error('CSV строка ' + (idx + 2) + ': число колонок');
-    const [documentId, barcode, active, hasDetailPicture, bitrixId, bitrixActive, imageUrl] = cells;
+    if (cells.length !== 11) throw Error('CSV строка ' + (idx + 2) + ': должно быть 11 колонок');
+    const [documentId, barcode, active, hasDetailPicture, bitrixId, bitrixActive,
+      imageUrl, volumeDocumentId, volumeValue, bitrixVolumeValue, bitrixVolumeStatus] = cells;
     const where = 'CSV строка ' + (idx + 2) + ': ';
     if (!/^[a-z0-9]+$/i.test(documentId) || docIds.has(documentId)) {
       throw Error(where + 'пустой/повторный documentId');
@@ -137,20 +158,43 @@ async function inputRows() {
     if (!['true', 'false', 'null'].includes(active) ||
         !['true', 'false'].includes(hasDetailPicture) ||
         !['true', 'false'].includes(bitrixActive)) {
-      throw Error(where + 'некорректные значения active / Media');
+      throw Error(where + 'некорректные active / Media');
     }
     const pictureUrl = validatedImageUrl(imageUrl);
     if (hasDetailPicture === 'true' && pictureUrl) {
       throw Error(where + 'в Strapi уже есть Media, но задан pictureUrl');
     }
-    if (active === bitrixActive && (hasDetailPicture === 'true' || !pictureUrl)) {
+    if (volumeDocumentId && !/^[a-z0-9]+$/i.test(volumeDocumentId)) {
+      throw Error(where + 'неверный volumeDocumentId');
+    }
+    if (volumeValue && !volumeDocumentId) {
+      throw Error(where + 'volumeValue заполнен без relation documentId');
+    }
+    if (volumeValue) quantity(volumeValue, where + 'Strapi volumeValue');
+    if (!['known','empty','manual'].includes(bitrixVolumeStatus)) {
+      throw Error(where + 'неизвестный bitrixVolumeStatus');
+    }
+    if (bitrixVolumeStatus === 'known' &&
+        (!bitrixVolumeValue || quantity(bitrixVolumeValue, where + 'Bitrix volumeValue') !== bitrixVolumeValue)) {
+      throw Error(where + 'Bitrix known должен содержать каноническое число');
+    }
+    if (bitrixVolumeStatus !== 'known' && bitrixVolumeValue) {
+      throw Error(where + 'empty/manual не должны содержать числовое значение');
+    }
+    const needsActive = active !== bitrixActive;
+    const needsPicture = hasDetailPicture === 'false' && Boolean(pictureUrl);
+    const needsVolume = bitrixVolumeStatus === 'known'
+      ? quantity(volumeValue, where + 'Strapi volumeValue') !== bitrixVolumeValue
+      : bitrixVolumeStatus === 'empty' && Boolean(volumeDocumentId);
+    if (!needsActive && !needsPicture && !needsVolume) {
       throw Error(where + 'Matcher включил запись без изменений');
     }
     return {
       documentId, barcode, bitrixId, pictureUrl,
       active: active === 'null' ? null : active === 'true',
       hasDetailPicture: hasDetailPicture === 'true',
-      bitrixActive: bitrixActive === 'true'
+      bitrixActive: bitrixActive === 'true',
+      volumeDocumentId, volumeValue, bitrixVolumeValue, bitrixVolumeStatus
     };
   });
   if (ONLY && !rows.some(row => row.documentId === ONLY)) {
