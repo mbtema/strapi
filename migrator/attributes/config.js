@@ -391,6 +391,8 @@
       pages: { shade: 0, volume: 0 },
       uniqueUsed: { shade: 0, volume: 0 },
       detailFallbacks: { shade: 0, volume: 0 },
+      inaccessibleTargets: { shade: 0, volume: 0 },
+      inaccessibleSamples: [],
       missingValues: { shade: 0, volume: 0 },
       multipleHexes: 0,
       missingValueSamples: []
@@ -542,7 +544,19 @@
             if (resolved % 500 === 0 || resolved === pending.length) {
               console.log(LOG, 'Уточнено ' + field + ': ' + resolved + '/' + pending.length);
             }
-          } catch (e) { failed = e; }
+          } catch (e) {
+            if (/\bHTTP 404\b/.test(String(e?.message ?? e))) {
+              // Relation существует, но целевая запись недоступна. Не теряем ID.
+              values.set(documentId, '');
+              dictionaryStats.inaccessibleTargets[field]++;
+              if (dictionaryStats.inaccessibleSamples.length < 10) {
+                dictionaryStats.inaccessibleSamples.push({ field, documentId });
+              }
+              resolved++;
+            } else {
+              failed = e;
+            }
+          }
         }
       }
       await Promise.all(Array.from({
@@ -595,6 +609,11 @@
     if (dictionaryStats.missingValues.shade || dictionaryStats.missingValues.volume) {
       console.warn(LOG, 'Связи без заполненного HEX/value:',
         dictionaryStats.missingValues, dictionaryStats.missingValueSamples);
+    }
+    if (dictionaryStats.inaccessibleTargets.shade ||
+        dictionaryStats.inaccessibleTargets.volume) {
+      console.warn(LOG, 'Недоступные целевые записи (relation ID сохранён):',
+        dictionaryStats.inaccessibleTargets, dictionaryStats.inaccessibleSamples);
     }
 
     // CSV без преобразования barcode в число: ведущие нули сохраняются.
