@@ -52,7 +52,7 @@ for (const arg of args) {
       !/^--limit=\d+$/.test(arg)) throw Error('Неизвестный параметр: ' + arg);
 }
 const LOG = '[Attributes importer]';
-const BUILD = 'v2-volume-publish';
+const BUILD = 'v2.1-volume-first-duplicate';
 const log = (...v) => console.log(LOG, ...v);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const UID = 'api::attribute.attribute';
@@ -520,7 +520,8 @@ async function readJournal(hash) {
 const REPORT = ['documentId','barcode','active','hasDetailPicture','bitrixId',
   'bitrixActive','pictureUrl','volumeDocumentId','volumeValue',
   'bitrixVolumeValue','bitrixVolumeStatus','volumeStrapi','volumeBitrix',
-  'volumeAction','status','activeStrapi','pictureStrapi','pictureBitrix',
+  'volumeAction','volumeCandidateCount','volumeSelectedDocumentId',
+  'volumeSelectedId','status','activeStrapi','pictureStrapi','pictureBitrix',
   'changes','published','phase','message'];
 function reportCsv(rows, items) {
   return '\uFEFF' + [
@@ -550,6 +551,24 @@ function volumeManualCsv(rows, items) {
       const item = items.get(row.documentId);
       const data = { ...row, status: item.status, reason: item.message };
       return fields.map(key => quote(data[key])).join(';');
+    })
+  ].join('\r\n');
+}
+
+// Назначенные Volume, для которых в справочнике есть несколько эквивалентных записей.
+// Используется после импорта для ручной нормализации без задержки автоматической записи.
+function volumeDuplicatesCsv(rows, items) {
+  const fields = ['documentId', 'barcode', 'bitrixId', 'bitrixVolumeValue',
+    'volumeCandidateCount', 'volumeSelectedDocumentId', 'volumeSelectedId',
+    'status', 'published'];
+  const selected = rows.filter(row => (items.get(row.documentId)?.volumeCandidateCount ?? 0) > 1);
+  return '\uFEFF' + [
+    fields.join(';'),
+    ...selected.map(row => {
+      const item = items.get(row.documentId);
+      return fields.map(field => quote(
+        Object.hasOwn(item, field) ? item[field] : row[field]
+      )).join(';');
     })
   ].join('\r\n');
 }
@@ -623,17 +642,32 @@ async function migrateOne(row, catalog, markWrite, markMediaUploaded, trace) {
   const needsActive = initial.active !== row.bitrixActive;
   const needsPicture = initialMedia === null && Boolean(row.pictureUrl);
   let volumeAction = null, volumeReviewMessage = '';
+  let volumeCandidateCount = 0, volumeSelectedDocumentId = '', volumeSelectedId = '';
   let sourceValue = '';
   if (row.bitrixVolumeStatus === 'known') {
     sourceValue = await currentVolumeValue(initialVolume, catalog);
     if (sourceValue !== row.bitrixVolumeValue) {
       const targets = catalog.byNumber.get(row.bitrixVolumeValue) ?? [];
-      if (targets.length !== 1) {
-        // Не создаём словарь и не выбираем один из дубликатов произвольно.
+      volumeCandidateCount = targets.length;
+      if (!targets.length) {
+        // Новые значения справочника не создаём автоматически.
         volumeReviewMessage = 'Volume для Bitrix ' + row.bitrixVolumeValue +
-          ': подходящих name=value в Strapi ' + targets.length + '; проверить вручную';
+          ': нет подходящей пары name=value в Strapi; проверить вручную';
       } else {
-        const confirmedTarget = await confirmedTargetVolume(targets[0], catalog);
+        // При дублях договорились выбирать первую запись по id ASC.
+        // Явная сортировка делает выбор одинаковым при любой пагинации.
+        const chosen = [...targets].sort((a, b) =>
+          a.id - b.id || a.documentId.localeCompare(b.documentId))[0];
+        const confirmedTarget = await confirmedTargetVolume(chosen, catalog);
+        volumeSelectedDocumentId = confirmedTarget.documentId;
+        volumeSelectedId = confirmedTarget.id;
+        if (targets.length > 1) {
+          trace('DUPLICATE_VOLUME: value=' + row.bitrixVolumeValue +
+            '; кандидатов ' + targets.length +
+            '; выбран первый по id ASC: ' + chosen.id + ' / ' +
+            confirmedTarget.documentId + ' (id карточки=' + confirmedTarget.id +
+            '). Позднее можно нормализовать вручную.');
+        }
         volumeAction = {
           type: initialVolume ? 'replace' : 'add',
           target: confirmedTarget, previous: initialVolume
@@ -651,7 +685,8 @@ async function migrateOne(row, catalog, markWrite, markMediaUploaded, trace) {
     pictureBitrix: row.pictureUrl ? 'есть URL' : '',
     volumeStrapi: sourceValue,
     volumeBitrix: row.bitrixVolumeValue,
-    volumeAction: volumeAction?.type ?? (volumeReviewMessage ? 'manual_review' : '')
+    volumeAction: volumeAction?.type ?? (volumeReviewMessage ? 'manual_review' : ''),
+    volumeCandidateCount, volumeSelectedDocumentId, volumeSelectedId
   };
   const planned = [
     needsActive ? 'active' : '',
@@ -888,6 +923,7 @@ async function main() {
   const journal = await readJournal(hash);
   const reportPath = resolve(APPLY ? 'attributes-import-report.csv' : 'attributes-import-plan.csv');
   const manualPath = resolve('attributes-import-volume-review.csv');
+  const duplicatePath = resolve('attributes-import-volume-duplicates.csv');
   const items = APPLY ? journal.items : new Map();
   // --limit=N выбирает не более N ещё не обработанных строк в порядке CSV.
   // После пилота checkpoint сохранится; массовый запуск с тем же CSV продолжит.
@@ -983,15 +1019,18 @@ async function main() {
       // на больших входных файлах это устраняет квадратичные дисковые записи.
       await atomicWrite(reportPath, reportCsv(rows, items));
       await atomicWrite(manualPath, volumeManualCsv(rows, items));
+      await atomicWrite(duplicatePath, volumeDuplicatesCsv(rows, items));
     }
   }
   await atomicWrite(reportPath, reportCsv(rows, items));
   await atomicWrite(manualPath, volumeManualCsv(rows, items));
+  await atomicWrite(duplicatePath, volumeDuplicatesCsv(rows, items));
   const completed = Math.min(selected.length, alreadyCompleted + attempted);
   const summary = showProgress(selected, items, completed, attempted, startedAt);
   log('Итог:', count(completed) + '/' + count(selected.length),
     '| затрачено', formatSeconds(Date.now() - startedAt), '| отчёт:', reportPath,
-    '| ручная проверка Volume:', manualPath);
+    '| нет Volume в справочнике:', manualPath,
+    '| дубли, выбран первый:', duplicatePath);
   if (APPLY) log('Журнал:', journal.path, '| повтор с тем же CSV продолжит обработку');
   if (summary.errors || summary.review) process.exitCode = 1;
 }
