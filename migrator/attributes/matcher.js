@@ -1,7 +1,8 @@
 // Этап 2: Bitrix Admin -> Console -> attributes-matched.csv
-// Вход: attributes-config.csv (documentId;barcode;active;hasDetailPicture).
-// Выход: только кандидаты importer: documentId;barcode;active;hasDetailPicture;bitrixId;bitrixActive;pictureUrl.
-// Чтение IBLOCK_ID=2 / PROPERTY_19 + ACTIVE + DETAIL_PICTURE, только GET.
+// Вход: attributes-config.csv, 10 колонок (включая shadeHex и volumeValue).
+// Выход: attributes-matched.csv (кандидаты importer по active/Media/volume)
+//        и attributes-shade-review.csv (отсутствующий shade, только ручная работа).
+// Чтение IBLOCK_ID=2 / PROPERTY_19, PROPERTY_202, PROPERTY_271, ACTIVE, DETAIL_PICTURE. Только GET.
 (async () => {
   'use strict';
 
@@ -13,7 +14,8 @@
     maxPages: 4000,
     matchedFile: 'attributes-matched.csv',
     unmatchedFile: 'attributes-unmatched.csv',
-    checkpointVersion: 'v4-picture-url'
+    shadeReviewFile: 'attributes-shade-review.csv',
+    checkpointVersion: 'v5-volume-shade-hint'
   };
   const AUTH = {
     // В DevTools браузер отправляет Bitrix Cookie сам (credentials: include).
@@ -23,6 +25,7 @@
   const LOG = '[Attributes matcher]';
   const LIST_PATH = '/bitrix/admin/iblock_element_admin.php';
   const CARD_PATH = '/bitrix/admin/iblock_element_edit.php';
+  const VOLUME_IBLOCK_ID = '12';
 
   if (!location.pathname.startsWith('/bitrix/admin/')) {
     throw Error('Открой Bitrix Admin и запусти скрипт в DevTools Console');
@@ -39,6 +42,42 @@
 
   // Точное сопоставление строк. Только trim по краям; ведущие нули и регистр не меняем.
   const barcodeOf = x => String(x ?? '').trim();
+
+  // Сравнение по числу: "050", "50.0" и "50,00" = 50.
+  // Названия "50МЛ", "50ГР" здесь намеренно не используются.
+  function volumeNumber(value, context) {
+    const raw = trim(value);
+    if (!raw) return '';
+    const m = /^(\d+)(?:[.,](\d+))?$/.exec(raw);
+    if (!m) throw Error(context + ': volume должен быть числом без единиц: ' + JSON.stringify(raw));
+    const whole = m[1].replace(/^0+(?=\d)/, '');
+    const fractional = (m[2] ?? '').replace(/0+$/, '');
+    return whole + (fractional ? '.' + fractional : '');
+  }
+
+  function bitrixVolume(cell, page, id) {
+    const context = 'Страница ' + page + ', Bitrix ID ' + id + ', PROPERTY_202';
+    const content = cell?.querySelector('.main-grid-cell-content') ?? cell;
+    if (!content) throw Error(context + ': отсутствует ячейка');
+    const anchors = [...content.querySelectorAll('a[href]')];
+    if (!anchors.length) {
+      if (!trim(content.textContent)) return '';
+      throw Error(context + ': есть текст, но нет подтверждённой ссылки на справочник Volume');
+    }
+    if (anchors.length !== 1) throw Error(context + ': неоднозначные ссылки Volume');
+    let target;
+    try { target = new URL(anchors[0].getAttribute('href'), location.origin); }
+    catch { throw Error(context + ': некорректная ссылка'); }
+    if (target.origin !== location.origin || target.pathname !== CARD_PATH ||
+        target.searchParams.get('IBLOCK_ID') !== VOLUME_IBLOCK_ID ||
+        !/^\d+$/.test(target.searchParams.get('ID') ?? '') ||
+        trim(anchors[0].textContent) !== target.searchParams.get('ID')) {
+      throw Error(context + ': ссылка не указывает на ожидаемый справочник Volume');
+    }
+    const copy = content.cloneNode(true);
+    copy.querySelectorAll('a').forEach(a => a.remove());
+    return volumeNumber(copy.textContent, context);
+  }
 
   function parseCsv(text) {
     const src = text.replace(/^\uFEFF/, '');
@@ -236,6 +275,13 @@
         'Включи «Детальная картинка» в настройках таблицы Bitrix.');
     }
     const pictureIndex = pictureIndexes[0];
+    const volumeIndex = heads.findIndex(th => th.dataset.name === 'PROPERTY_202');
+    const hintIndex = heads.findIndex(th => th.dataset.name === 'PROPERTY_271');
+    if (volumeIndex < 0 || hintIndex < 0) {
+      throw Error('Страница ' + page + ': включи в таблице Bitrix колонки ' +
+        (volumeIndex < 0 ? '«Объём» (PROPERTY_202) ' : '') +
+        (hintIndex < 0 ? '«Текст-подсказка» (PROPERTY_271)' : ''));
+    }
     if (!heads.some(th => th.dataset.name === 'ID')) {
       throw Error('Страница ' + page + ': в таблице нет заголовка ID');
     }
@@ -296,7 +342,12 @@
       const pictureUrl = pictureWanted.has(barcode)
         ? originalImageUrl(cells[pictureIndex], page, id)
         : '';
-      return { id, barcode, active: parsed[0], pictureUrl };
+      const volumeValue = bitrixVolume(cells[volumeIndex], page, id);
+      const shadeHint = trim(
+        (cells[hintIndex]?.querySelector('.main-grid-cell-content') ??
+          cells[hintIndex])?.textContent
+      );
+      return { id, barcode, active: parsed[0], pictureUrl, volumeValue, shadeHint };
     });
 
     const totalText = doc.querySelector(
@@ -339,13 +390,16 @@
     const fileText = await file.text();
     const csv = parseCsv(fileText);
     const header = csv.shift();
-    if (!header || header.join(';') !== 'documentId;barcode;active;hasDetailPicture' ||
-        !csv.length || csv.some(row => row.length !== 4)) {
-      throw Error('Нужен новый attributes-config.csv: ' +
-        'documentId;barcode;active;hasDetailPicture. Запусти обновлённый config.js.');
+    const sourceHeader = 'documentId;barcode;active;hasDetailPicture;' +
+      'shade;shadeDocumentId;volume;volumeDocumentId;shadeHex;volumeValue';
+    if (!header || header.join(';') !== sourceHeader ||
+        !csv.length || csv.some(row => row.length !== 10)) {
+      throw Error('Нужен attributes-config.csv из обновлённого Config (10 колонок): ' +
+        sourceHeader);
     }
 
-    const inputRows = csv.map(([documentId, barcode, active, hasDetailPicture], index) => {
+    const inputRows = csv.map(([documentId, barcode, active, hasDetailPicture,
+      shade, shadeDocumentId, volume, volumeDocumentId, shadeHex, volumeValue], index) => {
       if (!['true','false','null'].includes(active) ||
           !['true','false'].includes(hasDetailPicture)) {
         throw Error('CSV строка ' + (index + 2) + ': некорректные active/hasDetailPicture');
@@ -354,9 +408,17 @@
         throw Error('CSV строка ' + (index + 2) +
           ': barcode в научном формате Excel; возьми оригинальный CSV из config.js.');
       }
+      if (!shadeDocumentId && (shade || shadeHex)) {
+        throw Error('CSV строка ' + (index + 2) + ': Shade заполнен без relation documentId');
+      }
+      if (!volumeDocumentId && (volume || volumeValue)) {
+        throw Error('CSV строка ' + (index + 2) + ': Volume заполнен без relation documentId');
+      }
       return { documentId, barcode,
         active: active === 'null' ? null : active === 'true',
-        hasDetailPicture: hasDetailPicture === 'true' };
+        hasDetailPicture: hasDetailPicture === 'true',
+        shadeDocumentId, volumeDocumentId,
+        volumeValue: volumeNumber(volumeValue, 'CSV строка ' + (index + 2)) };
     });
     if (inputRows.some(row => !row.documentId || row.documentId !== row.documentId.trim())) {
       throw Error('Пустой или некорректный documentId в исходном CSV');
@@ -424,7 +486,8 @@
       for (const item of first.rows) {
         if (!target.has(item.barcode)) continue;
         const ids = initial.get(item.barcode) ?? [];
-        ids.push({ id: item.id, active: item.active, pictureUrl: item.pictureUrl });
+        ids.push({ id: item.id, active: item.active, pictureUrl: item.pictureUrl,
+          volumeValue: item.volumeValue, shadeHint: item.shadeHint });
         initial.set(item.barcode, ids);
       }
       state.hits = [...initial];
@@ -438,6 +501,8 @@
           !Array.isArray(ids) || ids.some(hit =>
             !hit || !/^\d+$/.test(hit.id) || typeof hit.active !== 'boolean' ||
             typeof hit.pictureUrl !== 'string' ||
+            typeof hit.volumeValue !== 'string' || typeof hit.shadeHint !== 'string' ||
+            volumeNumber(hit.volumeValue, 'Checkpoint Bitrix ' + hit.id) !== hit.volumeValue ||
             (hit.pictureUrl && (
               !pictureWanted.has(barcode) ||
               !hit.pictureUrl.startsWith(location.origin + '/upload/iblock/')
@@ -516,7 +581,8 @@
           seen.add(row.id);
           if (!target.has(row.barcode)) continue;
           const ids = hits.get(row.barcode) ?? [];
-          ids.push({ id: row.id, active: row.active, pictureUrl: row.pictureUrl });
+          ids.push({ id: row.id, active: row.active, pictureUrl: row.pictureUrl,
+            volumeValue: row.volumeValue, shadeHint: row.shadeHint });
           hits.set(row.barcode, ids);
         }
       }
@@ -538,9 +604,12 @@
     }
     const mapped = [];
     const diagnostics = [];
+    const shadeReview = [];
     const summary = {
       totalStrapi: inputRows.length, totalBitrix: total,
       candidates: 0, alreadySynced: 0, needsActive: 0, missingStrapiPicture: 0,
+      needsVolumeAdd: 0, needsVolumeReplace: 0, needsVolumeRemove: 0,
+      shadeManualReview: 0, shadeAlreadyLinked: 0,
       noBitrixPicture: 0, emptyBarcode: 0, notFound: 0,
       duplicateStrapiBarcode: 0, duplicateBitrixBarcode: 0
     };
@@ -557,20 +626,52 @@
           status = 'DUPLICATE_BITRIX_BARCODE'; summary.duplicateBitrixBarcode++;
         } else {
           hit = ids[0];
+
+          // Shade: текст-подсказка — единственный подтверждённый признак в Bitrix.
+          // Не сопоставляем с HEX; в importer Shade не передаём.
+          if (hit.shadeHint.trim()) {
+            if (row.shadeDocumentId) {
+              summary.shadeAlreadyLinked++;
+            } else {
+              summary.shadeManualReview++;
+              const bitrixCardUrl = new URL(CARD_PATH, location.origin);
+              bitrixCardUrl.searchParams.set('IBLOCK_ID', CFG.iblockId);
+              bitrixCardUrl.searchParams.set('type', 'catalog');
+              bitrixCardUrl.searchParams.set('lang', CFG.locale);
+              bitrixCardUrl.searchParams.set('ID', hit.id);
+              shadeReview.push({
+                documentId: row.documentId, barcode: row.barcode,
+                bitrixId: hit.id, bitrixShadeHint: hit.shadeHint,
+                bitrixCardUrl: bitrixCardUrl.href
+              });
+            }
+          }
+
           const activeDiffers = row.active !== hit.active;
           const needsPicture = !row.hasDetailPicture && Boolean(hit.pictureUrl);
-          if (!activeDiffers && row.hasDetailPicture) {
-            status = 'ALREADY_SYNCED';
-            summary.alreadySynced++;
-          } else if (!activeDiffers && !needsPicture) {
-            // Ни active, ни Media не требуют записи; нет источника изображения.
-            status = 'NO_BITRIX_PICTURE';
-            summary.noBitrixPicture++;
+
+          // Bitrix имеет приоритет: непустой value назначаем/заменяем,
+          // пустой удаляет существующую relation Strapi.
+          // Совпадающий value оставляет даже вручную нормализованный name.
+          const needsVolume = hit.volumeValue
+            ? row.volumeValue !== hit.volumeValue
+            : Boolean(row.volumeDocumentId);
+          const volumeAction = !needsVolume ? '' :
+            !hit.volumeValue ? 'remove' :
+            !row.volumeDocumentId ? 'add' : 'replace';
+
+          if (!activeDiffers && !needsPicture && !needsVolume) {
+            status = row.hasDetailPicture ? 'ALREADY_SYNCED' : 'NO_BITRIX_PICTURE';
+            if (status === 'ALREADY_SYNCED') summary.alreadySynced++;
+            else summary.noBitrixPicture++;
           } else {
             status = 'MATCHED';
             summary.candidates++;
             if (activeDiffers) summary.needsActive++;
             if (needsPicture) summary.missingStrapiPicture++;
+            if (volumeAction === 'add') summary.needsVolumeAdd++;
+            if (volumeAction === 'replace') summary.needsVolumeReplace++;
+            if (volumeAction === 'remove') summary.needsVolumeRemove++;
           }
         }
       }
@@ -580,7 +681,10 @@
           active: row.active === null ? 'null' : String(row.active),
           hasDetailPicture: String(row.hasDetailPicture),
           bitrixId: hit.id, bitrixActive: String(hit.active),
-          pictureUrl: hit.pictureUrl
+          pictureUrl: hit.pictureUrl,
+          volumeDocumentId: row.volumeDocumentId,
+          volumeValue: row.volumeValue,
+          bitrixVolumeValue: hit.volumeValue
         });
       } else if (status !== 'ALREADY_SYNCED') {
         diagnostics.push({ documentId: row.documentId, barcode: row.barcode,
@@ -588,14 +692,22 @@
       }
     }
 
-    window.bitrixAttributesMatchResult = { summary, rows: mapped, unmatched: diagnostics };
+    window.bitrixAttributesMatchResult = {
+      summary, rows: mapped, unmatched: diagnostics, shadeReview
+    };
     window.bitrixAttributesMatchExport = () => {
       downloadCsv(CFG.matchedFile,
         ['documentId', 'barcode', 'active', 'hasDetailPicture',
-          'bitrixId', 'bitrixActive', 'pictureUrl'], mapped);
+          'bitrixId', 'bitrixActive', 'pictureUrl',
+          'volumeDocumentId', 'volumeValue', 'bitrixVolumeValue'], mapped);
       if (diagnostics.length) {
         setTimeout(() => downloadCsv(CFG.unmatchedFile,
           ['documentId', 'barcode', 'status', 'bitrixIds'], diagnostics), 750);
+      }
+      if (shadeReview.length) {
+        setTimeout(() => downloadCsv(CFG.shadeReviewFile,
+          ['documentId', 'barcode', 'bitrixId', 'bitrixShadeHint', 'bitrixCardUrl'],
+          shadeReview), 1500);
       }
     };
     window.bitrixAttributesMatchExport();
@@ -605,9 +717,12 @@
     console.log(LOG, 'Готово. Проверено все', total,
       'Bitrix предложений за', ((performance.now() - started) / 1000).toFixed(1),
       'сек. Изменений в Bitrix нет.');
-    console.log(LOG, 'attributes-matched.csv: только кандидаты importer', mapped.length +
-      '; уже синхронизированы и исключены:', summary.alreadySynced +
-      '; без доступного изображения Bitrix и без изменений:', summary.noBitrixPicture + '.');
+    console.log(LOG, 'attributes-matched.csv: кандидатов importer', mapped.length +
+      ' (volume add/replace/remove:', summary.needsVolumeAdd + '/' +
+      summary.needsVolumeReplace + '/' + summary.needsVolumeRemove + ')');
+    console.log(LOG, 'attributes-shade-review.csv: ручная работа', shadeReview.length +
+      '; Shade уже назначен:', summary.shadeAlreadyLinked +
+      '. Importer не меняет Shade.');
   } catch (error) {
     console.error(LOG, 'STOP. Итоговый CSV не создаётся при ошибке.', error);
   } finally {
