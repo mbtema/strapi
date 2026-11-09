@@ -1,6 +1,6 @@
 // Этап 1: Strapi Admin -> Console -> attributes-config.csv
 // Только GET. Все торговые предложения locale=ru, без фильтров active/published.
-// CSV: documentId;barcode;active;hasDetailPicture;shade;shadeDocumentId;volume;volumeDocumentId.
+// CSV: documentId;barcode;active;hasDetailPicture;shade;shadeDocumentId;volume;volumeDocumentId;shadeHex;volumeValue.
 // shade/volume — name связанных записей (может отсутствовать); *DocumentId — их идентификаторы Strapi.
 // Если имя целевой записи недоступно, сохраняем её documentId и фиксируем случай в отчёте.
 // Только GET, без привязки к Product.
@@ -12,6 +12,8 @@
     pageSize: 100,
     concurrency: 5,
     relationConcurrency: 6,
+    dictionaryConcurrency: 4,
+    dictionaryDetailConcurrency: 6,
     filename: 'attributes-config.csv',
     maxPages: 10000
   };
@@ -379,12 +381,229 @@
         '(documentId сохранён). Примеры:', missingNameSamples);
     }
 
+
+    // Справочники загружаем один раз, а не делаем GET для каждого Attribute:
+    // shade.hexes[].hex (может быть несколько HEX), volume.value (число).
+    // Не запрашиваем offers и не открываем карточки Product.
+    const SHADE_UID = 'api::shade.shade';
+    const VOLUME_UID = 'api::volume.volume';
+    const dictionaryStats = {
+      pages: { shade: 0, volume: 0 },
+      uniqueUsed: { shade: 0, volume: 0 },
+      detailFallbacks: { shade: 0, volume: 0 },
+      missingValues: { shade: 0, volume: 0 },
+      multipleHexes: 0,
+      missingValueSamples: []
+    };
+
+    function targetValue(item, field, context) {
+      if (field === 'shade') {
+        if (!own(item, 'hexes')) return undefined; // Неполный list API.
+        const raw = item.hexes && typeof item.hexes === 'object' &&
+          own(item.hexes, 'data') ? item.hexes.data : item.hexes;
+        if (raw == null) return '';
+        if (!Array.isArray(raw)) {
+          throw Error(context + ': hexes должен быть массивом/null');
+        }
+        const hexes = raw.map((entry, i) => {
+          const hex = unwrap(entry);
+          if (!hex || typeof hex !== 'object' || !own(hex, 'hex') ||
+              (hex.hex !== null && typeof hex.hex !== 'string')) {
+            throw Error(context + ': неверное значение hexes[' + i + ']');
+          }
+          return (hex.hex ?? '').trim();
+        }).filter(Boolean);
+        if (hexes.length > 1) dictionaryStats.multipleHexes++;
+        return hexes.join('|');
+      }
+      if (!own(item, 'value')) return undefined;
+      if (item.value == null || item.value === '') return '';
+      if (typeof item.value === 'number' && Number.isFinite(item.value)) {
+        return String(item.value);
+      }
+      if (typeof item.value === 'string' && item.value.trim()) {
+        return item.value.trim();
+      }
+      throw Error(context + ': volume.value должен быть числом, строкой или null');
+    }
+
+    function dictionaryUrl(field, page) {
+      const uid = field === 'shade' ? SHADE_UID : VOLUME_UID;
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(CFG.pageSize),
+        sort: 'id:ASC',
+        locale: CFG.locale
+      });
+      if (field === 'shade') {
+        params.append('populate[hexes][fields][0]', 'hex');
+      } else {
+        params.append('fields[0]', 'value');
+      }
+      return '/content-manager/collection-types/' + uid + '?' + params;
+    }
+
+    async function dictionary(field, wanted) {
+      if (!wanted.size) return new Map();
+      const first = await getJson(dictionaryUrl(field, 1), field + ' page 1');
+      const paging = paginationOf(first);
+      const total = Number(paging?.total);
+      const pageCount = Number(paging?.pageCount);
+      if (!paging || paging.total == null || paging.pageCount == null ||
+          !Number.isSafeInteger(total) || total < 0 ||
+          !Number.isSafeInteger(pageCount) || pageCount < 0 ||
+          pageCount > CFG.maxPages || (total > 0 && !pageCount)) {
+        throw Error(field + ': некорректная пагинация справочника');
+      }
+      dictionaryStats.pages[field] = pageCount;
+      const pages = new Array(Math.max(pageCount, 1));
+
+      function parse(json, page) {
+        const p = paginationOf(json);
+        const list = listOf(json);
+        if (!p || !list || Number(p.total) !== total ||
+            Number(p.pageCount) !== pageCount ||
+            (p.page != null && Number(p.page) !== page) ||
+            list.length > CFG.pageSize ||
+            (page < pageCount && list.length === 0)) {
+          throw Error(field + ': неверный ответ страницы ' + page);
+        }
+        return list.map(unwrap);
+      }
+
+      pages[0] = parse(first, 1);
+      let cursor = 2, done = 1, error = null;
+      async function worker() {
+        while (cursor <= pageCount && !error) {
+          const page = cursor++;
+          try {
+            stopped();
+            pages[page - 1] = parse(
+              await getJson(dictionaryUrl(field, page), field + ' page ' + page), page
+            );
+            done++;
+            if (done % 20 === 0 || done === pageCount) {
+              console.log(LOG, 'Справочник ' + field + ': ' + done + '/' + pageCount);
+            }
+          } catch (e) { error = e; }
+        }
+      }
+      await Promise.all(Array.from({
+        length: Math.min(CFG.dictionaryConcurrency, Math.max(0, pageCount - 1))
+      }, worker));
+      if (error) throw error;
+      const items = pages.flat();
+      if (items.length !== total) {
+        throw Error(field + ': список изменился при выгрузке (ожидалось ' +
+          total + ', получено ' + items.length + ')');
+      }
+
+      const values = new Map();
+      const seen = new Set();
+      for (const item of items) {
+        if (typeof item?.documentId !== 'string' || !item.documentId.trim()) {
+          throw Error(field + ': запись справочника без documentId');
+        }
+        if (seen.has(item.documentId)) {
+          throw Error(field + ': повтор documentId ' + item.documentId);
+        }
+        seen.add(item.documentId);
+        if (!wanted.has(item.documentId)) continue;
+        const value = targetValue(item, field, field + '/' + item.documentId);
+        if (value !== undefined) values.set(item.documentId, value);
+      }
+
+      // Точечно читаем только те целевые записи, которые list API не раскрыл.
+      const pending = [...wanted].filter(id => !values.has(id));
+      let next = 0, resolved = 0, failed = null;
+      const uid = field === 'shade' ? SHADE_UID : VOLUME_UID;
+      async function detailWorker() {
+        while (next < pending.length && !failed) {
+          const documentId = pending[next++];
+          try {
+            stopped();
+            const params = new URLSearchParams({ locale: CFG.locale });
+            if (field === 'shade') params.append('populate[hexes][fields][0]', 'hex');
+            const url = '/content-manager/collection-types/' + uid + '/' +
+              encodeURIComponent(documentId) + '?' + params;
+            const json = await getJson(url, field + '/' + documentId);
+            const data = json?.data ?? json;
+            const item = unwrap(Array.isArray(data) ? data[0] : data);
+            if (item?.documentId !== documentId) {
+              throw Error(field + '/' + documentId + ': detail вернул другую запись');
+            }
+            const value = targetValue(item, field, field + '/' + documentId);
+            if (value === undefined) {
+              throw Error(field + '/' + documentId + ': detail не вернул нужное поле');
+            }
+            values.set(documentId, value);
+            dictionaryStats.detailFallbacks[field]++;
+            resolved++;
+            if (resolved % 500 === 0 || resolved === pending.length) {
+              console.log(LOG, 'Уточнено ' + field + ': ' + resolved + '/' + pending.length);
+            }
+          } catch (e) { failed = e; }
+        }
+      }
+      await Promise.all(Array.from({
+        length: Math.min(CFG.dictionaryDetailConcurrency, pending.length)
+      }, detailWorker));
+      if (failed) throw failed;
+      console.log(LOG, field + ': нужных уникальных ' + wanted.size +
+        ', получено из справочника ' + (wanted.size - pending.length) +
+        ', отдельных GET ' + pending.length);
+      return values;
+    }
+
+    const shadeIds = new Set(rows.map(row => row.shadeDocumentId).filter(Boolean));
+    const volumeIds = new Set(rows.map(row => row.volumeDocumentId).filter(Boolean));
+    dictionaryStats.uniqueUsed.shade = shadeIds.size;
+    dictionaryStats.uniqueUsed.volume = volumeIds.size;
+    console.log(LOG, 'Загружаю hexes (' + shadeIds.size +
+      ' shade) и value (' + volumeIds.size + ' volume)...');
+    const [shadeValues, volumeValues] = await Promise.all([
+      dictionary('shade', shadeIds),
+      dictionary('volume', volumeIds)
+    ]);
+    stopped();
+    for (const row of rows) {
+      const shadeHex = row.shadeDocumentId ? shadeValues.get(row.shadeDocumentId) : '';
+      const volumeValue = row.volumeDocumentId ? volumeValues.get(row.volumeDocumentId) : '';
+      if (shadeHex === undefined || volumeValue === undefined) {
+        throw Error('Attribute ' + row.documentId +
+          ': не найдены значения связанного shade/volume; CSV не создан');
+      }
+      row.shadeHex = shadeHex;
+      row.volumeValue = volumeValue;
+      if (row.shadeDocumentId && !shadeHex) {
+        dictionaryStats.missingValues.shade++;
+        if (dictionaryStats.missingValueSamples.length < 10) {
+          dictionaryStats.missingValueSamples.push({
+            attribute: row.documentId, relation: 'shade', target: row.shadeDocumentId
+          });
+        }
+      }
+      if (row.volumeDocumentId && !volumeValue) {
+        dictionaryStats.missingValues.volume++;
+        if (dictionaryStats.missingValueSamples.length < 10) {
+          dictionaryStats.missingValueSamples.push({
+            attribute: row.documentId, relation: 'volume', target: row.volumeDocumentId
+          });
+        }
+      }
+    }
+    if (dictionaryStats.missingValues.shade || dictionaryStats.missingValues.volume) {
+      console.warn(LOG, 'Связи без заполненного HEX/value:',
+        dictionaryStats.missingValues, dictionaryStats.missingValueSamples);
+    }
+
     // CSV без преобразования barcode в число: ведущие нули сохраняются.
     const quote = value => '"' + String(value).replace(/"/g, '""') + '"';
     const csv = '\uFEFF' + [
-      'documentId;barcode;active;hasDetailPicture;shade;shadeDocumentId;volume;volumeDocumentId',
+      'documentId;barcode;active;hasDetailPicture;shade;shadeDocumentId;volume;volumeDocumentId;shadeHex;volumeValue',
       ...rows.map(row => [row.documentId, row.barcode, row.active, row.hasDetailPicture,
-        row.shade, row.shadeDocumentId, row.volume, row.volumeDocumentId]
+        row.shade, row.shadeDocumentId, row.volume, row.volumeDocumentId,
+        row.shadeHex, row.volumeValue]
         .map(quote).join(';'))
     ].join('\r\n');
 
@@ -415,6 +634,7 @@
       nameLookupFailures,
       missingRelationNames,
       missingNameSamples,
+      shadeHexVolumeValue: dictionaryStats,
       activeTrue: rows.filter(row => row.active === 'true').length,
       activeFalse: rows.filter(row => row.active === 'false').length,
       activeNull: rows.filter(row => row.active === 'null').length,
