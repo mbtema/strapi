@@ -52,6 +52,7 @@ for (const arg of args) {
       !/^--limit=\d+$/.test(arg)) throw Error('Неизвестный параметр: ' + arg);
 }
 const LOG = '[Attributes importer]';
+const BUILD = 'v2-volume-publish';
 const log = (...v) => console.log(LOG, ...v);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const UID = 'api::attribute.attribute';
@@ -248,8 +249,15 @@ async function http(url, options = {}, allowReadRetry = false) {
       await sleep(500 * attempt);
       continue;
     }
-    if (!response.ok) throw Error(method + ' ' + new URL(url).pathname +
-      ': HTTP ' + response.status);
+    if (!response.ok) {
+      if (!fromBitrix && ([401, 403, 429].includes(response.status) || response.status >= 500)) {
+        const e = new Error('Strapi ' + method + ' ' + target.pathname +
+          ': HTTP ' + response.status + '. Доступ/сервер не подтверждён.');
+        e.code = 'STRAPI_BLOCKED';
+        throw e;
+      }
+      throw Error(method + ' ' + new URL(url).pathname + ': HTTP ' + response.status);
+    }
     return response;
   }
 }
@@ -820,6 +828,7 @@ async function main() {
   if (missing.length && !PROBE_MEDIA) {
     throw Error('В локальной копии заполни AUTH: ' + missing.map(([k])=>k).join(', '));
   }
+  log('Версия:', BUILD, '| записываю Volume только через подтверждённый POST Publish');
   const { rows, hash } = await inputRows();
   if (PROBE_MEDIA) {
     // Ровно один публичный GET Media из CSV, без чтения Bitrix Admin и без Strapi POST/PUT.
@@ -906,10 +915,11 @@ async function main() {
       Object.assign(item, { status: writeStarted ? 'review' : 'error',
         message: e.message, updatedAt: new Date().toISOString() });
       console.error(LOG, prefix, 'ERROR (' + item.status + '):', item.message);
-      if (e.code === 'BITRIX_BLOCKED') {
+      if (writeStarted || e.code === 'BITRIX_BLOCKED' || e.code === 'STRAPI_BLOCKED') {
         requestedStop = true;
-        console.error(LOG, 'STOP: публичный доступ к файлу Bitrix ограничен. ' +
-          'Checkpoint и отчёт сохраняются; проверь проблему перед продолжением.');
+        console.error(LOG, 'STOP: операция записи могла выполниться либо доступ ограничен. ' +
+          'Состояние этого Attribute нужно проверить вручную. ' +
+          'Журнал и отчёт сохраняются; остальные записи не затрагиваются.');
       }
     }
     if (APPLY) await journal.save(row.documentId, item);
