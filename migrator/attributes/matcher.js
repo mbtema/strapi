@@ -74,9 +74,15 @@
         trim(anchors[0].textContent) !== target.searchParams.get('ID')) {
       throw Error(context + ': ссылка не указывает на ожидаемый справочник Volume');
     }
-    const copy = content.cloneNode(true);
-    copy.querySelectorAll('a').forEach(a => a.remove());
-    return volumeNumber(copy.textContent, context);
+    // Bitrix показывает значение и ID справочника как "100 [62913]".
+    // Если удалить <a>, от скобок останется "100 []", поэтому читаем всю
+    // видимую строку и отдельно проверяем совпадение ID с реальной ссылкой.
+    const display = /^(\d+(?:[.,]\d+)?)\s*\[\s*(\d+)\s*\]$/.exec(trim(content.textContent));
+    if (!display || display[2] !== target.searchParams.get('ID')) {
+      throw Error(context + ': ожидалось «100 [62913]» с ID, совпадающим со ссылкой; получено ' +
+        JSON.stringify(trim(content.textContent).slice(0, 90)));
+    }
+    return volumeNumber(display[1], context);
   }
 
   function parseCsv(text) {
