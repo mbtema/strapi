@@ -403,7 +403,30 @@ async function readVolumeCatalog() {
   log('Справочник Volume:', total, 'записей; уникальных числовых ключей:',
     byNumber.size, '| повторные пары name/value:',
     [...byNumber.values()].filter(items => items.length > 1).length);
-  return { byId, byNumber };
+  return { byId, byNumber, confirmedTargets: new Map() };
+}
+
+async function confirmedTargetVolume(entry, catalog) {
+  if (!catalog.confirmedTargets.has(entry.documentId)) {
+    const path = '/content-manager/collection-types/' + VOLUME_UID + '/' +
+      encodeURIComponent(entry.documentId) + '?locale=' + CFG.locale;
+    const json = await (await http(strapiUrl(path), { headers: sHeaders() }, true)).json();
+    const current = unwrapRecord(json?.data ?? json);
+    if (current?.documentId !== entry.documentId ||
+        !Number.isSafeInteger(current.id) || current.id <= 0 ||
+        current.name !== entry.name ||
+        !Object.hasOwn(current, 'value') ||
+        quantity(current.value, 'Volume target ' + entry.documentId) !==
+          quantity(entry.value, 'Volume catalog ' + entry.documentId)) {
+      throw Error('Volume target ' + entry.documentId +
+        ': карточка изменилась относительно справочника; назначение отменено');
+    }
+    const confirmed = {
+      id: current.id, documentId: current.documentId, name: current.name, value: current.value
+    };
+    catalog.confirmedTargets.set(confirmed.documentId, confirmed);
+  }
+  return catalog.confirmedTargets.get(entry.documentId);
 }
 
 async function currentVolumeValue(relation, catalog) {
@@ -421,9 +444,8 @@ async function currentVolumeValue(relation, catalog) {
     }
     catalog.byId.set(entry.documentId, entry);
   }
-  if (entry.id !== relation.id) {
-    throw Error('Volume ' + relation.documentId + ': изменился числовой ID relation');
-  }
+  // Числовые ID разных версий документа могут различаться. Сравниваем
+  // значение по стабильному documentId; для disconnect используем id relation.
   return entry.value == null || entry.value === '' ? '' :
     quantity(entry.value, 'Volume ' + relation.documentId);
 }
@@ -610,9 +632,10 @@ async function migrateOne(row, catalog, markWrite, markMediaUploaded, trace) {
         volumeReviewMessage = 'Volume для Bitrix ' + row.bitrixVolumeValue +
           ': подходящих name=value в Strapi ' + targets.length + '; проверить вручную';
       } else {
+        const confirmedTarget = await confirmedTargetVolume(targets[0], catalog);
         volumeAction = {
           type: initialVolume ? 'replace' : 'add',
-          target: targets[0], previous: initialVolume
+          target: confirmedTarget, previous: initialVolume
         };
       }
     }
