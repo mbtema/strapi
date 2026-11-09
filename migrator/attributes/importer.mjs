@@ -354,7 +354,8 @@ async function readVolumeCatalog() {
         !Number.isSafeInteger(pagination.total) ||
         !Number.isSafeInteger(pagination.pageCount) ||
         pagination.pageCount < 1 || pagination.pageCount > 100 ||
-        pagination.total < 0 || pagination.page !== page ||
+        pagination.total < 0 ||
+        (pagination.page != null && pagination.page !== page) ||
         list.length > CFG.dictionaryPageSize ||
         (page < pagination.pageCount && list.length !== CFG.dictionaryPageSize)) {
       throw Error('Некорректная пагинация справочника Volume, страница ' + page);
@@ -482,8 +483,10 @@ async function readJournal(hash) {
 }
 
 const REPORT = ['documentId','barcode','active','hasDetailPicture','bitrixId',
-  'bitrixActive','pictureUrl','status','activeStrapi','pictureStrapi',
-  'pictureBitrix','changes','published','phase','message'];
+  'bitrixActive','pictureUrl','volumeDocumentId','volumeValue',
+  'bitrixVolumeValue','bitrixVolumeStatus','volumeStrapi','volumeBitrix',
+  'volumeAction','status','activeStrapi','pictureStrapi','pictureBitrix',
+  'changes','published','phase','message'];
 function reportCsv(rows, items) {
   return '\uFEFF' + [
     REPORT.join(';'),
@@ -824,6 +827,8 @@ async function main() {
       '| Bitrix ID', row.bitrixId, '| Strapi не менялся.');
     return;
   }
+  // Загружаем весь справочник до первой записи: никакого угадывания Volume ID.
+  const catalog = await readVolumeCatalog();
   const journal = await readJournal(hash);
   const reportPath = resolve(APPLY ? 'attributes-import-report.csv' : 'attributes-import-plan.csv');
   const items = APPLY ? journal.items : new Map();
@@ -844,6 +849,12 @@ async function main() {
   });
   log(APPLY ? 'APPLY' : 'DRY-RUN', 'строк для обработки:', selected.length,
     '| с публичным Media URL:', totalPictures, '| пауза:', PAUSE_MS + 'ms');
+  log('Volume: known=', selected.filter(r => r.bitrixVolumeStatus === 'known').length,
+    '| empty=', selected.filter(r => r.bitrixVolumeStatus === 'empty').length,
+    '| manual=', selected.filter(r => r.bitrixVolumeStatus === 'manual').length);
+  if (APPLY && LIMIT === null && ONLY === null) {
+    log('Внимание: массовая запись всех кандидатов; Ctrl+C завершит текущую запись.');
+  }
   let attempted = 0;
   const alreadyCompleted = getProgress(selected, items).processed;
   showProgress(selected, items, alreadyCompleted, attempted, startedAt);
@@ -880,7 +891,7 @@ async function main() {
       if (APPLY) await journal.save(row.documentId, item);
     };
     try {
-      const result = await migrateOne(row, markWrite, markMediaUploaded, trace);
+      const result = await migrateOne(row, catalog, markWrite, markMediaUploaded, trace);
       Object.assign(item, result, {
         phase: 'COMPLETE', updatedAt: new Date().toISOString()
       });
