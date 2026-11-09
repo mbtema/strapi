@@ -438,7 +438,8 @@ async function currentVolumeValue(relation, catalog) {
       encodeURIComponent(relation.documentId) + '?locale=' + CFG.locale;
     const json = await (await http(strapiUrl(path), { headers: sHeaders() }, true)).json();
     entry = unwrapRecord(json?.data ?? json);
-    if (entry?.documentId !== relation.documentId || entry.id !== relation.id ||
+    if (entry?.documentId !== relation.documentId ||
+        !Number.isSafeInteger(entry.id) || entry.id <= 0 ||
         !Object.hasOwn(entry, 'value')) {
       throw Error('Volume ' + relation.documentId + ': target не подтверждён');
     }
