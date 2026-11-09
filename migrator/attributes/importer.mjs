@@ -512,6 +512,25 @@ function reportCsv(rows, items) {
   ].join('\r\n');
 }
 
+// Отдельный результат ручной проверки Volume — без фильтрации общего отчёта.
+function volumeManualCsv(rows, items) {
+  const fields = ['documentId','barcode','bitrixId','bitrixVolumeValue',
+    'volumeDocumentId','volumeValue','status','reason'];
+  const selected = rows.filter(row => {
+    const item = items.get(row.documentId);
+    return item?.status === 'review' &&
+      String(item.message ?? '').startsWith('Volume для Bitrix ');
+  });
+  return '\uFEFF' + [
+    fields.join(';'),
+    ...selected.map(row => {
+      const item = items.get(row.documentId);
+      const data = { ...row, status: item.status, reason: item.message };
+      return fields.map(key => quote(data[key])).join(';');
+    })
+  ].join('\r\n');
+}
+
 async function downloadOriginal(image, trace) {
   const url = validatedImageUrl(image.url);
   trace('MEDIA_DOWNLOAD_PUBLIC: GET оригинала без Cookie Bitrix');
@@ -844,6 +863,7 @@ async function main() {
   const catalog = await readVolumeCatalog();
   const journal = await readJournal(hash);
   const reportPath = resolve(APPLY ? 'attributes-import-report.csv' : 'attributes-import-plan.csv');
+  const manualPath = resolve('attributes-import-volume-review.csv');
   const items = APPLY ? journal.items : new Map();
   // --limit=N выбирает не более N ещё не обработанных строк в порядке CSV.
   // После пилота checkpoint сохранится; массовый запуск с тем же CSV продолжит.
@@ -938,13 +958,16 @@ async function main() {
       // Полный CSV пересоздаём раз в 100 записей, а не после каждой:
       // на больших входных файлах это устраняет квадратичные дисковые записи.
       await atomicWrite(reportPath, reportCsv(rows, items));
+      await atomicWrite(manualPath, volumeManualCsv(rows, items));
     }
   }
   await atomicWrite(reportPath, reportCsv(rows, items));
+  await atomicWrite(manualPath, volumeManualCsv(rows, items));
   const completed = Math.min(selected.length, alreadyCompleted + attempted);
   const summary = showProgress(selected, items, completed, attempted, startedAt);
   log('Итог:', count(completed) + '/' + count(selected.length),
-    '| затрачено', formatSeconds(Date.now() - startedAt), '| отчёт:', reportPath);
+    '| затрачено', formatSeconds(Date.now() - startedAt), '| отчёт:', reportPath,
+    '| ручная проверка Volume:', manualPath);
   if (APPLY) log('Журнал:', journal.path, '| повтор с тем же CSV продолжит обработку');
   if (summary.errors || summary.review) process.exitCode = 1;
 }
