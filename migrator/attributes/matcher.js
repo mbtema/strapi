@@ -25,7 +25,7 @@
     bitrixCookies: ''
   };
   const LOG = '[Attributes matcher]';
-  const BUILD = 'v5.2-volume-review';
+  const BUILD = 'v5.3-indexeddb-checkpoint';
   const LIST_PATH = '/bitrix/admin/iblock_element_admin.php';
   const CARD_PATH = '/bitrix/admin/iblock_element_edit.php';
   const VOLUME_IBLOCK_ID = '12';
@@ -395,6 +395,60 @@
         .map(b => b.toString(16).padStart(2, '0')).join(''));
   }
 
+  // IndexedDB хранит большой checkpoint без жёсткого лимита localStorage.
+  // Объект state сохраняем атомарно по ключу версии + хешу исходного CSV.
+  function openCheckpointDb() {
+    if (!window.indexedDB) {
+      throw Error('Для checkpoint требуется IndexedDB. Проверь доступ к хранилищу браузера.');
+    }
+    return new Promise((resolve, reject) => {
+      const request = window.indexedDB.open('tm-attributes-matcher', 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains('checkpoints')) {
+          request.result.createObjectStore('checkpoints');
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(Error('Не удалось открыть IndexedDB: ' + request.error?.message));
+      request.onblocked = () => reject(Error('IndexedDB заблокирован другой вкладкой Bitrix'));
+    });
+  }
+
+  function readCheckpoint(db, key) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('checkpoints', 'readonly');
+      const request = tx.objectStore('checkpoints').get(key);
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => reject(Error('Не удалось прочитать checkpoint из IndexedDB'));
+      tx.onabort = () => reject(Error('Чтение checkpoint из IndexedDB прервано'));
+    });
+  }
+
+  function writeCheckpoint(db, key, state) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('checkpoints', 'readwrite');
+      tx.objectStore('checkpoints').put(state, key);
+      // Считаем страницу сохранённой только после commit всей транзакции.
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(Error('Не удалось сохранить checkpoint в IndexedDB: ' +
+        (tx.error?.message ?? 'ошибка хранилища')));
+      tx.onabort = () => reject(Error('Сохранение checkpoint в IndexedDB прервано: ' +
+        (tx.error?.message ?? 'ошибка хранилища')));
+    });
+  }
+
+  function deleteCheckpoint(db, key) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('checkpoints', 'readwrite');
+      tx.objectStore('checkpoints').delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(Error('Не удалось очистить checkpoint в IndexedDB'));
+      tx.onabort = () => reject(Error('Очистка checkpoint в IndexedDB прервана'));
+    });
+  }
+
+  let checkpointDb = null;
+
   try {
     if (AUTH.bitrixCookies.trim()) {
       console.warn(LOG, 'AUTH.bitrixCookies не применяется в браузере: Cookie отправляются текущей сессией Bitrix.');
@@ -479,11 +533,20 @@
     }
     const firstSignature = await digest(JSON.stringify(first.rows));
     const checkpointKey = 'tm:attributes-matcher:' + CFG.checkpointVersion + ':' + inputHash;
-    let state;
-    const saved = localStorage.getItem(checkpointKey);
-    if (saved) {
-      try { state = JSON.parse(saved); }
-      catch { throw Error('Checkpoint повреждён; остановлено без экспорта'); }
+    // Совместимость: сохранённый checkpoint v6 из localStorage автоматически
+    // переносится в IndexedDB после обычных проверок целостности.
+    checkpointDb = await openCheckpointDb();
+    let state = await readCheckpoint(checkpointDb, checkpointKey);
+    let fromLegacyStorage = false;
+    if (state === null) {
+      const saved = localStorage.getItem(checkpointKey);
+      if (saved) {
+        try { state = JSON.parse(saved); }
+        catch { throw Error('Старый checkpoint повреждён; остановлено без экспорта'); }
+        fromLegacyStorage = true;
+      }
+    }
+    if (state !== null) {
       if (state?.total !== total || state?.pageSize !== size ||
           state?.pageCount !== pageCount || state?.firstSignature !== firstSignature ||
           !Number.isSafeInteger(state.nextPage) || state.nextPage < 2 ||
@@ -492,6 +555,11 @@
           (total > 0 && !/^\d+$/.test(state.lastId ?? ''))) {
         throw Error('Checkpoint не соответствует текущему списку Bitrix. ' +
           'Не продолжаю, чтобы не пропустить/дублировать предложения.');
+      }
+      if (fromLegacyStorage) {
+        await writeCheckpoint(checkpointDb, checkpointKey, state);
+        localStorage.removeItem(checkpointKey);
+        console.log(LOG, 'Старый checkpoint перенесён из localStorage в IndexedDB');
       }
       console.log(LOG, 'Продолжение из checkpoint со страницы', state.nextPage);
     } else {
@@ -512,7 +580,7 @@
         initial.set(item.barcode, ids);
       }
       state.hits = [...initial];
-      localStorage.setItem(checkpointKey, JSON.stringify(state));
+      await writeCheckpoint(checkpointDb, checkpointKey, state);
     }
 
     const seen = new Set(state.seenIds);
@@ -621,7 +689,7 @@
       state.lastId = results.at(-1)?.data.rows.at(-1)?.id ?? state.lastId;
       state.seenIds = [...seen];
       state.hits = [...hits];
-      localStorage.setItem(checkpointKey, JSON.stringify(state));
+      await writeCheckpoint(checkpointDb, checkpointKey, state);
       if ((to % 20 < CFG.pageConcurrency) || to === pageCount) {
         console.log(LOG, 'Страниц', to + '/' + pageCount,
           '| предложений', seen.size + '/' + total,
@@ -768,6 +836,8 @@
       }
     };
     window.bitrixAttributesMatchExport();
+    await deleteCheckpoint(checkpointDb, checkpointKey);
+    // Если миграция из localStorage не понадобилась, старых данных здесь нет.
     localStorage.removeItem(checkpointKey);
 
     console.table([summary]);
@@ -785,6 +855,7 @@
   } catch (error) {
     console.error(LOG, 'STOP. Итоговый CSV не создаётся при ошибке.', error);
   } finally {
+    checkpointDb?.close();
     window.__tmAttributesMatcherRunning = false;
   }
 })();
