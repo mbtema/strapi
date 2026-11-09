@@ -556,105 +556,180 @@ async function upload(image, bitrixId, markWrite, trace) {
   return value.id;
 }
 
-async function migrateOne(row, markWrite, markMediaUploaded, trace) {
-  trace('READ: проверяю только Strapi; значения Bitrix из CSV');
-  const initial = await readStrapi(row.documentId, null, row.barcode);
-  const bitrix = { active: row.bitrixActive,
-    picture: row.pictureUrl ? { url: row.pictureUrl } : null };
+async function migrateOne(row, catalog, markWrite, markMediaUploaded, trace) {
+  trace('READ: Strapi live + Volume relation; источник Bitrix — CSV');
+  const [initial, initialVolume] = await Promise.all([
+    readStrapi(row.documentId, null, row.barcode),
+    readVolumeRelation(row.documentId)
+  ]);
   const initialMedia = mediaId(initial.detail_picture);
-  const needsActive = initial.active !== bitrix.active;
-  const needsPicture = initialMedia === null && !!bitrix.picture;
+  const needsActive = initial.active !== row.bitrixActive;
+  const needsPicture = initialMedia === null && Boolean(row.pictureUrl);
+  let volumeAction = null, volumeReviewMessage = '';
+  let sourceValue = '';
+  if (row.bitrixVolumeStatus === 'known') {
+    sourceValue = await currentVolumeValue(initialVolume, catalog);
+    if (sourceValue !== row.bitrixVolumeValue) {
+      const targets = catalog.byNumber.get(row.bitrixVolumeValue) ?? [];
+      if (targets.length !== 1) {
+        // Не создаём словарь и не выбираем один из дубликатов произвольно.
+        volumeReviewMessage = 'Volume для Bitrix ' + row.bitrixVolumeValue +
+          ': подходящих name=value в Strapi ' + targets.length + '; проверить вручную';
+      } else {
+        volumeAction = {
+          type: initialVolume ? 'replace' : 'add',
+          target: targets[0], previous: initialVolume
+        };
+      }
+    }
+  } else if (row.bitrixVolumeStatus === 'empty' && initialVolume) {
+    volumeAction = { type: 'remove', target: null, previous: initialVolume };
+  }
+  // status=manual: не изменяем Volume, даже если bitrixVolumeValue пуст.
   const base = {
     activeStrapi: String(initial.active),
-    activeBitrix: String(bitrix.active),
+    activeBitrix: String(row.bitrixActive),
     pictureStrapi: initialMedia ?? '',
-    pictureBitrix: bitrix.picture ? 'есть URL' : ''
+    pictureBitrix: row.pictureUrl ? 'есть URL' : '',
+    volumeStrapi: sourceValue,
+    volumeBitrix: row.bitrixVolumeValue,
+    volumeAction: volumeAction?.type ?? (volumeReviewMessage ? 'manual_review' : '')
   };
-  const planned = [needsActive ? 'active' : '', needsPicture ? 'detail_picture' : '']
-    .filter(Boolean);
-  const activeLabel = value => value === null ? 'null' : String(value);
-  trace('PLAN: active ' + activeLabel(initial.active) + ' → ' + activeLabel(bitrix.active) +
+  const planned = [
+    needsActive ? 'active' : '',
+    needsPicture ? 'detail_picture' : '',
+    volumeAction ? 'volume_' + volumeAction.type : ''
+  ].filter(Boolean);
+  trace('PLAN: active ' + String(initial.active) + ' → ' + String(row.bitrixActive) +
     (needsActive ? ' (изменить)' : ' (совпадает)') +
-    '; detail_picture Strapi=' + (initialMedia ?? 'пусто') +
-    ', Bitrix=' + (bitrix.picture ? 'публичный URL' : 'пусто') +
-    (needsPicture ? ' (загрузить)' : ' (без загрузки)'));
+    '; picture ' + (initialMedia ?? 'нет') +
+    (needsPicture ? ' (загрузить)' : ' (без загрузки)') +
+    '; volume Strapi=' + (initialVolume?.documentId ?? 'нет') +
+    (sourceValue ? ' (' + sourceValue + ')' : '') +
+    ', Bitrix=' + row.bitrixVolumeStatus + ':' + row.bitrixVolumeValue +
+    ', действие=' + (volumeAction?.type ?? 'нет'));
+  if (volumeReviewMessage) trace('MANUAL_VOLUME: ' + volumeReviewMessage);
   if (VERBOSE) trace('PLAN_FIELDS: ' + (planned.join(', ') || 'нет изменений'));
 
-  if (!planned.length) return { ...base, status: 'skipped_already',
-    changes: '', published: false, message: 'Активность совпадает; существующее изображение не меняем' };
-  if (!APPLY) return { ...base, status: 'dry_run', changes: planned.join('|'),
-    published: false, message: 'План составлен, запись не выполнена' };
+  if (!planned.length) return {
+    ...base,
+    status: volumeReviewMessage ? 'review' : 'skipped_already',
+    changes: '', published: false,
+    message: volumeReviewMessage || 'Текущие значения уже совпадают с Bitrix'
+  };
+  if (!APPLY) return {
+    ...base, status: 'dry_run', changes: planned.join('|'),
+    published: false, message: 'Только план; изменений нет'
+  };
 
-  trace('VERIFY_BEFORE_SAVE: перепроверяю актуальность Strapi');
-  const fresh = await readStrapi(row.documentId, null, row.barcode);
-  if (snapshot(fresh) !== snapshot(initial)) {
+  // При повторном чтении подтверждаем и поля, и live relation.
+  trace('VERIFY_BEFORE_SAVE: повторное чтение Attribute и Volume');
+  const [fresh, freshVolume] = await Promise.all([
+    readStrapi(row.documentId, null, row.barcode),
+    readVolumeRelation(row.documentId)
+  ]);
+  if (snapshot(fresh, freshVolume) !== snapshot(initial, initialVolume)) {
     throw Error('Strapi изменился между чтением и записью, отменено');
   }
 
   const payload = {};
-  if (needsActive) payload.active = bitrix.active;
+  if (needsActive) payload.active = row.bitrixActive;
   if (needsPicture) {
-    payload.detail_picture = await upload(bitrix.picture, row.bitrixId, markWrite, trace);
-    // Upload подтверждён: сохраняем Media ID в журнале даже если позже Save/Publish не пройдут.
+    payload.detail_picture = await upload(
+      { url: row.pictureUrl }, row.bitrixId, markWrite, trace
+    );
     await markMediaUploaded(payload.detail_picture);
   }
-  const beforePut = await readStrapi(row.documentId, null, row.barcode);
-  if (snapshot(beforePut) !== snapshot(fresh)) {
-    throw Error('Strapi изменился до сохранения, PUT отменён (загруженную Media нужно проверить)');
+
+  let saved = fresh, savedVolume = freshVolume;
+  if (Object.keys(payload).length) {
+    // Существующий подтверждённый PUT используем только для active/detail_picture.
+    const [beforePut, beforePutVolume] = await Promise.all([
+      readStrapi(row.documentId, null, row.barcode),
+      readVolumeRelation(row.documentId)
+    ]);
+    if (snapshot(beforePut, beforePutVolume) !== snapshot(fresh, freshVolume)) {
+      throw Error('Strapi изменился до Save: PUT отменён');
+    }
+    await markWrite('SAVE');
+    trace('SAVE: обновляю ' + Object.keys(payload).join(', '));
+    try {
+      await http(strapiUrl(withLocale(row.documentId)), {
+        method: 'PUT',
+        headers: { ...sHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (e) {
+      throw Error('Save: результат неопределён, требуется проверка Strapi: ' + e.message);
+    }
+    [saved, savedVolume] = await Promise.all([
+      readStrapi(row.documentId, null, row.barcode),
+      readVolumeRelation(row.documentId)
+    ]);
+    if ((needsActive && saved.active !== row.bitrixActive) ||
+        (needsPicture && mediaId(saved.detail_picture) !== payload.detail_picture) ||
+        (savedVolume?.documentId ?? '') !== (initialVolume?.documentId ?? '')) {
+      throw Error('Save выполнен, но не подтвердились active/Media/Volume');
+    }
+    if (!needsActive && saved.active !== initial.active) {
+      throw Error('Save изменил active без запроса');
+    }
+    if (!needsPicture && mediaId(saved.detail_picture) !== initialMedia) {
+      throw Error('Save изменил существующую Media без запроса');
+    }
+    trace('SAVE_VERIFIED: active/Media проверены, Volume сохранён');
   }
 
-  await markWrite('SAVE');
-  trace('SAVE: отправляю ' + Object.keys(payload).join(', ') + ' в Strapi');
-  try {
-    await http(strapiUrl(withLocale(row.documentId)), {
-      method: 'PUT',
-      headers: { ...sHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-  } catch (e) {
-    throw Error('PUT: результат неопределён, требуется проверка Strapi: ' + e.message);
+  const [beforePublish, beforeVolume] = await Promise.all([
+    readStrapi(row.documentId, null, row.barcode),
+    readVolumeRelation(row.documentId)
+  ]);
+  if (snapshot(beforePublish, beforeVolume) !== snapshot(saved, savedVolume)) {
+    throw Error('Strapi изменился перед Publish; запись отменена');
   }
-  const saved = await readStrapi(row.documentId, null, row.barcode);
-  if ((needsActive && saved.active !== bitrix.active) ||
-      (needsPicture && mediaId(saved.detail_picture) !== payload.detail_picture)) {
-    throw Error('Save выполнен, но проверка контента не прошла');
-  }
-  if (!needsActive && saved.active !== initial.active) {
-    throw Error('Save неожиданно изменил active');
-  }
-  if (!needsPicture && mediaId(saved.detail_picture) !== initialMedia) {
-    throw Error('Save неожиданно изменил существующее изображение');
-  }
-  trace('SAVE_VERIFIED: изменения сохранены и проверены');
 
-  const beforePublish = await readStrapi(row.documentId, null, row.barcode);
-  if (snapshot(beforePublish) !== snapshot(saved)) {
-    throw Error('Strapi изменился перед Publish, отменено');
-  }
-  trace('VERIFY_BEFORE_PUBLISH: состояние Strapi не изменилось');
+  // Именно POST Publish с full-body relation connect/disconnect подтверждён
+  // Network от 2026-11-09. Для active/media без Volume оставляем старый {}.
+  const publishBody = volumeAction
+    ? publishWithVolumePayload(beforePublish, volumeAction)
+    : {};
   const publishPath = '/content-manager/collection-types/' + UID + '/' +
     encodeURIComponent(row.documentId) + '/actions/publish?locale=' + CFG.locale;
   await markWrite('PUBLISH');
-  trace('PUBLISH: публикую локаль ' + CFG.locale);
+  trace('PUBLISH: ' + (volumeAction
+    ? 'volume ' + volumeAction.type + ' через подтверждённый connect/disconnect'
+    : 'только active/Media'));
   try {
     await http(strapiUrl(publishPath), {
       method: 'POST',
       headers: { ...sHeaders(), 'Content-Type': 'application/json' },
-      body: '{}'
+      body: JSON.stringify(publishBody)
     });
   } catch (e) {
-    throw Error('Publish: результат неопределён, требуется проверка Strapi: ' + e.message);
+    throw Error('Publish: исход неопределён, проверь Strapi перед повтором: ' + e.message);
   }
-  const published = await readStrapi(row.documentId, 'published', row.barcode);
+
+  const [published, publishedVolume] = await Promise.all([
+    readStrapi(row.documentId, 'published', row.barcode),
+    readVolumeRelation(row.documentId)
+  ]);
+  const expectedVolumeDocId = volumeAction
+    ? volumeAction.target?.documentId ?? ''
+    : initialVolume?.documentId ?? '';
   if (!published.publishedAt || Number.isNaN(Date.parse(published.publishedAt)) ||
-      published.active !== saved.active ||
-      mediaId(published.detail_picture) !== mediaId(saved.detail_picture)) {
-    throw Error('Publish отправлен, но опубликованная ru-версия не совпадает с сохранённой');
+      published.active !== (needsActive ? row.bitrixActive : initial.active) ||
+      mediaId(published.detail_picture) !== (needsPicture ? payload.detail_picture : initialMedia) ||
+      (publishedVolume?.documentId ?? '') !== expectedVolumeDocId) {
+    throw Error('Publish выполнен, но проверка ru active/Media/Volume не прошла');
   }
-  trace('PUBLISH_VERIFIED: опубликованная ru-версия совпадает с сохранённой');
-  return { ...base, status: 'done', changes: planned.join('|'),
+  trace('PUBLISH_VERIFIED: ru active, Media, Volume подтверждены');
+  return {
+    ...base, status: volumeReviewMessage ? 'review' : 'done',
+    changes: planned.join('|'), volumeAction: volumeAction?.type ?? base.volumeAction,
     pictureStrapi: mediaId(published.detail_picture) ?? '',
-    published: true, message: 'Save и Publish проверены на ru-версии' };
+    published: true,
+    message: volumeReviewMessage || 'Save/Publish подтверждены в ru, Volume сверён'
+  };
 }
 
 // Статистика собирается из текущих результатов + checkpoint, а не только из этой сессии.
