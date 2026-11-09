@@ -1,7 +1,8 @@
 // Этап 2: Bitrix Admin -> Console -> attributes-matched.csv
 // Вход: attributes-config.csv, 10 колонок (включая shadeHex и volumeValue).
-// Выход: attributes-matched.csv (кандидаты importer по active/Media/volume)
-//        и attributes-shade-review.csv (отсутствующий shade, только ручная работа).
+// Выход: attributes-matched.csv (кандидаты importer по active/Media/volume),
+//        attributes-shade-review.csv (отсутствующий shade),
+//        attributes-volume-review.csv (нестандартные значения Bitrix, без автозаписи Volume).
 // Чтение IBLOCK_ID=2 / PROPERTY_19, PROPERTY_202, PROPERTY_271, ACTIVE, DETAIL_PICTURE. Только GET.
 (async () => {
   'use strict';
@@ -15,7 +16,8 @@
     matchedFile: 'attributes-matched.csv',
     unmatchedFile: 'attributes-unmatched.csv',
     shadeReviewFile: 'attributes-shade-review.csv',
-    checkpointVersion: 'v5-volume-shade-hint'
+    volumeReviewFile: 'attributes-volume-review.csv',
+    checkpointVersion: 'v6-volume-review'
   };
   const AUTH = {
     // В DevTools браузер отправляет Bitrix Cookie сам (credentials: include).
@@ -23,7 +25,7 @@
     bitrixCookies: ''
   };
   const LOG = '[Attributes matcher]';
-  const BUILD = 'v5.1-volume-brackets';
+  const BUILD = 'v5.2-volume-review';
   const LIST_PATH = '/bitrix/admin/iblock_element_admin.php';
   const CARD_PATH = '/bitrix/admin/iblock_element_edit.php';
   const VOLUME_IBLOCK_ID = '12';
@@ -60,30 +62,37 @@
     const context = 'Страница ' + page + ', Bitrix ID ' + id + ', PROPERTY_202';
     const content = cell?.querySelector('.main-grid-cell-content') ?? cell;
     if (!content) throw Error(context + ': отсутствует ячейка');
+    const rawText = trim(content.textContent);
     const anchors = [...content.querySelectorAll('a[href]')];
     if (!anchors.length) {
-      if (!trim(content.textContent)) return '';
-      throw Error(context + ': есть текст, но нет подтверждённой ссылки на справочник Volume');
+      if (!rawText) return { status: 'empty', value: '', raw: '', refId: '' };
+      // Не принимаем текст без подтверждённого ID за пустую relation:
+      // иначе будущий Importer удалит Volume в Strapi.
+      return { status: 'manual', value: '', raw: rawText, refId: '' };
     }
     if (anchors.length !== 1) throw Error(context + ': неоднозначные ссылки Volume');
     let target;
     try { target = new URL(anchors[0].getAttribute('href'), location.origin); }
     catch { throw Error(context + ': некорректная ссылка'); }
+    const refId = target.searchParams.get('ID');
     if (target.origin !== location.origin || target.pathname !== CARD_PATH ||
         target.searchParams.get('IBLOCK_ID') !== VOLUME_IBLOCK_ID ||
-        !/^\d+$/.test(target.searchParams.get('ID') ?? '') ||
-        trim(anchors[0].textContent) !== target.searchParams.get('ID')) {
+        !/^\\d+$/.test(refId ?? '') ||
+        trim(anchors[0].textContent) !== refId) {
       throw Error(context + ': ссылка не указывает на ожидаемый справочник Volume');
     }
-    // Bitrix показывает значение и ID справочника как "100 [62913]".
-    // Если удалить <a>, от скобок останется "100 []", поэтому читаем всю
-    // видимую строку и отдельно проверяем совпадение ID с реальной ссылкой.
-    const display = /^(\d+(?:[.,]\d+)?)\s*\[\s*(\d+)\s*\]$/.exec(trim(content.textContent));
-    if (!display || display[2] !== target.searchParams.get('ID')) {
-      throw Error(context + ': ожидалось «100 [62913]» с ID, совпадающим со ссылкой; получено ' +
-        JSON.stringify(trim(content.textContent).slice(0, 90)));
+    // Пример: "100 [62913]" или нестандартное значение "2х5 [107307]".
+    // Строго подтверждаем ID по ссылке, но не пытаемся преобразовать 2х5 в 10.
+    const display = /^(.+?)\\s*\\[\\s*(\\d+)\\s*\\]$/.exec(rawText);
+    if (!display || display[2] !== refId) {
+      throw Error(context + ': ID в ячейке не совпадает со ссылкой или формат повреждён: ' +
+        JSON.stringify(rawText.slice(0, 90)));
     }
-    return volumeNumber(display[1], context);
+    const raw = trim(display[1]);
+    if (!/^\\d+(?:[.,]\\d+)?$/.test(raw)) {
+      return { status: 'manual', value: '', raw, refId };
+    }
+    return { status: 'known', value: volumeNumber(raw, context), raw, refId };
   }
 
   function parseCsv(text) {
@@ -349,12 +358,14 @@
       const pictureUrl = pictureWanted.has(barcode)
         ? originalImageUrl(cells[pictureIndex], page, id)
         : '';
-      const volumeValue = bitrixVolume(cells[volumeIndex], page, id);
+      const volume = bitrixVolume(cells[volumeIndex], page, id);
       const shadeHint = trim(
         (cells[hintIndex]?.querySelector('.main-grid-cell-content') ??
           cells[hintIndex])?.textContent
       );
-      return { id, barcode, active: parsed[0], pictureUrl, volumeValue, shadeHint };
+      return { id, barcode, active: parsed[0], pictureUrl,
+        volumeValue: volume.value, volumeStatus: volume.status,
+        volumeRaw: volume.raw, volumeRefId: volume.refId, shadeHint };
     });
 
     const totalText = doc.querySelector(
@@ -388,7 +399,7 @@
     if (AUTH.bitrixCookies.trim()) {
       console.warn(LOG, 'AUTH.bitrixCookies не применяется в браузере: Cookie отправляются текущей сессией Bitrix.');
     }
-    console.log(LOG, 'Версия:', BUILD, '| volume из текста «100 [62913]»');
+    console.log(LOG, 'Версия:', BUILD, '| Volume: числа автоматически, 2х5 — вручную');
     console.log(LOG, 'Выбери attributes-config.csv из Strapi.');
     const file = await chooseFile();
     if (!file) {
@@ -495,7 +506,9 @@
         if (!target.has(item.barcode)) continue;
         const ids = initial.get(item.barcode) ?? [];
         ids.push({ id: item.id, active: item.active, pictureUrl: item.pictureUrl,
-          volumeValue: item.volumeValue, shadeHint: item.shadeHint });
+          volumeValue: item.volumeValue, volumeStatus: item.volumeStatus,
+          volumeRaw: item.volumeRaw, volumeRefId: item.volumeRefId,
+          shadeHint: item.shadeHint });
         initial.set(item.barcode, ids);
       }
       state.hits = [...initial];
@@ -510,7 +523,15 @@
             !hit || !/^\d+$/.test(hit.id) || typeof hit.active !== 'boolean' ||
             typeof hit.pictureUrl !== 'string' ||
             typeof hit.volumeValue !== 'string' || typeof hit.shadeHint !== 'string' ||
-            volumeNumber(hit.volumeValue, 'Checkpoint Bitrix ' + hit.id) !== hit.volumeValue ||
+            typeof hit.volumeRaw !== 'string' || typeof hit.volumeRefId !== 'string' ||
+            !['known', 'empty', 'manual'].includes(hit.volumeStatus) ||
+            (hit.volumeStatus === 'known' &&
+              (!hit.volumeRefId || !hit.volumeValue ||
+               volumeNumber(hit.volumeValue, 'Checkpoint Bitrix ' + hit.id) !== hit.volumeValue)) ||
+            (hit.volumeStatus === 'empty' &&
+              (hit.volumeValue || hit.volumeRaw || hit.volumeRefId)) ||
+            (hit.volumeStatus === 'manual' &&
+              (hit.volumeValue || !hit.volumeRaw)) ||
             (hit.pictureUrl && (
               !pictureWanted.has(barcode) ||
               !hit.pictureUrl.startsWith(location.origin + '/upload/iblock/')
@@ -590,7 +611,9 @@
           if (!target.has(row.barcode)) continue;
           const ids = hits.get(row.barcode) ?? [];
           ids.push({ id: row.id, active: row.active, pictureUrl: row.pictureUrl,
-            volumeValue: row.volumeValue, shadeHint: row.shadeHint });
+            volumeValue: row.volumeValue, volumeStatus: row.volumeStatus,
+            volumeRaw: row.volumeRaw, volumeRefId: row.volumeRefId,
+            shadeHint: row.shadeHint });
           hits.set(row.barcode, ids);
         }
       }
@@ -613,11 +636,12 @@
     const mapped = [];
     const diagnostics = [];
     const shadeReview = [];
+    const volumeReview = [];
     const summary = {
       totalStrapi: inputRows.length, totalBitrix: total,
       candidates: 0, alreadySynced: 0, needsActive: 0, missingStrapiPicture: 0,
       needsVolumeAdd: 0, needsVolumeReplace: 0, needsVolumeRemove: 0,
-      shadeManualReview: 0, shadeAlreadyLinked: 0,
+      shadeManualReview: 0, shadeAlreadyLinked: 0, volumeManualReview: 0,
       noBitrixPicture: 0, emptyBarcode: 0, notFound: 0,
       duplicateStrapiBarcode: 0, duplicateBitrixBarcode: 0
     };
@@ -658,14 +682,31 @@
           const activeDiffers = row.active !== hit.active;
           const needsPicture = !row.hasDetailPicture && Boolean(hit.pictureUrl);
 
-          // Bitrix имеет приоритет: непустой value назначаем/заменяем,
-          // пустой удаляет существующую relation Strapi.
-          // Совпадающий value оставляет даже вручную нормализованный name.
-          const needsVolume = hit.volumeValue
-            ? row.volumeValue !== hit.volumeValue
-            : Boolean(row.volumeDocumentId);
+          // Нестандартный объём (например 2х5): ручная проверка.
+          // Не записываем и не удаляем Volume, но active/Media обрабатываем независимо.
+          if (hit.volumeStatus === 'manual') {
+            summary.volumeManualReview++;
+            const bitrixCardUrl = new URL(CARD_PATH, location.origin);
+            bitrixCardUrl.searchParams.set('IBLOCK_ID', CFG.iblockId);
+            bitrixCardUrl.searchParams.set('type', 'catalog');
+            bitrixCardUrl.searchParams.set('lang', CFG.locale);
+            bitrixCardUrl.searchParams.set('ID', hit.id);
+            volumeReview.push({
+              documentId: row.documentId, barcode: row.barcode, bitrixId: hit.id,
+              bitrixVolumeRaw: hit.volumeRaw, bitrixVolumeRefId: hit.volumeRefId,
+              strapiVolumeDocumentId: row.volumeDocumentId,
+              strapiVolumeValue: row.volumeValue,
+              bitrixCardUrl: bitrixCardUrl.href
+            });
+          }
+          // Только подтверждённые числовые или действительно пустые Bitrix values.
+          // Ручная нормализация name в Strapi сохраняется при совпадении value.
+          const needsVolume = hit.volumeStatus === 'manual' ? false :
+            hit.volumeStatus === 'known'
+              ? row.volumeValue !== hit.volumeValue
+              : Boolean(row.volumeDocumentId);
           const volumeAction = !needsVolume ? '' :
-            !hit.volumeValue ? 'remove' :
+            hit.volumeStatus === 'empty' ? 'remove' :
             !row.volumeDocumentId ? 'add' : 'replace';
 
           if (!activeDiffers && !needsPicture && !needsVolume) {
@@ -692,7 +733,8 @@
           pictureUrl: hit.pictureUrl,
           volumeDocumentId: row.volumeDocumentId,
           volumeValue: row.volumeValue,
-          bitrixVolumeValue: hit.volumeValue
+          bitrixVolumeValue: hit.volumeValue,
+          bitrixVolumeStatus: hit.volumeStatus
         });
       } else if (status !== 'ALREADY_SYNCED') {
         diagnostics.push({ documentId: row.documentId, barcode: row.barcode,
@@ -701,13 +743,14 @@
     }
 
     window.bitrixAttributesMatchResult = {
-      summary, rows: mapped, unmatched: diagnostics, shadeReview
+      summary, rows: mapped, unmatched: diagnostics, shadeReview, volumeReview
     };
     window.bitrixAttributesMatchExport = () => {
       downloadCsv(CFG.matchedFile,
         ['documentId', 'barcode', 'active', 'hasDetailPicture',
           'bitrixId', 'bitrixActive', 'pictureUrl',
-          'volumeDocumentId', 'volumeValue', 'bitrixVolumeValue'], mapped);
+          'volumeDocumentId', 'volumeValue', 'bitrixVolumeValue',
+          'bitrixVolumeStatus'], mapped);
       if (diagnostics.length) {
         setTimeout(() => downloadCsv(CFG.unmatchedFile,
           ['documentId', 'barcode', 'status', 'bitrixIds'], diagnostics), 750);
@@ -716,6 +759,12 @@
         setTimeout(() => downloadCsv(CFG.shadeReviewFile,
           ['documentId', 'barcode', 'bitrixId', 'bitrixShadeHint', 'bitrixCardUrl'],
           shadeReview), 1500);
+      }
+      if (volumeReview.length) {
+        setTimeout(() => downloadCsv(CFG.volumeReviewFile,
+          ['documentId', 'barcode', 'bitrixId', 'bitrixVolumeRaw', 'bitrixVolumeRefId',
+            'strapiVolumeDocumentId', 'strapiVolumeValue', 'bitrixCardUrl'],
+          volumeReview), 2250);
       }
     };
     window.bitrixAttributesMatchExport();
@@ -731,6 +780,8 @@
     console.log(LOG, 'attributes-shade-review.csv: ручная работа', shadeReview.length +
       '; Shade уже назначен:', summary.shadeAlreadyLinked +
       '. Importer не меняет Shade.');
+    console.log(LOG, 'attributes-volume-review.csv: нестандартные объёмы', volumeReview.length +
+      '. Для них автоматическое изменение Volume запрещено.');
   } catch (error) {
     console.error(LOG, 'STOP. Итоговый CSV не создаётся при ошибке.', error);
   } finally {
