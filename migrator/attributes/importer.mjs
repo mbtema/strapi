@@ -375,7 +375,11 @@ async function readVolumeCatalog() {
       const entry = { id: item.id, documentId: item.documentId, name: item.name, value: item.value };
       byId.set(entry.documentId, entry);
       if (entry.value != null && entry.value !== '') {
-        const value = quantity(entry.value, 'Volume ' + entry.documentId);
+        // Справочник может содержать вручную нормализованные/нечисловые значения.
+        // Они не подходят для автоматического выбора, но не блокируют остальные записи.
+        let value = '';
+        try { value = quantity(entry.value, 'Volume ' + entry.documentId); }
+        catch { /* только ручная обработка такого Volume */ }
         if (value && exactVolumeName(entry.name, value)) {
           const options = byNumber.get(value) ?? [];
           options.push(entry);
