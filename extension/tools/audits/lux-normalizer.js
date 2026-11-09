@@ -15,7 +15,8 @@
   const WRITE_CONCURRENCY = 4;
   const TARGET_BRANDS = new Set([
     'yeag7mng9hfpk7pd4ggm7495',
-    'qw7sja6ffpbufvzub5maxyrl'
+    'qw7sja6ffpbufvzub5maxyrl',
+    'mh3i4g2k09qns6j94ng0ps04'
   ]);
   const BASE = '/content-manager/collection-types/' + UID;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
