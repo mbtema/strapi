@@ -293,6 +293,10 @@
         blockers.push('Нет поля '+name+' в '+(shared?'RU':local));continue;
       }
       const value=from[name];
+      if(value===undefined){
+        blockers.push('Undefined '+name+' ('+local+'): передача общего поля невозможна');
+        continue;
+      }
       if(attr?.type==='uid'){
         if(invalid(value)&&attr.required)blockers.push('Required UID '+name+' пуст');
         else if(!invalid(value))blockers.push('UID '+name+' требует отдельного контракта');
