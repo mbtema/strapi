@@ -23,7 +23,8 @@
   const pathMatch = location.pathname.match(
     /^\/admin\/content-manager\/collection-types\/api::product\.product\/([a-z0-9]+)\/?$/i
   );
-  if (!pathMatch || new URLSearchParams(location.search).get('plugins[i18n][locale]') === 'kk') {
+  if (!pathMatch || (new URLSearchParams(location.search).get('plugins[i18n][locale]') &&
+    new URLSearchParams(location.search).get('plugins[i18n][locale]') !== 'ru')) {
     console.error('[Product KK Sync]', 'Открой RU-карточку одного товара Product');
     return;
   }
@@ -277,18 +278,16 @@
   }
   // Копирует все общие поля RU. В KK локализуемые поля по умолчанию НЕ копируются:
   // добавляем только обязательные значения из RU, и name1 как ранний known fallback.
-  function buildPayload(schema,source,local,mode){
+  function buildPayload(schema,source,local,mode,kkSource=null){
     const result={locale:local};
     const blockers=[],warnings=[];
     for(const [name,attr] of Object.entries(schema.attributes)){
       if(SYSTEM.has(name)||attr?.type==='relation')continue;
       const shared=!localized(attr);
-      const target=mode==='create' ?
-        shared?source:attr.required?source:null :
-        shared?source:local==='ru'?source:mode==='publish-kk'?mode.target:null;
-      // В publish-kk значения локализованных атрибутов берём из KK.
+      // KK: только общие из RU, а локализованные значения — из KK Draft.
+      // RU: все поддержанные значения из RU Draft.
       const from=mode==='create'?(shared||attr.required?source:null):
-        (shared||local==='ru'?source:mode==='publish-kk'?mode.target:null);
+        (shared||local==='ru'?source:kkSource);
       if(!from)continue;
       if(!Object.prototype.hasOwnProperty.call(from,name)){
         blockers.push('Нет поля '+name+' в '+(shared?'RU':local));continue;
@@ -471,6 +470,10 @@
     render('Повторно читаем обе локали и все relations перед записью…');
     let attempted=false, method=null,uri=null,payload=null,response=null;
     try{
+      const actualSchemas=await get('/content-manager/content-types');
+      const actualSchema=actualSchemas?.data?.find(x=>x?.uid===UID);
+      if(!actualSchema?.attributes || !equal(actualSchema.attributes,state.schema.attributes))
+        throw Error('Схема Product изменилась; операция остановлена');
       const before=await snapshot(state.schema);
       const changes=compareState(state.checkpoint,before,true);
       if(changes.length)throw Error('С момента последнего шага данные изменились: '+changes.join(' | '));
@@ -491,9 +494,8 @@
       }else{
         if(!before.ru.published||!before.kk.draft||before.kk.published)
           throw Error('Ожидаются RU Published и KK Draft');
-        const plan=buildPayload(state.schema,before.ru.draft.detail,'kk',{
-          target:before.kk.draft.detail
-        });
+        const plan=buildPayload(state.schema,before.ru.draft.detail,
+          'kk','publish-kk',before.kk.draft.detail);
         if(plan.blockers.length)throw Error('KK Publish заблокирован: '+plan.blockers.join(' | '));
         payload=plan.payload;method='POST';
         uri='/content-manager/collection-types/'+UID+'/'+documentId+
