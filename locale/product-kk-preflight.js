@@ -112,15 +112,31 @@
       fail('RU detail не подтверждает documentId и locale.');
     }
 
-    log('Проверка существования локализации KK');
+    log('Проверка ответа KK (включая несовпадение locale/documentId)');
     const kkResponse = await read(base + '?locale=kk', true);
-    let kk = null;
-    if (kkResponse.exists) {
-      kk = unwrap(kkResponse.body);
-      if (kk.documentId !== documentId || kk.locale !== 'kk') {
-        fail('KK detail вернул неожиданный documentId или locale; нельзя считать локализацию существующей.');
-      }
-    }
+    const kkRaw = kkResponse.body;
+    const kkRawData = kkRaw && Object.prototype.hasOwnProperty.call(kkRaw, 'data')
+      ? kkRaw.data : kkRaw;
+    const kkUnwrapped = kkRawData && typeof kkRawData === 'object' &&
+      !Array.isArray(kkRawData)
+      ? (kkRawData.attributes && !kkRawData.documentId
+        ? { ...kkRawData.attributes, id: kkRawData.id }
+        : kkRawData)
+      : null;
+    const kkConfirmed = Boolean(
+      kkUnwrapped?.documentId === documentId && kkUnwrapped?.locale === 'kk'
+    );
+    // 200 не гарантирует наличие KK: Strapi может вернуть RU или пустое data.
+    // В сомнительном случае не разрешаем создание и записываем диагностические поля.
+    const kkState = kkConfirmed ? 'exists'
+      : kkResponse.status === 404 ? 'missing'
+      : 'unverified';
+    const briefLocalization = item => ({
+      documentId: item?.documentId ?? null,
+      id: item?.id ?? null,
+      locale: item?.locale ?? null,
+      status: item?.status ?? null
+    });
 
     log('Чтение конфигурации Content Manager');
     const configurationResponse = await read(
@@ -145,8 +161,9 @@
       pageUrl: location.pathname + location.search,
       checks: {
         ruVerified: true,
-        kkLocale: kk ? 'exists' : 'missing',
-        safeForPlaceholderTest: !kk,
+        kkLocale: kkState,
+        safeForPlaceholderTest: kkState === 'missing',
+        kkHttpStatus: kkResponse.status,
         expectedDocumentId: EXPECTED_DOCUMENT_ID,
         documentIdMatchesAudit: true
       },
@@ -165,13 +182,29 @@
           Object.entries(ru).map(([key, value]) => [key, fieldShape(value)])
         )
       },
-      target: kk ? {
-        documentId: kk.documentId,
-        id: kk.id ?? null,
-        locale: kk.locale,
-        status: kk.status ?? null,
-        publishedAt: kk.publishedAt ?? null
+      target: kkConfirmed ? {
+        documentId: kkUnwrapped.documentId,
+        id: kkUnwrapped.id ?? null,
+        locale: kkUnwrapped.locale,
+        status: kkUnwrapped.status ?? null,
+        publishedAt: kkUnwrapped.publishedAt ?? null
       } : null,
+      kkResponseDiagnostic: {
+        httpStatus: kkResponse.status,
+        rootKeys: kkRaw && typeof kkRaw === 'object' ? Object.keys(kkRaw) : [],
+        dataType: kkRawData === null ? 'null'
+          : Array.isArray(kkRawData) ? 'array'
+          : typeof kkRawData,
+        dataKeys: kkUnwrapped ? Object.keys(kkUnwrapped) : [],
+        returnedDocumentId: kkUnwrapped?.documentId ?? null,
+        returnedLocale: kkUnwrapped?.locale ?? null,
+        returnedId: kkUnwrapped?.id ?? null,
+        returnedStatus: kkUnwrapped?.status ?? null,
+        localizations: Array.isArray(kkUnwrapped?.localizations)
+          ? kkUnwrapped.localizations.map(briefLocalization) : null
+      },
+      ruLocalizations: Array.isArray(ru.localizations)
+        ? ru.localizations.map(briefLocalization) : null,
       requiredInputsVisibleInRu: requiredInputs,
       configuration
     };
@@ -179,10 +212,13 @@
     window.tmProductKkPreflightResult = result;
     console.table(result.checks);
     console.table(requiredInputs);
+    console.table([result.kkResponseDiagnostic]);
     console.log(PREFIX, 'Полный отчёт: window.tmProductKkPreflightResult');
     downloadJson('product-kk-preflight-' + documentId + '.json', result);
-    log('Готово. ' + (kk ? 'KK уже существует; запись не меняли.' :
-      'KK отсутствует; можно готовить отдельный безопасный тест создания.'));
+    log('Готово: KK = ' + kkState +
+      (kkState === 'unverified'
+        ? '. Ответ API не подтверждает локализацию; запись заблокирована до анализа JSON.'
+        : '. Запись не меняли.'));
   } catch (error) {
     console.error(PREFIX, error);
   } finally {
