@@ -6,6 +6,7 @@
 |---|---|
 | [`extension/`](./extension) | Модули Strapi Admin: loader, manifests, features, UI/UX и browser tools |
 | [`migrator/`](./migrator) | Независимые pipeline: `products/` — товары, `attributes/` — торговые предложения (включая shade/volume) |
+| [`locale/`](./locale) | Небольшие отдельные инструменты для подготовки локализаций Strapi: сначала проверка одной записи, затем пилот создания KK-черновика |
 | [`helpdesk/`](./helpdesk) | n8n workflows Telegram-бота MonAmie Helpdesk |
 | [`translator/`](./translator) | RU → KK переводчик: полная версия, compressed-версия и extractor для накопленного translation context |
 | [`project/`](./project) | Sync/staging copies для Project Instructions и источника `context.md` |
@@ -82,6 +83,11 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 Для нового tool добавь файл в подходящую подпапку `extension/tools/` (`audits/`, `sync/` или `diagnostics/`) и зарегистрируй его в `extension/manifests/tools.json` через `file`, `version` и `group`. `version` и `group` внутри tool-файла не дублируются.
 
 Рабочие группы: `audits`, `sync`, `diagnostics`.
+
+## Locale
+
+- [`product-kk-preflight.js`](./locale/product-kk-preflight.js) — первый этап диагностики **одного** товара DIOR перед созданием KK-локализации. Открой его RU-карточку в Strapi Admin, вставь код файла в DevTools → Console. Скрипт выполняет только GET, сверяет `name`, `code_1c`, `xml_id`, проверяет отсутствие KK, читает конфигурацию Content Manager и автоматически скачивает `product-kk-preflight-<documentId>.json`. Ничего не создаёт и не публикует. Код не регистрируется в Tools Launcher — это независимый пилот в репозитории `locale/`.
+- После получения и проверки preflight-отчёта отдельно подтвердить точный запрос создания локали через Network; до этого не использовать предположительный POST/PUT для записи.
 
 ## Migrator
 
