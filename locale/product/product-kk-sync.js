@@ -278,8 +278,8 @@
     }
     return versions;
   }
-  // Копирует все общие поля RU. В KK локализуемые поля по умолчанию НЕ копируются:
-  // добавляем только обязательные значения из RU, и name1 как ранний known fallback.
+  // Копирует все общие поля RU. В KK переносит только обязательные
+  // локализуемые значения, если они реально есть в RU; никаких заглушек.
   function buildPayload(schema,source,local,mode,kkSource=null){
     const result={locale:local};
     const blockers=[],warnings=[];
@@ -322,16 +322,6 @@
         else blockers.push('Непустой/нетипичный '+attr.type+' '+name);
       }else{
         blockers.push('Неподдержанный тип '+name+' ('+attr?.type+')');
-      }
-    }
-    if(mode==='create'&&schema.attributes.name1&&
-      localized(schema.attributes.name1)&&!('name1' in result)){
-      if(typeof source.name1==='string'&&source.name1.trim()){
-        result.name1=source.name1;
-        warnings.push('KK name1 временно скопировано из RU');
-      }else{
-        result.name1=' ';
-        warnings.push('KK name1: проверенная заглушка из пилотов (один пробел)');
       }
     }
     return {payload:result,blockers,warnings};
