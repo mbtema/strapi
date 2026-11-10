@@ -41,17 +41,17 @@
 
 Повторный тест выполнен на `http://10.10.3.80:1337`, `documentId=loeqjcvawiaajxsyld5g3jqc`, после удаления прежней KK и восстановления RU.
 
-- `locale/product-kk-guarded-pilot.js` сформировал payload из **21 общего поля** исходной RU и заглушки `name1: " "`; relations не передавались.
+- `locale/product/product-kk-guarded-pilot.js` сформировал payload из **21 общего поля** исходной RU и заглушки `name1: " "`; relations не передавались.
 - Preflight: KK отсутствовала, RU `status=published`, 19 relation-полей, 0 blockers.
 - PUT `?locale=kk` → HTTP 200, KK `id=4812516`, `status=draft`, все 19 KK-relations пусты.
 - RU до/после: **0 отличий бизнес-полей**, **0 отличий всех 19 relations**, идентификатор RU не изменился.
-- Служебные изменения RU: `status=published → modified`, `updatedAt` обновился, в `localizations` появилась KK. Read-only `locale/product-kk-ru-versions-check.js` на том же товаре подтвердил: **RU Draft и Published совпадают по всем доступным бизнес-полям и 19 relations**, опубликованная версия существует (`id=4812499`, `publishedAt=2026-11-10T06:48:01.213Z`), а `modified` выводится и для ответа `status=published` как метаданные документа. Никакого восстановления RU после второго теста не требуется.
+- Служебные изменения RU: `status=published → modified`, `updatedAt` обновился, в `localizations` появилась KK. Read-only `locale/product/product-kk-ru-versions-check.js` на том же товаре подтвердил: **RU Draft и Published совпадают по всем доступным бизнес-полям и 19 relations**, опубликованная версия существует (`id=4812499`, `publishedAt=2026-11-10T06:48:01.213Z`), а `modified` выводится и для ответа `status=published` как метаданные документа. Никакого восстановления RU после второго теста не требуется.
 
 **Вывод:** передача всех доступных общих полей устранила потерю RU-контента у этого конкретного товара. Не объявлять метод универсально безопасным для товаров с непустыми media, components и dynamic zones. Блокировка неподдержанных структур и контроль после записи обязательны; автоматического отката пока нет.
 
 ## Временный путь без доступа к backend (EXPERIMENT)
 
-В репозитории `locale/product-kk-guarded-pilot.js` — консольный инструмент для одного Product. **Не считается проверенным массовым способом**, пока не прошёл однократный тест создания новой KK на товаре без KK.
+В репозитории `locale/product/product-kk-guarded-pilot.js` — консольный инструмент для одного Product. **Не считается проверенным массовым способом**, пока не прошёл однократный тест создания новой KK на товаре без KK.
 
 1. Открыть RU-карточку одного товара без KK. Скрипт читает реальную схему Product, текущую RU-запись, отсутствие KK и все relation-поля через штатные GET Content Manager.
 2. Сохранить автоматический JSON-снимок RU (включая relations) и проверить `blockers`. Непустые non-localized компоненты/dynamic zones и неизвестные поля блокируют тест; отсутствие KK тоже перепроверяется перед записью.
