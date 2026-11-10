@@ -23,6 +23,20 @@
 
 Близкая upstream-проблема: [#27182](https://github.com/strapi/strapi/issues/27182); исправление [PR #27184](https://github.com/strapi/strapi/pull/27184) объединено 2026-11-03, но **не включено** в опубликованный 2026-11-04 релиз `v5.61.0`. PR дополнительно защищает общие поля на secondary locale и наследует их из исходной версии с учётом draft/published.
 
+## Дополнительный стресс-тест Product DIOR 2026-11-10 (медиа + 19 связей)
+
+**Источник проверки:** локально сохранённые пользователем `product-kk-preflight-safe-b8tzy63p6ij03w5z4yuutuwu (2).json`, `product-kk-before-write-b8tzy63p6ij03w5z4yuutuwu (1).json` и `product-kk-postflight-safe-b8tzy63p6ij03w5z4yuutuwu (1).json`. Это **эксперимент с одним товаром**, не доказательство безопасности массовой записи.
+
+- Product `documentId=b8tzy63p6ij03w5z4yuutuwu` («Подарок Dior Sauvage Travel Bag GWP Косметичка мужская»); перед PUT KK отсутствовала, RU Draft был `published` с `id=12910`, отдельный RU Published `id=4812549`, `publishedAt=2026-11-10T09:52:30.412Z`.
+- Payload: все **21 общее поле** RU Draft + локализуемая заглушка `name1: " "`; media IDs `preview_picture=170312`, `detail_picture=170312`, `pictures=[170312]`; `is_hypoallergenic=true`, `spf_value=2`. Relations не передавались.
+- На RU заполнены 18 из 19 relation-полей, всего **19 связанных записей**, в том числе 2 `attributes` и по одной `brand`, `categories` и 15 фильтрующих relations.
+- PUT `?locale=kk` → **HTTP 200**, новая KK Draft `id=4812550`; 19 KK relation-полей пустые, все три media-поля используют ID `170312`.
+- Сверка RU **Draft и Published**, отдельно до/после: 0 изменений всех **45 бизнес-полей**, 0 изменений содержимого/IDs во всех 19 relation-полях. RU Published `id=4812549`, `publishedAt` и `updatedAt` **не изменились**.
+- Служебный побочный эффект: RU Draft `status=published → modified`, `updatedAt=2026-11-10T09:52:30.292Z → 2026-11-10T09:53:05.725Z`. Поэтому текущий guarded-pilot корректно выдаёт `success:false` при `errors:[]`: потеря контента **не обнаружена**, но статусная чистота не выполнена. Этот побочный эффект нельзя маскировать в массовом отчёте.
+- До теста пользователь **отдельно перепубликовал RU с тестовыми значениями** (Published содержит `name1="name1"`, `name2="name2"`, `detail_text="test"`, media и фильтры). Публикация произошла **до PUT KK**, не вызвана скриптом создания локализации. Перед завершением работ на production нужно вернуть корректный RU-контент управляемо, не публиковать рыбу повторно.
+
+**Подтверждённый сценарий:** создание KK с передачей всех общих полей и media IDs сохранило RU в двух отдельных пилотах, в том числе в стресс-тесте с 19 relations; каждый PUT переводил RU Draft в `modified`. Для batch обязательны полный dry-run по актуальному состоянию, per-item pre/post-снимки **обеих RU-версий**, строгая проверка relation IDs, rate limiting/checkpoint/resume, stop-on-content-diff и раздельные статусы «содержимое сохранено» и «RU modified». Ни автоматического Publish RU, ни автоматического rollback не проверено.
+
 ## Проверенный пилот 2026-11-10 (один Product)
 
 Повторный тест выполнен на `http://10.10.3.80:1337`, `documentId=loeqjcvawiaajxsyld5g3jqc`, после удаления прежней KK и восстановления RU.
