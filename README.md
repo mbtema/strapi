@@ -86,7 +86,7 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 
 ## Locale
 
-- [`product-kk-preflight.js`](./locale/product-kk-preflight.js) — первый этап диагностики **одного** товара DIOR перед созданием KK-локализации. Открой его RU-карточку в Strapi Admin, вставь код файла в DevTools → Console. Скрипт выполняет только GET, сверяет `name`, `code_1c`, `xml_id`, проверяет отсутствие KK, читает конфигурацию Content Manager и автоматически скачивает `product-kk-preflight-<documentId>.json`. Ничего не создаёт и не публикует. Код не регистрируется в Tools Launcher — это независимый пилот в репозитории `locale/`.
+- [`product-kk-preflight.js`](./locale/product-kk-preflight.js) — первый этап диагностики **одного** товара DIOR перед созданием KK-локализации. Открой его RU-карточку в Strapi Admin, вставь код файла в DevTools → Console. Скрипт выполняет только GET, сверяет открытый `documentId` с выбранным товаром DIOR (`loeqjcvawiaajxsyld5g3jqc`), проверяет отсутствие KK, читает конфигурацию Content Manager и автоматически скачивает `product-kk-preflight-<documentId>.json`. Ничего не создаёт и не публикует. Код не регистрируется в Tools Launcher — это независимый пилот в репозитории `locale/`.
 - После получения и проверки preflight-отчёта отдельно подтвердить точный запрос создания локали через Network; до этого не использовать предположительный POST/PUT для записи.
 
 ## Migrator
