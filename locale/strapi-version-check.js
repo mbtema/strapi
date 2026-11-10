@@ -1,6 +1,7 @@
 // Проверка версии установленного Strapi через подтверждённый Admin API.
 // Только GET /admin/information. Никаких изменений в CMS.
-// Открой Strapi Admin, вставь этот скрипт в DevTools → Console.
+// Открой Strapi Admin на нужном сервере, вставь скрипт в Console.
+// В отчёт включён адрес сервера: это защищает от смешивания DEV/PROD.
 (async () => {
   'use strict';
 
@@ -35,6 +36,7 @@
       tool: 'strapi-version-check',
       readOnly: true,
       checkedAt: new Date().toISOString(),
+      adminOrigin: location.origin,
       strapiVersion: data.strapiVersion,
       nodeVersion: typeof data.nodeVersion === 'string' ? data.nodeVersion : null,
       currentEnvironment: typeof data.currentEnvironment === 'string'
