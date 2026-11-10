@@ -1,7 +1,9 @@
 // Strapi 5.13 — контролируемое создание одной KK-локали Product.
 // Запуск: открыть RU-карточку Product в Strapi Admin, вставить этот файл в Console.
 // Сначала только GET + экспорт снимка и плана. PUT — только по явному нажатию кнопки.
-// Важно: тестировать на одном проверенном товаре без KK; автоматического rollback нет.
+// Важно: поддерживает RU published и modified (черновик с тестовыми значениями).
+// Снимки RU draft и published и их relations сохраняются отдельно.
+// Один PUT только по подтверждению; автоматического rollback нет.
 (async () => {
   'use strict';
 
@@ -286,7 +288,7 @@
       .map(([name]) => name);
   }
 
-  async function fetchRelations(locale, names) {
+  async function fetchRelations(locale, names, status = null) {
     const report = {};
     // Последовательный обход: не перегружаем Admin API.
     for (const name of names) {
@@ -296,7 +298,9 @@
       while (true) {
         const path = '/content-manager/relations/' + UID + '/' +
           encodeURIComponent(documentId) + '/' + encodeURIComponent(name) +
-          '?locale=' + encodeURIComponent(locale) + '&page=' + page + '&pageSize=100';
+          '?locale=' + encodeURIComponent(locale) +
+          (status ? '&status=' + encodeURIComponent(status) : '') +
+          '&page=' + page + '&pageSize=100';
         const json = await mustGet(path);
         if (!Array.isArray(json?.results) ||
             !Number.isInteger(json?.pagination?.total)) {
@@ -322,8 +326,9 @@
   }
 
   async function readSnapshot(schema) {
-    const [ruResponse, kkResponse] = await Promise.all([
+    const [ruResponse, publishedRuResponse, kkResponse] = await Promise.all([
       request('GET', detailPath(SOURCE)),
+      request('GET', detailPath(SOURCE) + '&status=published'),
       request('GET', detailPath(TARGET))
     ]);
     if (!ruResponse.ok ||
@@ -331,15 +336,27 @@
         ruResponse.body?.data?.locale !== SOURCE) {
       throw new Error('Не удалось подтвердить RU detail: HTTP ' + ruResponse.status);
     }
+    if (!publishedRuResponse.ok ||
+        publishedRuResponse.body?.data?.documentId !== documentId ||
+        publishedRuResponse.body?.data?.locale !== SOURCE ||
+        publishedRuResponse.body?.data?.publishedAt == null) {
+      throw new Error('Не удалось подтвердить опубликованную RU-версию: HTTP ' +
+        publishedRuResponse.status);
+    }
     const stateKk = getMissingState(kkResponse);
     const ru = ruResponse.body.data;
+    const publishedRu = publishedRuResponse.body.data;
     const names = relationFields(schema);
-    const ruRelations = await fetchRelations(SOURCE, names);
+    const [ruRelations, publishedRuRelations] = await Promise.all([
+      fetchRelations(SOURCE, names),
+      fetchRelations(SOURCE, names, 'published')
+    ]);
     return {
-      ru, kkState: stateKk,
+      ru, publishedRu, kkState: stateKk,
       kk: stateKk === 'exists' ? kkResponse.body.data : null,
-      ruRelations,
+      ruRelations, publishedRuRelations,
       ruBusiness: stableFields(ru, schema),
+      publishedRuBusiness: stableFields(publishedRu, schema),
       relationFieldCount: names.length
     };
   }
@@ -373,10 +390,11 @@
       if (snapshot.kkState !== 'missing') {
         blockers.push('KK сейчас: ' + snapshot.kkState + '. Создавать нельзя.');
       }
-      if (snapshot.ru.status !== 'published') {
-        blockers.push('RU не в состоянии published: ' + snapshot.ru.status +
-          '. Для первого пилота нужен восстановленный и опубликованный RU.');
+      if (!['published', 'modified'].includes(snapshot.ru.status)) {
+        blockers.push('Статус RU draft не поддерживается: ' + snapshot.ru.status);
       }
+      // На тесте с рыбой RU draft может отличаться от Published.
+      // Сохраняем обе версии и никогда не публикуем RU автоматически.
 
       const report = {
         tool: 'product-kk-guarded-pilot',
@@ -388,6 +406,8 @@
         sourceLocale: SOURCE, targetLocale: TARGET,
         ruId: snapshot.ru.id,
         ruStatus: snapshot.ru.status,
+        ruPublishedId: snapshot.publishedRu.id,
+        ruPublishedAt: snapshot.publishedRu.publishedAt,
         kkState: snapshot.kkState,
         relationFieldCount: snapshot.relationFieldCount,
         sharedFieldCount: plan.candidateCount,
@@ -397,7 +417,10 @@
         before: {
           ru: snapshot.ru,
           ruBusiness: snapshot.ruBusiness,
-          ruRelations: snapshot.ruRelations
+          ruRelations: snapshot.ruRelations,
+          publishedRu: snapshot.publishedRu,
+          publishedRuBusiness: snapshot.publishedRuBusiness,
+          publishedRuRelations: snapshot.publishedRuRelations
         }
       };
       state.preflight = { schema, snapshot, plan, report };
@@ -416,7 +439,7 @@
           (blockers.length > 8 ? '\n… ещё ' + (blockers.length - 8) : '') +
           '\nJSON-снимок скачан.', true);
       } else {
-        show('Снимок RU + всех relations сохранён в JSON.\n' +
+        show('Снимки RU Draft и Published + все relations сохранены в JSON.\n' +
           'KK отсутствует. Общих полей в payload: ' + plan.candidateCount +
           '. Relations не передаются.\n' +
           'Предупреждений: ' + plan.warnings.length +
@@ -438,7 +461,7 @@
     if (report.blockers.length) return;
     const approved = confirm(
       'Создать ТОЛЬКО ОДНУ KK-локализацию у товара\n' + documentId +
-      '\n\nRU-снимок скачан. PUT всё равно может затронуть RU из-за бага Strapi 5.13.' +
+      '\n\nСнимки RU Draft и Published скачаны. PUT всё равно может затронуть RU из-за бага Strapi 5.13.' +
       '\nПродолжить?'
     );
     if (!approved) return;
@@ -461,7 +484,11 @@
       if (fresh.ru.id !== snapshot.ru.id ||
           !equal(fresh.ruBusiness, snapshot.ruBusiness) ||
           !equal(fresh.ruRelations, snapshot.ruRelations) ||
-          fresh.ru.status !== snapshot.ru.status) {
+          fresh.ru.status !== snapshot.ru.status ||
+          fresh.publishedRu.id !== snapshot.publishedRu.id ||
+          fresh.publishedRu.publishedAt !== snapshot.publishedRu.publishedAt ||
+          !equal(fresh.publishedRuBusiness, snapshot.publishedRuBusiness) ||
+          !equal(fresh.publishedRuRelations, snapshot.publishedRuRelations)) {
         throw new Error('RU изменилась после preflight — запись отменена.');
       }
       const freshPlan = buildFields(schema, fresh.ru);
@@ -474,6 +501,9 @@
         tool: 'product-kk-guarded-pilot', phase: 'before-write',
         at: new Date().toISOString(), documentId, ru: fresh.ru,
         ruBusiness: fresh.ruBusiness, ruRelations: fresh.ruRelations,
+        publishedRu: fresh.publishedRu,
+        publishedRuBusiness: fresh.publishedRuBusiness,
+        publishedRuRelations: fresh.publishedRuRelations,
         payload: freshPlan.payload
       });
 
@@ -490,6 +520,8 @@
     let after = null;
     let differences = [];
     let relationDifferences = [];
+    let publishedDifferences = [];
+    let publishedRelationDifferences = [];
     let kkRelations = null;
     // Даже после HTTP-ошибки проверяем RU: write мог частично сработать.
     if (mutationAttempted) {
@@ -498,6 +530,12 @@
         after = await readSnapshot(schema);
         differences = businessDiff(before.ruBusiness, after.ruBusiness);
         relationDifferences = businessDiff(before.ruRelations, after.ruRelations);
+        publishedDifferences = businessDiff(
+          before.publishedRuBusiness, after.publishedRuBusiness
+        );
+        publishedRelationDifferences = businessDiff(
+          before.publishedRuRelations, after.publishedRuRelations
+        );
         if (after.kkState === 'exists') {
           kkRelations = await fetchRelations(TARGET, relationFields(schema));
         }
@@ -510,6 +548,11 @@
       !after ||
       differences.length > 0 ||
       relationDifferences.length > 0 ||
+      publishedDifferences.length > 0 ||
+      publishedRelationDifferences.length > 0 ||
+      after.publishedRu.id !== before.publishedRu.id ||
+      after.publishedRu.publishedAt !== before.publishedRu.publishedAt ||
+      (before.ru.status === 'modified' && after.ru.status !== 'modified') ||
       after.kkState !== 'exists' ||
       after.kk?.status !== 'draft' ||
       (kkRelations && Object.values(kkRelations).some(item => item.total !== 0))
@@ -533,6 +576,14 @@
         businessDifferences: differences,
         relationDifferences
       },
+      publishedRu: {
+        beforeId: before.publishedRu.id,
+        afterId: after?.publishedRu?.id ?? null,
+        beforePublishedAt: before.publishedRu.publishedAt,
+        afterPublishedAt: after?.publishedRu?.publishedAt ?? null,
+        businessDifferences: publishedDifferences,
+        relationDifferences: publishedRelationDifferences
+      },
       targetKk: {
         state: after?.kkState ?? 'unknown',
         id: after?.kk?.id ?? null,
@@ -546,12 +597,18 @@
       before: {
         ru: before.ru,
         ruBusiness: before.ruBusiness,
-        ruRelations: before.ruRelations
+        ruRelations: before.ruRelations,
+        publishedRu: before.publishedRu,
+        publishedRuBusiness: before.publishedRuBusiness,
+        publishedRuRelations: before.publishedRuRelations
       },
       after: after ? {
         ru: after.ru,
         ruBusiness: after.ruBusiness,
         ruRelations: after.ruRelations,
+        publishedRu: after.publishedRu,
+        publishedRuBusiness: after.publishedRuBusiness,
+        publishedRuRelations: after.publishedRuRelations,
         kk: after.kk,
         kkRelations
       } : null
@@ -562,12 +619,14 @@
 
     if (success) {
       show('ПРОВЕРКА ПРОЙДЕНА: один KK draft создан.\n' +
-        'Все бизнес-поля и relations RU совпали с исходным снимком.\n' +
+        'Все бизнес-поля и relations RU Draft и Published совпали с исходными снимками.\n' +
         'Новый массовый запуск НЕ разрешён — нужен отдельный этап.');
     } else if (mutationAttempted) {
       show('ПРОВЕРКА НЕ ПРОЙДЕНА. Возможна порча RU!\n' +
         'Отличий RU по полям: ' + differences.length +
         ', по relations: ' + relationDifferences.length +
+        ', опубликованная RU: ' + publishedDifferences.length +
+        ', опубликованные relations: ' + publishedRelationDifferences.length +
         '. Ошибок: ' + errors.length +
         '. Не публикуй RU и не создавай другие KK. Смотри скачанный JSON.', true);
       console.error(PREFIX, result);
