@@ -431,13 +431,22 @@
         }]));
       state.report.warnings.push(...a.plan.warnings);
       state.report.preflight={
-        blockers:a.blocks, sharedFields:Object.keys(a.plan.payload).length,
+        blockers:a.blocks,
+        sharedFields:Object.entries(a.schema.attributes).filter(
+          ([name,attr])=>!SYSTEM.has(name)&&attr.type!=='relation'&&!localized(attr)
+        ).length,
+        requiredFields:Object.entries(a.schema.attributes).filter(
+          ([name,attr])=>!SYSTEM.has(name)&&attr.required===true
+        ).length,
         relationFields:Object.keys(a.before.ru.draft.relations).length,
         kk:'missing',ruStatus:a.before.ru.draft.detail.status
       };
       if(a.blocks.length)throw Error(a.blocks.join('\n'));
       state.stage='ready-create';
-      render('Preflight пройден. RU снимок сохранён в журнале (пока без записи).'+
+      render('Preflight пройден. Общих полей: '+state.report.preflight.sharedFields+
+        ', обязательных: '+state.report.preflight.requiredFields+
+        ', relation-полей: '+state.report.preflight.relationFields+'.'+
+        '\nRU снимок сохранён в журнале (пока без записи).'+
         '\nShared-поля будут скопированы из RU. KK локализуемые значения не переносятся,'+
         ' кроме необходимых для создания. При необходимости скачай снимок.'+
         (a.plan.warnings.length?'\n'+a.plan.warnings.join('\n'):''));
