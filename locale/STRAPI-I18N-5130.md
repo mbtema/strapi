@@ -23,6 +23,16 @@
 
 Близкая upstream-проблема: [#27182](https://github.com/strapi/strapi/issues/27182); исправление [PR #27184](https://github.com/strapi/strapi/pull/27184) объединено 2026-11-03, но **не включено** в опубликованный 2026-11-04 релиз `v5.61.0`. PR дополнительно защищает общие поля на secondary locale и наследует их из исходной версии с учётом draft/published.
 
+## EXPERIMENT: Publish KK + RU одного другого Product (не проверено на CMS)
+
+Пилот: `locale/product/product-kk-publish-pilot.js`, только Product `eio2evn0avkjzrsjawn5wtpt` (Dior Pocket Mirror; по предыдущему аудиту KK отсутствовала, RU опубликована). **Перед использованием** создать KK Draft через отдельный `product-kk-guarded-pilot.js` и сверить его postflight. Пилот публикации начинает только с read-only dry-run; при наличии пустых обязательных локализуемых полей KK останавливается, никаких текстовых заглушек/переводов сам не добавляет.
+
+Подтверждено из **upstream source v5.13.0**, но **не проверено live Network** для этого конкретного Product:
+- `packages/core/content-manager/server/src/controllers/collection-types.ts` (`publish`): при наличии документа и прав `update` сервер сначала вызывает `updateDocument(ctx)`, затем `documentManager.publish`.
+- В `controllers/validation/dimensions.ts` `getDocumentLocaleAndStatus(body, model)` получает `locale` именно из **request body**. Известные успешные Product-операции в нашем repo использовали `POST /content-manager/collection-types/api::product.product/<documentId>/actions/publish?locale=ru`; новый пилот отправляет `locale` и в query, и в JSON вместе с **полными поддержанными полями нужной локали**, чтобы не вызвать прежнюю потерю shared fields на этапе Update.
+- Алгоритм эксперимента: KK Publish → read-after-write и проверка сохранности RU Draft/Published и KK → только при полном совпадении RU Publish → повторное чтение и сравнение Published с соответствующим Draft до Publish. Сравниваются все обычные атрибуты, media и 19 relation-полей. Status/updatedAt допускаются как служебные изменения; различия бизнес-полей блокируют продолжение.
+- Не поддерживает непустые components/DZ и UID без отдельной диагностики; заранее блокирует некорректные или пустые required-поля. Нет auto rollback, retry POST или массовой записи. **Запуск Publish только после проверки dry-run на новом товаре**.
+
 ## Дополнительный стресс-тест Product DIOR 2026-11-10 (медиа + 19 связей)
 
 **Источник проверки:** локально сохранённые пользователем `product-kk-preflight-safe-b8tzy63p6ij03w5z4yuutuwu (2).json`, `product-kk-before-write-b8tzy63p6ij03w5z4yuutuwu (1).json` и `product-kk-postflight-safe-b8tzy63p6ij03w5z4yuutuwu (1).json`. Это **эксперимент с одним товаром**, не доказательство безопасности массовой записи.
