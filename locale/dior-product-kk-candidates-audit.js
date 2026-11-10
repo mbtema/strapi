@@ -105,7 +105,12 @@
       panel.remove();
     }
   };
-  panel.append(title, line, progress, barOuter, stats, stopButton);
+  const downloads = uiNode('div');
+  Object.assign(downloads.style, {
+    display: 'none', marginTop: '10px', padding: '8px',
+    border: '1px solid #66658b', borderRadius: '6px'
+  });
+  panel.append(title, line, progress, barOuter, stats, downloads, stopButton);
   document.body.append(panel);
 
   let lastDraw = 0;
@@ -354,13 +359,19 @@
 
   function download(name, blob) {
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = uiNode('a', 'Скачать ' + (name.endsWith('.csv') ? 'CSV' : 'JSON'));
     link.href = url;
     link.download = name;
-    document.body.appendChild(link);
+    Object.assign(link.style, {
+      display: 'inline-block', marginRight: '16px', color: '#ceccff',
+      textDecoration: 'underline'
+    });
+    // Ссылки остаются доступными после аудита, даже если браузер
+    // заблокировал второй автоматический download.
+    downloads.style.display = 'block';
+    downloads.append(link);
+    // Автоматически запускаем скачивание; при блокировке можно нажать ссылку.
     link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 6000);
   }
   function exportCSV(rows) {
     const headers = [
