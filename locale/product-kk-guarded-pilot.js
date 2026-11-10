@@ -4,6 +4,7 @@
 // Важно: поддерживает RU published и modified (черновик с тестовыми значениями).
 // Снимки RU draft и published и их relations сохраняются отдельно.
 // Один PUT только по подтверждению; автоматического rollback нет.
+// Любое изменение статуса RU или updatedAt Published — отдельный флаг риска.
 (async () => {
   'use strict';
 
@@ -552,7 +553,9 @@
       publishedRelationDifferences.length > 0 ||
       after.publishedRu.id !== before.publishedRu.id ||
       after.publishedRu.publishedAt !== before.publishedRu.publishedAt ||
-      (before.ru.status === 'modified' && after.ru.status !== 'modified') ||
+      after.ru.status !== before.ru.status ||
+      after.ru.publishedAt !== before.ru.publishedAt ||
+      after.publishedRu.updatedAt !== before.publishedRu.updatedAt ||
       after.kkState !== 'exists' ||
       after.kk?.status !== 'draft' ||
       (kkRelations && Object.values(kkRelations).some(item => item.total !== 0))
@@ -573,6 +576,12 @@
         afterId: after?.ru?.id ?? null,
         beforeStatus: before.ru.status,
         afterStatus: after?.ru?.status ?? null,
+        statusChanged: after ? before.ru.status !== after.ru.status : null,
+        beforeUpdatedAt: before.ru.updatedAt,
+        afterUpdatedAt: after?.ru?.updatedAt ?? null,
+        updatedAtChanged: after ? before.ru.updatedAt !== after.ru.updatedAt : null,
+        beforePublishedAt: before.ru.publishedAt,
+        afterPublishedAt: after?.ru?.publishedAt ?? null,
         businessDifferences: differences,
         relationDifferences
       },
@@ -581,6 +590,8 @@
         afterId: after?.publishedRu?.id ?? null,
         beforePublishedAt: before.publishedRu.publishedAt,
         afterPublishedAt: after?.publishedRu?.publishedAt ?? null,
+        beforeUpdatedAt: before.publishedRu.updatedAt,
+        afterUpdatedAt: after?.publishedRu?.updatedAt ?? null,
         businessDifferences: publishedDifferences,
         relationDifferences: publishedRelationDifferences
       },
@@ -619,7 +630,7 @@
 
     if (success) {
       show('ПРОВЕРКА ПРОЙДЕНА: один KK draft создан.\n' +
-        'Все бизнес-поля и relations RU Draft и Published совпали с исходными снимками.\n' +
+        'Сверка RU Draft и Published пройдена, включая статусы и связи.\n' +
         'Новый массовый запуск НЕ разрешён — нужен отдельный этап.');
     } else if (mutationAttempted) {
       show('ПРОВЕРКА НЕ ПРОЙДЕНА. Возможна порча RU!\n' +
@@ -627,6 +638,7 @@
         ', по relations: ' + relationDifferences.length +
         ', опубликованная RU: ' + publishedDifferences.length +
         ', опубликованные relations: ' + publishedRelationDifferences.length +
+        ', статус RU: ' + before.ru.status + ' → ' + (after?.ru?.status ?? '?') +
         '. Ошибок: ' + errors.length +
         '. Не публикуй RU и не создавай другие KK. Смотри скачанный JSON.', true);
       console.error(PREFIX, result);
