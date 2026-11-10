@@ -1,4 +1,4 @@
-// Проверка одной Product-записи перед созданием пустой KK-локализации.
+// Проверка одного Product DIOR из списка отсутствующих KK-локализаций.
 // Запуск: открыть нужный Product в Strapi Admin (locale=ru), затем вставить этот файл в Console.
 // Только GET. Ничего не создаёт, не сохраняет и не публикует.
 (async () => {
@@ -7,11 +7,8 @@
   const PREFIX = '[locale/product-kk-preflight]';
   const STATE_KEY = '__tmProductKkPreflight';
   const UID = 'api::product.product';
-  const EXPECTED = {
-    name: 'Dior Dior Addict Makeup Ritual Set Holiday Edition Y26 Подарочный набор',
-    code_1c: 'e000035346',
-    xml_id: '3926cc63-ab85-11f1-9890-e43d1aa594dd'
-  };
+  // Пилот из проверенного отчёта DIOR: этот Product не имел KK на момент аудита.
+  const EXPECTED_DOCUMENT_ID = 'loeqjcvawiaajxsyld5g3jqc';
 
   if (window[STATE_KEY]?.running) {
     console.warn(PREFIX, 'Проверка уже выполняется');
@@ -56,6 +53,9 @@
     }
 
     const documentId = match[1];
+    if (documentId !== EXPECTED_DOCUMENT_ID) {
+      fail('Открой тестовый товар ' + EXPECTED_DOCUMENT_ID + '. Сейчас ' + documentId);
+    }
     const localeInUrl = new URLSearchParams(location.search)
       .get('plugins[i18n][locale]');
     if (localeInUrl && localeInUrl !== 'ru') {
@@ -111,12 +111,6 @@
     if (ru.documentId !== documentId || ru.locale !== 'ru') {
       fail('RU detail не подтверждает documentId и locale.');
     }
-    for (const [field, expected] of Object.entries(EXPECTED)) {
-      if (String(ru[field] ?? '').trim() !== expected) {
-        fail('Карточка не совпадает с тестовым товаром по ' + field +
-          '. Получено: ' + String(ru[field] ?? 'null'));
-      }
-    }
 
     log('Проверка существования локализации KK');
     const kkResponse = await read(base + '?locale=kk', true);
@@ -153,9 +147,8 @@
         ruVerified: true,
         kkLocale: kk ? 'exists' : 'missing',
         safeForPlaceholderTest: !kk,
-        matchingSourceName: true,
-        matchingSourceCode1c: true,
-        matchingSourceXmlId: true
+        expectedDocumentId: EXPECTED_DOCUMENT_ID,
+        documentIdMatchesAudit: true
       },
       source: {
         documentId: ru.documentId,
