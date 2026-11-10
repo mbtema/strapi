@@ -1,81 +1,36 @@
-# Strapi 5.13.0: повреждение RU-черновика при создании KK
+# Strapi 5.13.0 — Product RU → KK: механизм и подтверждённые ограничения
+
+## Текущий инструмент
+
+[product-kk-sync.js](./product/product-kk-sync.js) — **один Console-скрипт для одной карточки Product, без фильтра по бренду**.
+
+Workflow: GET схема и snapshot RU Draft/Published + relations + KK → проверить отсутствие KK → PUT создания KK с **каждым нелокализуемым полем RU**, включая scalar, media ID и пустые компоненты → сравнение RU с исходным снимком → Publish RU с полным payload → сравнение → Publish KK с полным payload → полная сверка. Все write по отдельным подтверждениям в одной панели, одна итоговая JSON-выгрузка, stop-on-diff, без автоматического rollback/retry и batch.
+
+Для создания KK временно передаём значения обязательных локализуемых полей из RU, а если отдельное `name1` отсутствует — только для создания используется прежняя заглушка `" "`; публикация при некорректном required-поле блокируется. Непустые компоненты, dynamic zones, UID и неизвестные типы блокируются, пока не подтверждена правильная сериализация.
+
+**Статус:** проверено создание KK в изолированных пилотах, но новый единый скрипт и публикация обеих локалей ещё **не проверены на живой CMS**. До этого никакого массового исполнения.
 
 ## Подтверждённая проблема
 
-На Product `loeqjcvawiaajxsyld5g3jqc` при ручном создании KK-черновика Strapi Admin отправил:
+В Strapi 5.13.0 при `PUT /content-manager/collection-types/api::product.product/<documentId>?locale=kk` c неполным JSON `{"newFrom1C":true,"InStock":false,"name1":" "}` создался KK Draft, но RU Draft потерял значения `name`, `xml_id`, `code_1c`, `sort`, `active`. RU Published осталась целой. Причина — в i18n middleware синхронизация non-localized attributes после update/create/publish.
 
-- `PUT /content-manager/collection-types/api::product.product/loeqjcvawiaajxsyld5g3jqc?locale=kk`
-- Тело: `{"newFrom1C":true,"InStock":false,"name1":" "}`
-- KK успешно создана с тем же `documentId`, `status=draft`, без relations.
-- После этого RU-черновик стал `modified`, а `name`, `code_1c`, `xml_id` стали `null`; `sort` и `active` также сбросились. Опубликованная версия RU сохранила значения.
-- Исходную запись вручную восстановили через Content History. Новый тест создания KK не проводился.
-- `name1: " "` — вынужденная заглушка: полностью пустую KK-форму админка не дала сохранить.
+Upstream:
+- [i18n bootstrap.ts v5.13.0](https://github.com/strapi/strapi/blob/v5.13.0/packages/plugins/i18n/server/src/bootstrap.ts)
+- [i18n localizations.ts v5.13.0](https://github.com/strapi/strapi/blob/v5.13.0/packages/plugins/i18n/server/src/services/localizations.ts)
+- [Issue #27182](https://github.com/strapi/strapi/issues/27182) / [PR #27184](https://github.com/strapi/strapi/pull/27184); fix объединён 2026-11-03, но не вошёл в релиз v5.61.0 от 2026-11-04.
 
-Аудит схемы Product: `name` явно `localized: false`; `code_1c`, `xml_id`, `sort`, `active` не имеют явного флага `localized`; `name1` явно локализован. У i18n Strapi 5.13 скалярные поля без `localized: true` входят в группу общих полей; relations обрабатываются отдельно как локализуемые.
+Нелокализуемые поля нельзя пропускать даже если `required=false` или текущее значение `null/false/0`. При создании или обновлении KK они могут синхронизироваться в RU и обнулить значения, если не переданы явно. Relations локализуются по умолчанию и не копируются в KK.
 
-Два отчёта `/admin/information` показывают Strapi `5.13.0`, Node `22.22.2`, `production`. **Адрес сервера в отчётах не указан** — проверить отдельно соответствие окружения, на котором был инцидент (`10.10.3.80:1337`).
+## Подтверждённые пилоты (исторические скрипты удалены из рабочего дерева)
 
-## Причина на уровне Strapi 5.13.0
+1. Product `loeqjcvawiaajxsyld5g3jqc`: повторный PUT со всеми **21 общими полями RU** + `name1:" "` → KK Draft `4812516`, HTTP 200, 0 различий RU-бизнес-полей, 0 различий 19 relation-полей RU. Published RU проверен отдельно; не изменился. RU Draft стал `modified`, обновился `updatedAt`.
+2. Product `b8tzy63p6ij03w5z4yuutuwu`: PUT со всеми общими значениями, включая media `170312` в `preview_picture`, `detail_picture`, `pictures`, и заполненные фильтры → KK Draft `4812550`, HTTP 200. Все **45 бизнес-полей** RU Draft и Published, **19 связанных записей** и media сохранились. RU Published ID/`updatedAt`/`publishedAt` не изменились. RU Draft `published → modified`, но данных не потерял.
+3. Одноразовый read-only аудит 705 товаров DIOR обнаружил 87 без KK на момент аудита. Он использовался только для выбора тестовых товаров, не входит в рабочий механизм.
 
-В исходниках [i18n bootstrap.ts v5.13.0](https://github.com/strapi/strapi/blob/v5.13.0/packages/plugins/i18n/server/src/bootstrap.ts) middleware после `create/update/discardDraft/publish` **без сравнения исходных и новых общих полей** вызывает `syncNonLocalizedAttributes`.
+Статус `modified` после создания KK считаем допустимым побочным эффектом **только при полном совпадении всех бизнес-полей RU и relations**. Исходный RU `modified` можно публиковать вместе с KK — это отдельно согласованное поведение, при котором предшествующие правки RU Draft станут публичными. Тестовые данные, ранее опубликованные пользователем в RU Product `b8tzy63p6ij03w5z4yuutuwu` до PUT KK, требуют последующей управляемой очистки.
 
-В [i18n localizations.ts v5.13.0](https://github.com/strapi/strapi/blob/v5.13.0/packages/plugins/i18n/server/src/services/localizations.ts) этот метод копирует общие значения сохранённой локали в другие локали того же `documentId` и того же статуса (draft/published). Если новая KK неполна, это может записать `null`/defaults в RU draft. Это подтверждённый опасный механизм; полную цепочку конкретного инцидента следует воспроизвести на копии БД.
+## Важное про Publish
 
-Близкая upstream-проблема: [#27182](https://github.com/strapi/strapi/issues/27182); исправление [PR #27184](https://github.com/strapi/strapi/pull/27184) объединено 2026-11-03, но **не включено** в опубликованный 2026-11-04 релиз `v5.61.0`. PR дополнительно защищает общие поля на secondary locale и наследует их из исходной версии с учётом draft/published.
+В [Strapi 5.13 Content Manager `collection-types.ts`](https://github.com/strapi/strapi/blob/v5.13.0/packages/core/content-manager/server/src/controllers/collection-types.ts) `publish(ctx)` **может сначала вызвать `updateDocument(ctx)`**, затем `documentManager.publish`. `getDocumentLocaleAndStatus(body,model)` берёт `locale` из **JSON body**, а не только query: [`validation/dimensions.ts`](https://github.com/strapi/strapi/blob/v5.13.0/packages/core/content-manager/server/src/controllers/validation/dimensions.ts). Поэтому при каждом Publish новый инструмент посылает и `?locale=...`, и `locale` в JSON вместе со всеми доступными общими полями из RU, а также локализованными значениями соответствующей локали. Relations в теле Publish не передаются; после операции все relation IDs проверяются. Публикуем **RU сначала, KK затем**, чтобы при исходном RU `modified` общие Published-поля были приведены к текущему RU Draft до публикации KK.
 
-## EXPERIMENT: Publish KK + RU одного другого Product (не проверено на CMS)
-
-Пилот: `locale/product/product-kk-publish-pilot.js`, только Product `eio2evn0avkjzrsjawn5wtpt` (Dior Pocket Mirror; по предыдущему аудиту KK отсутствовала, RU опубликована). **Перед использованием** создать KK Draft через отдельный `product-kk-guarded-pilot.js` и сверить его postflight. Пилот публикации начинает только с read-only dry-run; при наличии пустых обязательных локализуемых полей KK останавливается, никаких текстовых заглушек/переводов сам не добавляет.
-
-Подтверждено из **upstream source v5.13.0**, но **не проверено live Network** для этого конкретного Product:
-- `packages/core/content-manager/server/src/controllers/collection-types.ts` (`publish`): при наличии документа и прав `update` сервер сначала вызывает `updateDocument(ctx)`, затем `documentManager.publish`.
-- В `controllers/validation/dimensions.ts` `getDocumentLocaleAndStatus(body, model)` получает `locale` именно из **request body**. Известные успешные Product-операции в нашем repo использовали `POST /content-manager/collection-types/api::product.product/<documentId>/actions/publish?locale=ru`; новый пилот отправляет `locale` и в query, и в JSON вместе с **полными поддержанными полями нужной локали**, чтобы не вызвать прежнюю потерю shared fields на этапе Update.
-- Алгоритм эксперимента: KK Publish → read-after-write и проверка сохранности RU Draft/Published и KK → только при полном совпадении RU Publish → повторное чтение и сравнение Published с соответствующим Draft до Publish. Сравниваются все обычные атрибуты, media и 19 relation-полей. Status/updatedAt допускаются как служебные изменения; различия бизнес-полей блокируют продолжение.
-- Не поддерживает непустые components/DZ и UID без отдельной диагностики; заранее блокирует некорректные или пустые required-поля. Нет auto rollback, retry POST или массовой записи. **Запуск Publish только после проверки dry-run на новом товаре**.
-
-## Дополнительный стресс-тест Product DIOR 2026-11-10 (медиа + 19 связей)
-
-**Источник проверки:** локально сохранённые пользователем `product-kk-preflight-safe-b8tzy63p6ij03w5z4yuutuwu (2).json`, `product-kk-before-write-b8tzy63p6ij03w5z4yuutuwu (1).json` и `product-kk-postflight-safe-b8tzy63p6ij03w5z4yuutuwu (1).json`. Это **эксперимент с одним товаром**, не доказательство безопасности массовой записи.
-
-- Product `documentId=b8tzy63p6ij03w5z4yuutuwu` («Подарок Dior Sauvage Travel Bag GWP Косметичка мужская»); перед PUT KK отсутствовала, RU Draft был `published` с `id=12910`, отдельный RU Published `id=4812549`, `publishedAt=2026-11-10T09:52:30.412Z`.
-- Payload: все **21 общее поле** RU Draft + локализуемая заглушка `name1: " "`; media IDs `preview_picture=170312`, `detail_picture=170312`, `pictures=[170312]`; `is_hypoallergenic=true`, `spf_value=2`. Relations не передавались.
-- На RU заполнены 18 из 19 relation-полей, всего **19 связанных записей**, в том числе 2 `attributes` и по одной `brand`, `categories` и 15 фильтрующих relations.
-- PUT `?locale=kk` → **HTTP 200**, новая KK Draft `id=4812550`; 19 KK relation-полей пустые, все три media-поля используют ID `170312`.
-- Сверка RU **Draft и Published**, отдельно до/после: 0 изменений всех **45 бизнес-полей**, 0 изменений содержимого/IDs во всех 19 relation-полях. RU Published `id=4812549`, `publishedAt` и `updatedAt` **не изменились**.
-- Служебный побочный эффект: RU Draft `status=published → modified`, `updatedAt=2026-11-10T09:52:30.292Z → 2026-11-10T09:53:05.725Z`. Поэтому текущий guarded-pilot корректно выдаёт `success:false` при `errors:[]`: потеря контента **не обнаружена**, но статусная чистота не выполнена. Этот побочный эффект нельзя маскировать в массовом отчёте.
-- До теста пользователь **отдельно перепубликовал RU с тестовыми значениями** (Published содержит `name1="name1"`, `name2="name2"`, `detail_text="test"`, media и фильтры). Публикация произошла **до PUT KK**, не вызвана скриптом создания локализации. Перед завершением работ на production нужно вернуть корректный RU-контент управляемо, не публиковать рыбу повторно.
-
-**Подтверждённый сценарий:** создание KK с передачей всех общих полей и media IDs сохранило RU в двух отдельных пилотах, в том числе в стресс-тесте с 19 relations; каждый PUT переводил RU Draft в `modified`. Для batch обязательны полный dry-run по актуальному состоянию, per-item pre/post-снимки **обеих RU-версий**, строгая проверка relation IDs, rate limiting/checkpoint/resume, stop-on-content-diff и раздельные статусы «содержимое сохранено» и «RU modified». Ни автоматического Publish RU, ни автоматического rollback не проверено.
-
-## Проверенный пилот 2026-11-10 (один Product)
-
-Повторный тест выполнен на `http://10.10.3.80:1337`, `documentId=loeqjcvawiaajxsyld5g3jqc`, после удаления прежней KK и восстановления RU.
-
-- `locale/product/product-kk-guarded-pilot.js` сформировал payload из **21 общего поля** исходной RU и заглушки `name1: " "`; relations не передавались.
-- Preflight: KK отсутствовала, RU `status=published`, 19 relation-полей, 0 blockers.
-- PUT `?locale=kk` → HTTP 200, KK `id=4812516`, `status=draft`, все 19 KK-relations пусты.
-- RU до/после: **0 отличий бизнес-полей**, **0 отличий всех 19 relations**, идентификатор RU не изменился.
-- Служебные изменения RU: `status=published → modified`, `updatedAt` обновился, в `localizations` появилась KK. Read-only `locale/product/product-kk-ru-versions-check.js` на том же товаре подтвердил: **RU Draft и Published совпадают по всем доступным бизнес-полям и 19 relations**, опубликованная версия существует (`id=4812499`, `publishedAt=2026-11-10T06:48:01.213Z`), а `modified` выводится и для ответа `status=published` как метаданные документа. Никакого восстановления RU после второго теста не требуется.
-
-**Вывод:** передача всех доступных общих полей устранила потерю RU-контента у этого конкретного товара. Не объявлять метод универсально безопасным для товаров с непустыми media, components и dynamic zones. Блокировка неподдержанных структур и контроль после записи обязательны; автоматического отката пока нет.
-
-## Временный путь без доступа к backend (EXPERIMENT)
-
-В репозитории `locale/product/product-kk-guarded-pilot.js` — консольный инструмент для одного Product. **Не считается проверенным массовым способом**, пока не прошёл однократный тест создания новой KK на товаре без KK.
-
-1. Открыть RU-карточку одного товара без KK. Скрипт читает реальную схему Product, текущую RU-запись, отсутствие KK и все relation-поля через штатные GET Content Manager.
-2. Сохранить автоматический JSON-снимок RU (включая relations) и проверить `blockers`. Непустые non-localized компоненты/dynamic zones и неизвестные поля блокируют тест; отсутствие KK тоже перепроверяется перед записью.
-3. Формировать PUT из **всех доступных non-localized полей RU** (скаляры и media IDs), без relations, с локализуемой заглушкой `name1: " "`. Это рабочая гипотеза, предотвращающая распространение `null` из KK. Отправка — по отдельному подтверждению пользователя.
-4. После PUT заново получить RU, KK и все relations; сравнить все доступные бизнес-поля RU и relations с сохранённым снимком, проверить KK draft и отсутствие KK relations. Несовпадение — аварийная остановка, отчёт и ручное восстановление по Content History; **автоматического rollback нет**.
-5. До успешного пилота запрещён пакетный запуск. Даже один успешный тест не доказывает универсальную безопасность для товаров с другим набором media/components; требуется расширение контроля и отдельные тесты.
-
-Скрипт не чинит middleware Strapi, а ограничивает риск клиентского вызова и выявляет изменения после сохранения. Для полного устранения серверной причины по-прежнему нужен upstream fix или backend patch. Изменять код в браузере/Node не даёт возможности отключить серверную синхронизацию i18n.
-
-## Решение для backend-команды
-
-1. Выбрать целевой путь: поддерживаемое обновление Strapi до релиза **с фактически включённым** upstream fix и регрессионным тестом либо backport исправления в backend (не через браузерный JS и не правкой `node_modules` вручную).
-2. Если выбран backport, защитить создание недостающей локали от записи непереданных общих полей в другие локали; наследовать общие поля из RU нужного статуса, не смешивая draft/published. Учитывать скаляры, media, non-localized components/dynamic zones и вложенность; relations не переносить рекурсивно. По возможности использовать и адаптировать upstream PR, а не внедрять собственную упрощённую синхронизацию.
-3. На тестовой копии БД: снимок полной RU-записи (draft и published, включая медиа/компоненты/relations) → создание **одного** KK draft → повторное чтение → побайтовое/семантическое сравнение всех бизнес-полей RU и проверка KK. Повторное создание KK должно пропускаться.
-4. Любое изменение RU, которое не было явно разрешено, — провал теста; никакого массового запуска. После успешного пилота переходить только к малым батчам с сохранёнными снимками, проверкой после каждого write и остановкой при первом расхождении.
-
-**До исправления не использовать минимальный PUT для массового создания KK-пустышек.** Простое копирование только `name`, `code_1c` и `xml_id` в payload не гарантирует сохранность других shared полей, media и компонентов.
+**Если любой POST вернул неопределённый статус либо проверка после записи не прошла — стоп, сохраняется единый JSON, повторная запись не выполняется.**
