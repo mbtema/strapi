@@ -203,6 +203,8 @@
   function relationNames(schema){
     const fields=[];
     for(const [name,attr] of Object.entries(schema.attributes)){
+      // createdBy/updatedBy — системные admin::user relations, не поля Product.
+      if(SYSTEM.has(name))continue;
       if(attr?.type!=='relation')continue;
       if(typeof attr.target!=='string'||!attr.target.startsWith('api::')){
         throw Error('Неподдержанная relation '+name+': '+String(attr.target));
