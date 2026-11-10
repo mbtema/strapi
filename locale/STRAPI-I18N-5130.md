@@ -31,7 +31,7 @@
 - Preflight: KK отсутствовала, RU `status=published`, 19 relation-полей, 0 blockers.
 - PUT `?locale=kk` → HTTP 200, KK `id=4812516`, `status=draft`, все 19 KK-relations пусты.
 - RU до/после: **0 отличий бизнес-полей**, **0 отличий всех 19 relations**, идентификатор RU не изменился.
-- Служебные изменения RU: `status=published → modified`, `updatedAt` обновился, в `localizations` появилась KK. Это не подтверждает повреждение контента, но требует отдельной проверки опубликованной RU-версии. Для неё добавлен read-only `locale/product-kk-ru-versions-check.js`: RU draft/published, включая relations.
+- Служебные изменения RU: `status=published → modified`, `updatedAt` обновился, в `localizations` появилась KK. Read-only `locale/product-kk-ru-versions-check.js` на том же товаре подтвердил: **RU Draft и Published совпадают по всем доступным бизнес-полям и 19 relations**, опубликованная версия существует (`id=4812499`, `publishedAt=2026-11-10T06:48:01.213Z`), а `modified` выводится и для ответа `status=published` как метаданные документа. Никакого восстановления RU после второго теста не требуется.
 
 **Вывод:** передача всех доступных общих полей устранила потерю RU-контента у этого конкретного товара. Не объявлять метод универсально безопасным для товаров с непустыми media, components и dynamic zones. Блокировка неподдержанных структур и контроль после записи обязательны; автоматического отката пока нет.
 
