@@ -126,10 +126,15 @@
     const kkConfirmed = Boolean(
       kkUnwrapped?.documentId === documentId && kkUnwrapped?.locale === 'kk'
     );
-    // 200 не гарантирует наличие KK: Strapi может вернуть RU или пустое data.
-    // В сомнительном случае не разрешаем создание и записываем диагностические поля.
+    // Strapi Content Manager для отсутствующей KK может вернуть HTTP 200 с data: {}.
+    // Пустым считаем только явное data: {} или HTTP 404. Любой другой ответ —
+    // unverified, чтобы не рискнуть существующей локализацией.
+    const emptyDataObject = kkResponse.status === 200 &&
+      kkRaw && Object.prototype.hasOwnProperty.call(kkRaw, 'data') &&
+      kkRawData !== null && typeof kkRawData === 'object' &&
+      !Array.isArray(kkRawData) && Object.keys(kkRawData).length === 0;
     const kkState = kkConfirmed ? 'exists'
-      : kkResponse.status === 404 ? 'missing'
+      : kkResponse.status === 404 || emptyDataObject ? 'missing'
       : 'unverified';
     const briefLocalization = item => ({
       documentId: item?.documentId ?? null,
