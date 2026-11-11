@@ -408,6 +408,6 @@
    source=null;startBtn.disabled=true;show('Неверный JSON: '+String(e));
   }
  };
- startBtn.onclick=()=>{if(source&&!state.running)run(source);};
+ startBtn.onclick=()=>{if(source&&!state.running)return run(source);};
  show('Выбери исходный read-only dry-run JSON, затем нажми «Проверить связи».');
 })();
