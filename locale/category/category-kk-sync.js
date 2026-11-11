@@ -582,8 +582,16 @@ async function scan(){
     state.report.auditComplete=true;
     state.running=false;state.phase='ready';state.report.phase='ready';
     const unresolved=checkpoint();
-    const candidate=scans.find(item=>!item.blockers.length&&!item.missingTargets.length&&
-      item.before.kk.draft&&item.deltas.some(d=>d.field==='product'&&d.missing.length));
+    let candidate=null;
+    for(const item of scans){
+      if(item.blockers.length||!item.before.kk.draft)continue;
+      const product=item.deltas.find(d=>d.field==='product');
+      if(!product)continue;
+      if((await Promise.all(product.missing.map(id=>
+        state.targetCache.get(keyOf(product.target,id))))).some(Boolean)){
+        candidate=item;break;
+      }
+    }
     state.pilotCandidate=candidate||null;
     pilotBtn.disabled=!candidate||!!unresolved;
     explain('GET-аудит завершён. Непустые различия требуют синхронизации.'+
@@ -613,12 +621,18 @@ async function oneWrite(item,{pilot=false}={}){
   // Повторно сверяем все KK target IDs до write.
   const connect={};const missingTargets=[];
   for(const d of missing){
-    const wanted=pilot&&d.field==='product'?d.missing.slice(0,1):
+    const wanted=pilot&&d.field==='product'?d.missing:
       pilot?[]:d.missing;
     for(const target of wanted){
+      // Не доверять старому id: заново GET перед любой записью.
+      state.targetCache.delete(keyOf(d.target,target));
       const entry=await targetGet(d.target,target);
-      if(!entry)missingTargets.push(d.field+':'+target);
-      else (connect[d.field]||=[]).push(entry);
+      if(!entry){
+        if(!pilot)missingTargets.push(d.field+':'+target);
+      }else{
+        (connect[d.field]||=[]).push(entry);
+        if(pilot)break; // Единственная проверочная relation product.
+      }
     }
   }
   if(missingTargets.length)throw Error(id+': отсутствует KK у target: '+
