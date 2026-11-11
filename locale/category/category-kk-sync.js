@@ -1,123 +1,185 @@
-// DIOR / Category RU -> KK. Один Category за запуск; создание KK Draft
-// либо строго разрешённый пилот восстановления существующей KK.
-// RU Draft/Published + все relations сохраняются и сравниваются до/после PUT.
-// Публикация, пакетная запись, восстановление и автоматический повтор НЕ выполняются.
+// DIOR Category RU → KK. Один инструмент: scan → pilot → apply → verify.
+// Запускать из Console RU-карточки бренда DIOR.
+// Источник: RU Draft; RU Published защищаем от изменений.
+// Только additive root relations; no disconnect, no Publish.
+// Save Category.product на KK ранее не подтверждён: сначала один пилот.
 (async () => {
-  'use strict';
-  const UID = 'api::category.category';
-  const BRAND_UID = 'api::brand.brand';
-  const BRAND_ID = 'qw7sja6ffpbufvzub5maxyrl';
-  const BRAND_FIELD = 'categories';
-  // Восстановление существующей KK разрешено только для проверенного ручного теста.
-  const REPAIR_ID = 'q7mspugwd41y45u566r3xyux';
-  const REPAIR_KK_ROW_ID = 12471;
-  const REPAIR_BITRIX_ID = 1902;
-  const KEY = '__tmDiorCategoryKkSync';
-  const PANEL_ID = 'tm-dior-category-kk-sync';
-  const SYSTEM = new Set([
-    'id', 'documentId', 'locale', 'status', 'publishedAt',
-    'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'localizations'
-  ]);
-  const SCALAR = new Set([
-    'string', 'text', 'richtext', 'email', 'enumeration', 'json', 'blocks',
-    'integer', 'biginteger', 'float', 'decimal', 'boolean',
-    'date', 'time', 'datetime'
-  ]);
-  const match = location.pathname.match(
-    /^\/admin\/content-manager\/collection-types\/api::category\.category\/([a-z0-9]+)\/?$/i
-  );
-  const selectedLocale = new URLSearchParams(location.search)
-    .get('plugins[i18n][locale]');
-  if (!match || (selectedLocale && selectedLocale !== 'ru')) {
-    console.error('[Category KK]', 'Открой RU-карточку категории DIOR');
-    return;
-  }
-  const documentId = match[1];
-  if (window[KEY]?.running) {
-    console.warn('[Category KK]', 'Операция уже выполняется');
-    return;
-  }
-  if (window[KEY]?.stage === 'ready') {
-    console.warn('[Category KK]', 'Preflight уже открыт. Используй существующую панель');
-    return;
-  }
-  let token;
-  try { token = JSON.parse(localStorage.getItem('jwtToken')); }
-  catch { token = localStorage.getItem('jwtToken'); }
-  if (typeof token !== 'string' || !token) {
-    console.error('[Category KK]', 'Нет JWT авторизованной Strapi Admin');
-    return;
-  }
-
-  document.getElementById(PANEL_ID)?.remove();
-  const state = {
-    running: false, stage: 'checking', mode: null, schema: null, components: null, before: null, plan: null,
-    attempted: false, getCount: 0,
-    report: {
-      tool: 'dior-category-kk-sync', version: 2, readOnlyUntilConfirmation: true,
-      uid: UID, documentId, brandDocumentId: BRAND_ID,
-      startedAt: new Date().toISOString(), schemaFields: null, componentSchemas: null,
-      preflight: null, before: null, after: null,
-      write: null, verification: null, errors: [], success: false
+'use strict';
+const BRAND_UID='api::brand.brand', UID='api::category.category';
+const BRAND_ID='qw7sja6ffpbufvzub5maxyrl', FIELD='categories';
+const KEY='__tmDiorCategorySync', PANEL='tm-dior-category-sync';
+const SYSTEM=new Set(['id','documentId','locale','status','publishedAt','createdAt',
+  'updatedAt','createdBy','updatedBy','localizations']);
+const SCALAR=new Set(['string','text','richtext','email','enumeration','json','blocks',
+  'integer','biginteger','float','decimal','boolean','date','time','datetime']);
+const PAGE_SIZE=100, READ_WORKERS=2, TARGET_WORKERS=4;
+const JOURNAL_KEY='tm:dior:category:unresolved:v2';
+const urlLocale=new URLSearchParams(location.search).get('plugins[i18n][locale]')||'ru';
+if(!location.pathname.includes('/content-manager/collection-types/'+BRAND_UID+'/'+BRAND_ID)||
+  urlLocale!=='ru'){
+  console.error('[DIOR Category]', 'Открой RU-карточку Brand DIOR');
+  return;
+}
+if(window[KEY]?.running){
+  console.warn('[DIOR Category]', 'Инструмент уже выполняется');return;
+}
+let jwt;
+try{jwt=JSON.parse(localStorage.getItem('jwtToken'));}
+catch{jwt=localStorage.getItem('jwtToken');}
+if(typeof jwt!=='string'||!jwt){console.error('[DIOR Category]', 'JWT не найден');return;}
+document.getElementById(PANEL)?.remove();
+const state={
+  running:true,stopped:false,phase:'scan',getCount:0,putCount:0,retries:0,
+  processed:0,total:0,targetsDone:0,targetsTotal:0,
+  schema:null,components:null,scan:[],members:[],targetCache:new Map(),pilotPassed:false,
+  report:{tool:'dior-category-sync',version:2,brandDocumentId:BRAND_ID,
+    startedAt:new Date().toISOString(),finishedAt:null,phase:'scan',errors:[],
+    categories:[],writes:[],summary:null}
+};
+window[KEY]=state;
+window.tmDiorCategorySyncReport=state.report;
+const el=(tag,value)=>{const node=document.createElement(tag);
+  if(value!==undefined)node.textContent=value;return node;};
+const panel=el('section');panel.id=PANEL;
+panel.style.cssText='position:fixed;bottom:16px;right:16px;z-index:2147483600;'+
+  'width:min(530px,calc(100vw - 32px));max-height:80vh;overflow:auto;'+
+  'background:#202035;color:white;border:1px solid #9895c5;border-radius:10px;'+
+  'padding:14px;box-shadow:0 8px 24px #0008;font:13px/1.5 system-ui';
+const h=el('strong','DIOR · Category RU → KK · один механизм');
+const statusEl=el('div','Начинаем read-only проверку…');
+statusEl.style.cssText='white-space:pre-wrap;margin:12px 0';
+const controls=el('div');controls.style.cssText='display:flex;gap:8px;flex-wrap:wrap';
+const pilotBtn=el('button','Пилот: 1 product.connect');
+const applyBtn=el('button','Применить оставшиеся');
+const stopBtn=el('button','Стоп');
+const csvBtn=el('button','CSV');
+const jsonBtn=el('button','JSON');
+for(const btn of [pilotBtn,applyBtn,stopBtn,csvBtn,jsonBtn]){
+  btn.type='button';btn.style.cssText='cursor:pointer;padding:7px 10px';
+  controls.append(btn);
+}
+pilotBtn.disabled=true;applyBtn.disabled=true;
+panel.append(h,statusEl,controls);document.body.append(panel);
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const explain=message=>{
+  const rows=state.report.categories;
+  const count=x=>rows.filter(r=>r.status===x).length;
+  statusEl.textContent=message+'\nCategory '+state.processed+'/'+
+    (state.total||'?')+' · targets '+state.targetsDone+'/'+state.targetsTotal+
+    '\nСовпадают: '+count('synced')+' · отличия: '+count('pending')+
+    ' · review: '+count('review')+' · blocked: '+count('blocked')+
+    '\nGET '+state.getCount+' · PUT '+state.putCount+' · GET retries '+state.retries;
+};
+const downloadable=(name,body,mime)=>{
+  const u=URL.createObjectURL(new Blob([body],{type:mime}));
+  const a=el('a');a.href=u;a.download=name;document.body.append(a);
+  a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),15000);
+};
+const csvColumns=['documentId','name','status','fieldDifferences','missingProduct',
+  'missingOtherRelations','extraRelations','missingTargetKK','reason'];
+const quote=x=>{let t=Array.isArray(x)?x.join(' | '):String(x??'');
+  if(/^[=+\-@\t\r]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"';};
+csvBtn.onclick=()=>downloadable('dior-category-sync.csv',
+  '\uFEFF'+[csvColumns.join(';'),
+  ...state.report.categories.map(row=>csvColumns.map(k=>quote(row[k])).join(';'))].join('\n'),
+  'text/csv;charset=utf-8');
+jsonBtn.onclick=()=>downloadable('dior-category-sync.json',
+  JSON.stringify(state.report,null,2),'application/json;charset=utf-8');
+const checkpoint=()=>{try{return JSON.parse(localStorage.getItem(JOURNAL_KEY)||'null');}
+  catch{return {reason:'checkpoint unreadable'};}};
+const markUnresolved=(entry)=>localStorage.setItem(JOURNAL_KEY,JSON.stringify(entry));
+stopBtn.onclick=()=>{state.stopped=true;stopBtn.disabled=true;
+  explain('Стоп запрошен. Текущий запрос/проверка завершатся.');};
+const assertRunning=()=>{if(state.stopped)throw Error('Остановлено пользователем');};
+const reportError=(error,phase)=>{
+  state.report.errors.push(String(error));state.report.phase=phase;
+  console.error('[DIOR Category]',error);
+};
+const end=(phase,message)=>{
+  state.phase=phase;state.running=false;state.report.phase=phase;
+  state.report.finishedAt=new Date().toISOString();
+  state.report.summary={
+    total:state.total,checked:state.processed,targets:state.targetsTotal,
+    statuses:Object.fromEntries(['synced','pending','review','blocked'].map(x=>
+      [x,state.report.categories.filter(r=>r.status===x).length])),
+    writesVerified:state.report.writes.filter(w=>w.verified===true).length,
+    getRequests:state.getCount,putRequests:state.putCount,
+    pilotPassed:state.pilotPassed
+  };
+  pilotBtn.disabled=true;applyBtn.disabled=true;stopBtn.disabled=true;
+  explain(message+'\nCSV и JSON скачаны.');
+  csvBtn.onclick();jsonBtn.onclick();
+};
+async function request(method,path,body){
+  if(!['GET','PUT'].includes(method))throw Error('Недопустимый метод '+method);
+  const attempts=method==='GET'?3:1;
+  for(let i=0;i<attempts;i++){
+    if(method==='GET')state.getCount++;else state.putCount++;
+    let response;
+    try{response=await fetch(path,{
+      method,credentials:'include',cache:'no-store',
+      headers:{Authorization:'Bearer '+jwt,Accept:'application/json',
+        ...(body===undefined?{}:{'Content-Type':'application/json'})},
+      ...(body===undefined?{}:{body:JSON.stringify(body)})
+    });}
+    catch(e){
+      if(method==='PUT'||i===attempts-1)throw Error('NETWORK '+method+' '+path+': '+String(e));
+      state.retries++;await sleep((i+1)*700);continue;
     }
-  };
-  window[KEY] = state;
-  window.tmDiorCategoryKkSyncReport = state.report;
-
-  const el = (tag, label) => {
-    const node = document.createElement(tag);
-    if (label != null) node.textContent = String(label);
-    return node;
-  };
-  const panel = el('section');
-  panel.id = PANEL_ID;
-  Object.assign(panel.style, {
-    position: 'fixed', bottom: '16px', right: '16px', zIndex: '2147483600',
-    width: 'min(460px, calc(100vw - 32px))', maxHeight: '78vh',
-    overflowY: 'auto', border: '1px solid #8484af', borderRadius: '10px',
-    background: '#202035', color: '#fff', padding: '15px',
-    font: '13px/1.5 system-ui', boxShadow: '0 8px 32px #0009'
-  });
-  const headline = el('strong', 'DIOR · Category RU → KK (одна запись)');
-  const sub = el('div', 'documentId: ' + documentId);
-  sub.style.cssText = 'font:12px monospace;margin:6px 0;word-break:break-all';
-  const status = el('div', 'Preflight: GET схема, RU/KK и relations…');
-  status.style.cssText = 'white-space:pre-wrap;margin:11px 0';
-  const controls = el('div');
-  controls.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px';
-  const createButton = el('button', 'Preflight…');
-  const downloadButton = el('button', 'Скачать JSON');
-  const closeButton = el('button', 'Закрыть');
-  for (const b of [createButton, downloadButton, closeButton]) {
-    b.type = 'button';
-    b.style.cssText = 'padding:7px 10px;cursor:pointer;background:#444472;color:white;border:1px solid #9292b9;border-radius:6px';
-    controls.append(b);
+    const raw=await response.text();let json=null;
+    try{json=raw?JSON.parse(raw):null;}
+    catch{if(response.status!==404)throw Error(method+' не-JSON ответ '+path);}
+    const result={ok:response.ok,status:response.status,data:json,
+      message:String(json?.error?.message||raw).slice(0,200)};
+    if(method==='PUT'||response.ok||response.status===404)return result;
+    if(i<attempts-1&&[408,429,500,502,503,504].includes(response.status)){
+      state.retries++;await sleep((i+1)*800);continue;
+    }
+    throw Error('GET HTTP '+response.status+' '+path+': '+result.message);
   }
-  createButton.disabled = true;
-  panel.append(headline, sub, status, controls);
-  document.body.append(panel);
-  closeButton.onclick = () => {
-    if (state.running) return;
-    if (state.stage === 'ready') state.stage = 'closed';
-    panel.remove();
-  };
-  const show = (message, isError = false) => {
-    status.textContent = message + '\nGET: ' + state.getCount;
-    status.style.color = isError ? '#ffb0b0' : '#eee';
-    console[isError ? 'error' : 'log']('[Category KK]', message);
-  };
-  function download() {
-    const blob = new Blob([JSON.stringify(state.report, null, 2)], {
-      type: 'application/json;charset=utf-8'
-    });
-    const url = URL.createObjectURL(blob);
-    const a = el('a');
-    a.href = url;
-    a.download = 'dior-category-kk-sync-' + documentId + '.json';
-    document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 15000);
+}
+async function get(path){
+  const r=await request('GET',path);
+  if(!r.ok)throw Error('GET HTTP '+r.status+' '+path+': '+r.message);
+  return r.data;
+}
+function decode(result,documentId,locale,published=false){
+  const data=result?.data?.data;
+  if(result?.status===404||(result?.ok&&(data==null||
+    typeof data==='object'&&!Array.isArray(data)&&!Object.keys(data).length)))return null;
+  if(!result?.ok||data?.documentId!==documentId||data?.locale!==locale||
+    (published&&data.publishedAt==null))
+    throw Error('Неоднозначный detail '+documentId+'/'+locale+'/'+published+
+      ' HTTP '+result?.status);
+  return data;
+}
+const detailPath=(id,locale,publication,uid=UID)=>
+  '/content-manager/collection-types/'+uid+'/'+id+
+  '?locale='+locale+'&status='+publication;
+async function categories(){
+  const out=[],seen=new Set();let page=1,pages=null,total=null;
+  while(true){
+    assertRunning();
+    const json=await get('/content-manager/relations/'+BRAND_UID+'/'+BRAND_ID+
+      '/'+FIELD+'?locale=ru&page='+page+'&pageSize='+PAGE_SIZE);
+    const rows=json?.results,p=json?.pagination;
+    if(!Array.isArray(rows)||!Number.isInteger(p?.total)||p.total<0||
+      !Number.isInteger(p?.pageCount)||p.pageCount<0||(p.total>0&&!rows.length)||
+      (total!==null&&total!==p.total)||(pages!==null&&pages!==p.pageCount)||
+      (p.page!=null&&p.page!==page))
+      throw Error('Неполный DIOR.categories page '+page);
+    total=p.total;pages=p.pageCount;
+    for(const row of rows){
+      if(typeof row.documentId!=='string'||seen.has(row.documentId))
+        throw Error('Повтор/нет documentId в DIOR.categories');
+      seen.add(row.documentId);out.push({documentId:row.documentId,name:row.name||''});
+    }
+    if(page>=pages||pages===0)break;
+    if(page++>=100)throw Error('Слишком много страниц DIOR.categories');
   }
-  downloadButton.onclick = download;
+  if(out.length!==total)throw Error('DIOR.categories count mismatch');
+  return out;
+}
   const canonical = value => {
     if (Array.isArray(value)) return value.map(canonical);
     if (value && typeof value === 'object') {
@@ -144,43 +206,6 @@
     return id === null ? { ok: false } : { ok: true, value: id };
   };
 
-  async function request(method, path, body) {
-    state.getCount += method === 'GET' ? 1 : 0;
-    const response = await fetch(path, {
-      method, credentials: 'include', cache: 'no-store',
-      headers: {
-        Authorization: 'Bearer ' + token, Accept: 'application/json',
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) })
-    });
-    const content = await response.text();
-    let json = null;
-    try { json = content ? JSON.parse(content) : null; } catch { /* error below */ }
-    return { ok: response.ok, status: response.status, data: json,
-      message: response.ok ? '' : String(json?.error?.message || content).slice(0, 300) };
-  }
-  async function get(path) {
-    const result = await request('GET', path);
-    if (!result.ok) throw Error('GET HTTP ' + result.status + ' ' + path + ': ' + result.message);
-    return result.data;
-  }
-  function decode(result, locale, published) {
-    const data = result?.data?.data;
-    if (result?.status === 404 ||
-      (result?.ok && (data == null ||
-       (typeof data === 'object' && !Array.isArray(data) &&
-        Object.keys(data).length === 0)))) return null;
-    if (!result?.ok || data?.documentId !== documentId || data?.locale !== locale ||
-       (published && data.publishedAt == null)) {
-      throw Error('Неоднозначный detail ' + locale + '/' + (published ? 'published' : 'draft') +
-        ': HTTP ' + result?.status);
-    }
-    return data;
-  }
-  const detailPath = (locale, publication) =>
-    '/content-manager/collection-types/' + UID + '/' + documentId +
-    '?locale=' + locale + '&status=' + publication;
   function relations(schema) {
     const out = [];
     for (const [field, attr] of Object.entries(schema.attributes)) {
@@ -195,7 +220,7 @@
     }
     return out;
   }
-  async function relationSnapshot(locale, publication, names) {
+  async function relationSnapshot(documentId, locale, publication, names) {
     const out = {};
     for (const name of names) {
       let page = 1, pages = null, total = null;
@@ -235,8 +260,6 @@
     }
     return out;
   }
-  // При переносе Strapi создает новые component id; переносим только поля по схеме.
-  // Media нормализуется до числового id, вложенные items обходятся рекурсивно.
   const isObject = x => !!x && typeof x === 'object' && !Array.isArray(x);
   function normalizeRelation(value) {
     if (value == null) return null;
@@ -367,19 +390,19 @@
     }
     return { business:canonical(business), transferable:canonical(transferable) };
   }
-  async function snapshot(schema) {
+  async function snapshot(documentId, schema) {
     const names = relations(schema);
     const responses = await Promise.all([
-      request('GET', detailPath('ru', 'draft')),
-      request('GET', detailPath('ru', 'published')),
-      request('GET', detailPath('kk', 'draft')),
-      request('GET', detailPath('kk', 'published'))
+      request('GET', detailPath(documentId, 'ru', 'draft')),
+      request('GET', detailPath(documentId, 'ru', 'published')),
+      request('GET', detailPath(documentId, 'kk', 'draft')),
+      request('GET', detailPath(documentId, 'kk', 'published'))
     ]);
-    const ruDraft = decode(responses[0], 'ru', false);
-    const ruPublished = decode(responses[1], 'ru', true);
-    const kkDraft = decode(responses[2], 'kk', false);
-    const kkPublished = decode(responses[3], 'kk', true);
-    if (!ruDraft) throw Error('RU Draft отсутствует');
+    const ruDraft = decode(responses[0], documentId, 'ru', false);
+    const ruPublished = decode(responses[1], documentId, 'ru', true);
+    const kkDraft = decode(responses[2], documentId, 'kk', false);
+    const kkPublished = decode(responses[3], documentId, 'kk', true);
+    // Отсутствие RU Draft станет блокировкой конкретной категории.
     const data = {
       ru: { draft: ruDraft, published: ruPublished },
       kk: { draft: kkDraft, published: kkPublished }
@@ -390,72 +413,11 @@
         data[locale][publication] = entry ? {
           detail: entry,
           ...businessFields(entry, schema),
-          relations: await relationSnapshot(locale, publication, names)
+          relations: await relationSnapshot(documentId, locale, publication, names)
         } : null;
       }
     }
     return data;
-  }
-  function diff(expected, actual) {
-    return Object.keys(expected || {}).filter(name => !equal(expected[name], actual?.[name]));
-  }
-  function compare(name, expected, actual, errors, strictMeta = false) {
-    if (!expected && !actual) return;
-    if (!expected || !actual) { errors.push(name + ': версия исчезла/появилась'); return; }
-    const fieldChanges = diff(expected.business, actual.business);
-    const relationChanges = diff(expected.relations, actual.relations);
-    if (fieldChanges.length) errors.push(name + ': поля ' + fieldChanges.join(', '));
-    if (relationChanges.length) errors.push(name + ': relations ' + relationChanges.join(', '));
-    if (strictMeta) {
-      for (const field of ['id', 'updatedAt', 'publishedAt', 'status']) {
-        if (!equal(expected.detail[field], actual.detail[field]))
-          errors.push(name + ': изменилось служебное поле ' + field);
-      }
-    }
-  }
-  function beforeDiff(a, b) {
-    const errors = [];
-    compare('RU Draft', a.ru.draft, b.ru.draft, errors, true);
-    compare('RU Published', a.ru.published, b.ru.published, errors, true);
-    compare('KK Draft', a.kk.draft, b.kk.draft, errors, true);
-    compare('KK Published', a.kk.published, b.kk.published, errors, true);
-    return errors;
-  }
-  function pilotRepairBlockers(before) {
-    const blockers = [];
-    if (documentId !== REPAIR_ID)
-      blockers.push('Сценарий восстановления разрешён только для Подарочных наборов');
-    const ru = before.ru.draft, kk = before.kk.draft;
-    if (!ru || !before.ru.published || !kk || before.kk.published) {
-      blockers.push('Нужны RU Draft/Published и существующая неопубликованная KK Draft');
-      return blockers;
-    }
-    if (kk.detail.id !== REPAIR_KK_ROW_ID || kk.detail.locale !== 'kk' ||
-        kk.detail.publishedAt !== null)
-      blockers.push('KK Draft не совпадает с подтверждённой тестовой записью');
-    if (ru.detail.bitrix_id !== REPAIR_BITRIX_ID || kk.detail.bitrix_id !== null)
-      blockers.push('Состояние bitrix_id RU/KK отличается от ожидаемого 1902/null');
-    if (!equal(ru.transferable, before.ru.published.transferable))
-      blockers.push('RU Draft и RU Published отличаются после восстановления');
-    // Эталон — проверенный снимок 2026-11-11 после ручного восстановления RU.
-    // Допускаем только один пропущенный баннер с одним media ID 170289.
-    const expectedDynamic = [{
-      __component: 'brand-page.banner-slider',
-      key: 'blk-dior-banner-sets',
-      items: [{ key: 'blk-dior-banner-sets-1', image: 170289, deeplink: null }],
-      showPagination: false, autoScroll: false, hideProductsAfter: false, title: null
-    }];
-    if (!equal(ru.transferable.dynamic, expectedDynamic) ||
-        !equal(kk.transferable.dynamic, []))
-      blockers.push('Dynamic RU/KK отличается от подтверждённого снимка баннера');
-    const changed = diff(ru.transferable, kk.transferable);
-    if (!equal(changed, ['bitrix_id', 'dynamic']))
-      blockers.push('Неожиданные различия KK: ' + changed.join(', '));
-    for (const [name, relation] of Object.entries(kk.relations)) {
-      if (relation.total !== 0)
-        blockers.push('В KK уже есть relation ' + name + ', перенос отложен');
-    }
-    return blockers;
   }
   function buildPayload(schema, ru) {
     const payload={locale:'kk'},blockers=[],deferred=[],warnings=[];
@@ -472,223 +434,310 @@
     }
     return {payload,blockers,deferred,warnings};
   }
-  async function membership() {
-    const seen = new Set();
-    let page = 1, total = null, pages = null, raw = 0;
-    while (true) {
-      const json = await get('/content-manager/relations/' + BRAND_UID + '/' +
-        BRAND_ID + '/' + BRAND_FIELD + '?locale=ru&page=' + page + '&pageSize=100');
-      const rows = json?.results, p = json?.pagination;
-      if (!Array.isArray(rows) || !Number.isInteger(p?.total) ||
-        !Number.isInteger(p?.pageCount) ||
-        (total !== null && total !== p.total) ||
-        (pages !== null && pages !== p.pageCount) ||
-        (p.total > 0 && !rows.length)) {
-        throw Error('Не удалось полностью подтвердить relation DIOR.categories');
-      }
-      total = p.total; pages = p.pageCount;
-      for (const row of rows) { if (row.documentId) seen.add(row.documentId); raw++; }
-      if (page >= pages || pages === 0) break;
-      if (page >= 100) throw Error('DIOR.categories: слишком много страниц');
-      page++;
+
+
+const relIds=entry=>Object.fromEntries(Object.entries(entry?.relations||{})
+  .map(([field,r])=>[field,r.entries.map(x=>x.documentId).sort()]));
+const fieldDiff=(a,b)=>Object.keys(a||{}).filter(f=>!equal(a[f],b?.[f]));
+const setDiff=(x,y)=>{const yy=new Set(y||[]);return (x||[]).filter(id=>!yy.has(id));};
+const counts=arr=>Object.fromEntries(arr.map(x=>[x.field,x.missing.length]));
+function compareVersion(a,b,strictPublished=false){
+  const issues=[];
+  if(!a||!b)return ['Исчезла версия RU'];
+  if(!equal(a.business,b.business))issues.push('Изменился RU контент: '+
+    fieldDiff(a.business,b.business).join(', '));
+  if(!equal(relIds(a),relIds(b)))issues.push('Изменились RU relations');
+  if(strictPublished&&['id','publishedAt','updatedAt'].some(f=>
+    !equal(a.detail[f],b.detail[f])))
+    issues.push('Изменилась опубликованная RU версия/metadata');
+  return issues;
+}
+function analyze(id,name,before){
+  const ru=before.ru.draft,kk=before.kk.draft,pub=before.kk.published;
+  const plan=ru?buildPayload(state.schema,ru.detail):null;
+  const blockers=[];
+  if(!ru||!before.ru.published)blockers.push('RU Draft/Published отсутствуют');
+  if(pub)blockers.push('KK Published существует: без изменения');
+  if(plan?.blockers?.length)blockers.push(...plan.blockers);
+  if(ru&&plan&&!equal(ru.transferable,
+    Object.fromEntries(Object.entries(plan.payload).filter(([k])=>k!=='locale'))))
+    blockers.push('Payload не совпадает с RU transferable');
+  const diffs=ru&&kk?fieldDiff(ru.business,kk.business):[];
+  const fields=relations(state.schema);
+  const deltas=[],extras=[],duplicates=[];
+  for(const field of fields){
+    const r=ru?.relations?.[field],k=kk?.relations?.[field];
+    const rs=r?.entries.map(x=>x.documentId)||[];
+    const ks=k?.entries.map(x=>x.documentId)||[];
+    if(r&&new Set(rs).size!==r.total)duplicates.push('RU '+field);
+    if(k&&new Set(ks).size!==k.total)duplicates.push('KK '+field);
+    deltas.push({field,target:state.schema.attributes[field].target,
+      missing:setDiff(rs,ks),sourceCount:rs.length,kkCount:ks.length});
+    const e=setDiff(ks,rs);
+    if(e.length)extras.push(field+':'+e.join(','));
+  }
+  if(duplicates.length)blockers.push('Повторные relation documentId: '+duplicates.join(' | '));
+  if(extras.length)blockers.push('У KK есть лишние relations; disconnect запрещён');
+  const missing=deltas.reduce((n,x)=>n+x.missing.length,0);
+  const item={id,name:name||ru?.detail.name||'',before,plan,deltas,diffs,extras,
+    blockers,missingTargets:[],targets:new Map()};
+  return item;
+}
+function present(item){
+  const missingProduct=item.deltas.find(x=>x.field==='product')?.missing.length||0;
+  const missingOthers=item.deltas.filter(x=>x.field!=='product')
+    .reduce((n,x)=>n+x.missing.length,0);
+  const totalMissing=missingProduct+missingOthers;
+  const status=item.blockers.length||item.missingTargets.length?'review':
+    !item.diffs.length&&!totalMissing?'synced':'pending';
+  return {documentId:item.id,name:item.name,status,
+    fieldDifferences:item.diffs,missingProduct,missingOtherRelations:missingOthers,
+    extraRelations:item.extras,missingTargetKK:item.missingTargets.length,
+    reason:[...item.blockers,...item.missingTargets.slice(0,8)].join(' | '),
+    ruRelations:item.deltas.reduce((n,x)=>n+x.sourceCount,0),
+    kkRelations:item.deltas.reduce((n,x)=>n+x.kkCount,0),
+    hasKK:!!item.before.kk.draft,ruPublished:!!item.before.ru.published,
+    url:location.origin+'/admin/content-manager/collection-types/'+UID+'/'+item.id+
+      '?plugins[i18n][locale]=ru'};
+}
+const keyOf=(uid,id)=>uid+'|'+id;
+async function targetGet(uid,id){
+  if(!state.targetCache.has(keyOf(uid,id))){
+    state.targetCache.set(keyOf(uid,id),(async()=>{
+      const r=await request('GET',detailPath(id,'kk','draft',uid));
+      const d=decode(r,id,'kk');
+      return d&&Number.isInteger(d.id)&&d.id>0?{id:d.id,documentId:id,locale:'kk'}:null;
+    })());
+  }
+  return state.targetCache.get(keyOf(uid,id));
+}
+async function checkTargets(items){
+  const required=new Map();
+  for(const item of items)for(const d of item.deltas)for(const id of d.missing){
+    required.set(keyOf(d.target,id),{uid:d.target,id});
+  }
+  const targets=[...required.values()];
+  state.targetsTotal=targets.length;
+  let cursor=0,failure=null;
+  const workers=Array.from({length:Math.min(TARGET_WORKERS,targets.length)},async()=>{
+    while(!failure&&!state.stopped){
+      const i=cursor++;if(i>=targets.length)return;
+      try{
+        await targetGet(targets[i].uid,targets[i].id);
+        state.targetsDone++;
+        explain('Проверяем KK целевых Category/Product/Brand…');
+      }catch(e){failure=e;return;}
     }
-    if (raw !== total) throw Error('DIOR.categories неполная: ' + raw + '/' + total);
-    return { total, unique: seen.size, includesCurrent: seen.has(documentId) };
+  });
+  await Promise.all(workers);
+  if(failure)throw failure;
+  assertRunning();
+  for(const item of items)for(const delta of item.deltas)for(const id of delta.missing){
+    if(!(await state.targetCache.get(keyOf(delta.target,id))))
+      item.missingTargets.push(delta.field+':'+id);
   }
-  function summarizeSchema(schema) {
-    return Object.fromEntries(Object.entries(schema.attributes)
-      .filter(([name]) => !SYSTEM.has(name))
-      .map(([name, attr]) => [name, {
-        type: attr.type, required: attr.required === true,
-        localized: attr.type === 'relation' ?
-          attr.pluginOptions?.i18n?.localized !== false : isLocalized(attr),
-        target: attr.target ?? null, unique: attr.unique === true
-      }]));
-  }
-  function fail(reason, autoDownload = false) {
-    state.stage = 'failed';
-    state.report.errors.push(reason);
-    state.report.finishedAt = new Date().toISOString();
-    createButton.disabled = true;
-    show('СТОП: ' + reason + '\nНет следующих операций. JSON доступен в панели.', true);
-    if (autoDownload) download();
-  }
-  async function preflight() {
-    state.running = true;
-    createButton.disabled = true;
-    try {
-      show('GET: актуальная схема, связь DIOR.categories, RU/KK и все relations…');
-      const [list, comps] = await Promise.all([
-        get('/content-manager/content-types'), get('/content-manager/components')
-      ]);
-      const schema = list?.data?.find(x => x?.uid === UID);
-      if(!Array.isArray(comps?.data) || !comps.data.every(c=>c?.uid&&c?.attributes))
-        throw Error('Невозможно прочитать схемы компонентов');
-      state.components=Object.fromEntries(comps.data.map(c=>[c.uid,c]));
-      if (!schema?.attributes || schema.pluginOptions?.i18n?.localized !== true)
-        throw Error('Схема Category/i18n не подтверждена');
-      const brand = await membership();
-      if (!brand.includesCurrent) throw Error('Category не входит в DIOR.categories');
-      const before = await snapshot(schema);
-      const plan = buildPayload(schema, before.ru.draft.detail);
-      const blockers = [...plan.blockers];
-      const repair = documentId === REPAIR_ID && !!before.kk.draft;
-      if (repair) blockers.push(...pilotRepairBlockers(before));
-      else if (before.kk.draft || before.kk.published)
-        blockers.push('KK уже существует; повторное создание запрещено');
-      state.mode = repair ? 'repair' : 'create';
-      state.schema = schema; state.before = before; state.plan = plan;
-      state.report.schemaFields = summarizeSchema(schema);
-      state.report.componentSchemas=Object.fromEntries(
-        Object.entries(state.components).map(([uid,c])=>[uid,{attributes:c.attributes}])
-      );
-      state.report.before = before;
-      state.report.preflight = {
-        checkedAt: new Date().toISOString(), brand,
-        ruStatus: before.ru.draft.detail.status,
-        ruPublished: !!before.ru.published,
-        kkMissing: !before.kk.draft && !before.kk.published,
-        mode: state.mode,
-        kkChangedFields: before.kk.draft ?
-          diff(before.ru.draft.transferable, before.kk.draft.transferable) : [],
-        fieldCount: Object.keys(state.report.schemaFields).length,
-        relationFields: Object.keys(before.ru.draft.relations).length,
-        sharedCount: Object.entries(state.report.schemaFields)
-          .filter(([, attr]) => !attr.localized).length,
-        requiredCount: Object.entries(state.report.schemaFields)
-          .filter(([, attr]) => attr.required).length,
-        blockers, warnings: plan.warnings,
-        deferredRelations: plan.deferred, payload: plan.payload
-      };
-      if (blockers.length) {
-        fail('Preflight: ' + blockers.join(' | '));
-        return;
+}
+const liveSchema=async()=>{
+  const [types,components,brand]=await Promise.all([
+    get('/content-manager/content-types'),
+    get('/content-manager/components'),
+    get(detailPath(BRAND_ID,'ru','draft',BRAND_UID))
+  ]);
+  const schema=types?.data?.find(x=>x.uid===UID);
+  const brandSchema=types?.data?.find(x=>x.uid===BRAND_UID);
+  if(!schema?.attributes||schema.pluginOptions?.i18n?.localized!==true||
+    brandSchema?.attributes?.[FIELD]?.type!=='relation'||
+    brandSchema.attributes[FIELD].target!==UID||
+    brand?.data?.documentId!==BRAND_ID||brand?.data?.locale!=='ru'||
+    !Array.isArray(components?.data)||!components.data.every(x=>x.uid&&x.attributes))
+    throw Error('Схема/Brand DIOR недоступна');
+  state.components=Object.fromEntries(components.data.map(x=>[x.uid,x]));
+  return schema;
+};
+async function scan(){
+  try{
+    state.schema=await liveSchema();
+    state.members=await categories();
+    state.total=state.members.length;
+    if(!state.total)throw Error('У DIOR нет связанных категорий');
+    const scans=new Array(state.total);let cursor=0,failure=null;
+    const workers=Array.from({length:Math.min(READ_WORKERS,state.total)},async()=>{
+      while(!failure&&!state.stopped){
+        const i=cursor++;if(i>=state.total)return;
+        const item=state.members[i];
+        try{
+          const snap=await snapshot(item.documentId,state.schema);
+          scans[i]=analyze(item.documentId,item.name,snap);
+          state.processed++;state.report.categories=scans.filter(Boolean).map(present);
+          explain('Читаем Category RU/KK и все root relations…');
+        }catch(e){failure=Error(item.documentId+': '+String(e));return;}
       }
-      state.stage = 'ready';
-      createButton.disabled = false;
-      createButton.textContent = state.mode === 'repair' ?
-        'Дополнить KK Draft (1 PUT)' : 'Создать KK Draft (1 PUT)';
-      show('Preflight пройден. Category входит в DIOR.categories (' + brand.total + ').' +
-        (state.mode === 'repair' ?
-          '\nПилот восстановления: KK Draft ID 12471, отсутствуют bitrix_id и баннер dynamic.' : '') +
-        '\nОбщих полей: ' + state.report.preflight.sharedCount +
-        ', обязательных: ' + state.report.preflight.requiredCount +
-        ', relations: ' + state.report.preflight.relationFields +
-        '.\nSnapshot RU Draft/Published сохранён в журнале.' +
-        '\nDynamic Zone и вложенные items/media включены. Новые component id создаст Strapi.' +
-        '\nUnique для Publish KK: ' + plan.warnings.length + ' предупреждений.' +
-        '\nRelations — отдельно во втором проходе. Публикации не будет.');
-    } catch (error) { fail('Preflight: ' + String(error.message || error)); }
-    finally { state.running = false; }
+    });
+    await Promise.all(workers);
+    if(failure)throw failure;assertRunning();
+    if(scans.some(x=>!x))throw Error('Не все категории обработаны');
+    state.scan=scans;
+    await checkTargets(scans);
+    state.report.categories=scans.map(present);
+    state.report.auditComplete=true;
+    state.running=false;state.phase='ready';state.report.phase='ready';
+    const unresolved=checkpoint();
+    const candidate=scans.find(item=>!item.blockers.length&&!item.missingTargets.length&&
+      item.before.kk.draft&&item.deltas.some(d=>d.field==='product'&&d.missing.length));
+    state.pilotCandidate=candidate||null;
+    pilotBtn.disabled=!candidate||!!unresolved;
+    explain('GET-аудит завершён. Непустые различия требуют синхронизации.'+
+      (candidate?'\nДоступен один пилот product.connect.':'\nПилот product недоступен: проверь missing targets.')+
+      (unresolved?'\nЗАПИСЬ ЗАБЛОКИРОВАНА: есть unresolved checkpoint.':''));
+    csvBtn.onclick();jsonBtn.onclick();
+  }catch(e){
+    reportError(e,'failed');end('failed','Аудит остановлен, записи не выполнялись.');
   }
-  async function createOne() {
-    if (state.running || state.stage !== 'ready') return;
-    if (!confirm((state.mode === 'repair' ?
-      'ДОПОЛНИТЬ существующую KK Draft 12471' :
-      'СОЗДАТЬ только KK Draft') + ' для категории ' + documentId +
-      '?\nВсе RU Draft/Published, KK и relations будут повторно проверены перед PUT.'+
-      '\nПосле PUT — проверка RU и KK. Без Publish, rollback и повторов.')) return;
-    state.running = true; createButton.disabled = true;
-    try {
-      show('GET: сверка актуального состояния перед PUT…');
-      const [list, comps] = await Promise.all([
-        get('/content-manager/content-types'), get('/content-manager/components')
-      ]);
-      const schema = list?.data?.find(x => x?.uid === UID);
-      const actual=Object.fromEntries((comps?.data||[]).map(c=>[c.uid,{attributes:c.attributes}]));
-      if(!Array.isArray(comps?.data) || !equal(actual,state.report.componentSchemas))
-        throw Error('Схемы компонентов изменились после Preflight');
-      if (!schema?.attributes || !equal(schema.attributes, state.schema.attributes))
-        throw Error('Схема Category изменилась после Preflight');
-      const brand = await membership();
-      if (!brand.includesCurrent) throw Error('Категория больше не связана с DIOR');
-      const before = await snapshot(state.schema);
-      const changes = beforeDiff(state.before, before);
-      if (changes.length) throw Error('Снимок устарел: ' + changes.join(' | '));
-      const plan = buildPayload(state.schema, before.ru.draft.detail);
-      if (plan.blockers.length || !equal(plan.payload, state.plan.payload) ||
-          !equal(plan.warnings, state.plan.warnings))
-        throw Error('Payload изменился: ' + plan.blockers.join(' | '));
-      if (state.mode === 'repair') {
-        const issues = pilotRepairBlockers(before);
-        if (issues.length) throw Error('Восстановление KK запрещено: ' + issues.join(' | '));
-      } else if (before.kk.draft || before.kk.published) {
-        throw Error('KK уже существует, PUT запрещён');
-      }
-      state.report.write = { at: new Date().toISOString(),
-        mode: state.mode, existingKkId: before.kk.draft?.detail?.id ?? null,
-        method: 'PUT', locale: 'kk', payload: plan.payload, attempted: false };
-      state.attempted = true;
-      state.report.write.attempted = true;
-      show('PUT: ' + (state.mode === 'repair' ? 'дополняем' : 'создаём') +
-        ' KK Draft с полным снимком полей RU…');
-      let response = null, networkError = null;
-      try {
-        response = await request('PUT',
-          '/content-manager/collection-types/' + UID + '/' + documentId + '?locale=kk',
-          plan.payload);
-      } catch (error) { networkError = String(error.message || error); }
-      state.report.write.response = response ? {
-        httpStatus: response.status, ok: response.ok, message: response.message
-      } : { httpStatus: 'NETWORK', ok: false, message: networkError };
-      show('GET: после PUT проверяем RU Draft/Published, KK и все relations…');
-      const after = await snapshot(state.schema);
-      state.report.after = after;
-      const errors = [];
-      compare('RU Draft', before.ru.draft, after.ru.draft, errors);
-      compare('RU Published', before.ru.published, after.ru.published, errors);
-      if (before.ru.draft?.detail?.id !== after.ru.draft?.detail?.id)
-        errors.push('RU Draft id изменился');
-      if (before.ru.published?.detail?.id !== after.ru.published?.detail?.id ||
-          before.ru.published?.detail?.publishedAt !== after.ru.published?.detail?.publishedAt)
-        errors.push('RU Published id/publishedAt изменились');
-      if (!after.kk.draft) errors.push('KK Draft отсутствует после PUT');
-      if (state.mode === 'repair' && after.kk.draft?.detail?.id !== REPAIR_KK_ROW_ID)
-        errors.push('KK Draft ID изменился после обновления');
-      if (state.mode === 'repair' &&
-          !equal(before.kk.draft?.relations, after.kk.draft?.relations))
-        errors.push('KK relations изменились при обновлении');
-      if (after.kk.published) errors.push('KK опубликована без запроса');
-      if (after.kk.draft) {
-        for (const [name, attr] of Object.entries(state.schema.attributes)) {
-          if (SYSTEM.has(name) || attr.type === 'relation') continue;
-          if (!equal(before.ru.draft.transferable[name], after.kk.draft.transferable[name]))
-            errors.push('KK поле не совпадает с RU: ' + name);
-        }
-        for (const [name, relation] of Object.entries(after.kk.draft.relations)) {
-          if (relation.total !== 0)
-            errors.push('KK relation неожиданно заполнена: ' + name);
-        }
-      }
-      if (networkError || !response?.ok)
-        errors.unshift('PUT HTTP ' + (response?.status ?? 'NETWORK') + ': ' +
-          (networkError || response?.message || 'unknown'));
-      state.report.verification = {
-        checkedAt: new Date().toISOString(), errors,
-        deferredRelations: state.plan.deferred,
-        ruBeforeStatus: before.ru.draft.detail.status,
-        ruAfterStatus: after.ru.draft?.detail?.status ?? null,
-        ruPublishedBefore: before.ru.published?.detail?.publishedAt ?? null,
-        ruPublishedAfter: after.ru.published?.detail?.publishedAt ?? null,
-        ruContentPreserved: !errors.some(x => x.startsWith('RU ')),
-        mode: state.mode,
-        kkCreated: state.mode === 'create' && !!after.kk.draft,
-        kkUpdated: state.mode === 'repair' && !!after.kk.draft &&
-          after.kk.draft.detail.id === REPAIR_KK_ROW_ID
-      };
-      if (errors.length) throw Error('Postflight: ' + errors.join(' | '));
-      state.stage = 'complete';
-      state.report.success = true;
-      state.report.finishedAt = new Date().toISOString();
-      show('Готово: KK Draft ' + (state.mode === 'repair' ? 'дополнена' : 'создана') +
-        ', RU Draft/Published и relations сохранены.' +
-        '\nRU status: ' + before.ru.draft.detail.status + ' → ' +
-        after.ru.draft.detail.status + '. Публикации НЕ было.' +
-        '\nСкачан единый итоговый JSON.');
-      download();
-    } catch (error) { fail(String(error.message || error), !!state.attempted); }
-    finally { state.running = false; createButton.disabled = true; }
+}
+async function oneWrite(item,{pilot=false}={}){
+  const id=item.id;
+  // После предыдущих writes другие KK relations могут измениться через inverse relations:
+  // источник RU сравниваем строго, KK перечитываем заново.
+  const before=await snapshot(id,state.schema);
+  const sourceIssues=[
+    ...compareVersion(item.before.ru.draft,before.ru.draft),
+    ...compareVersion(item.before.ru.published,before.ru.published,true)
+  ];
+  if(sourceIssues.length)throw Error(id+': '+sourceIssues.join(' | '));
+  const actual=analyze(id,item.name,before);
+  if(actual.blockers.length)throw Error(id+': '+actual.blockers.join(' | '));
+  if(pilot&&(!before.kk.draft||actual.deltas.find(x=>x.field==='product')?.missing.length===0))
+    throw Error('Для пилота требуется KK Draft с отсутствующим product');
+  const missing=actual.deltas.filter(d=>d.missing.length);
+  if(!actual.diffs.length&&!missing.length)return {skipped:true,after:before};
+  // Повторно сверяем все KK target IDs до write.
+  const connect={};const missingTargets=[];
+  for(const d of missing){
+    const wanted=pilot&&d.field==='product'?d.missing.slice(0,1):
+      pilot?[]:d.missing;
+    for(const target of wanted){
+      const entry=await targetGet(d.target,target);
+      if(!entry)missingTargets.push(d.field+':'+target);
+      else (connect[d.field]||=[]).push(entry);
+    }
   }
-  createButton.onclick = createOne;
-  await preflight();
+  if(missingTargets.length)throw Error(id+': отсутствует KK у target: '+
+    missingTargets.join(' | '));
+  if(!pilot&&item.missingTargets.length)
+    throw Error(id+': есть missing target из Preflight');
+  const plan=buildPayload(state.schema,before.ru.draft.detail);
+  if(plan.blockers.length||!equal(plan.payload,item.plan?.payload))
+    throw Error(id+': RU payload изменился относительно Preflight');
+  // Full content payload защищает shared fields от обнуления при локальной записи.
+  const payload={...plan.payload};
+  for(const [field,entries] of Object.entries(connect))
+    payload[field]={connect:entries,disconnect:[]};
+  if(pilot&&!connect.product?.length)throw Error('Не найден продукт для pilot connect');
+  const receipt={documentId:id,name:item.name,at:new Date().toISOString(),
+    mode:pilot?'pilot':'apply',relationsConnect:
+      Object.fromEntries(Object.entries(connect).map(([f,entries])=>
+        [f,entries.map(x=>x.documentId)])),
+    contentUpdated:!!actual.diffs.length,attempted:false,verified:false};
+  state.report.writes.push(receipt);
+  if(checkpoint())throw Error('Остался unresolved checkpoint; write запрещён');
+  markUnresolved({documentId:id,mode:receipt.mode,at:receipt.at,
+    requested:receipt.relationsConnect,reason:'PUT outcome not verified'});
+  receipt.attempted=true;
+  explain('PUT KK '+id+' — '+(pilot?'одна связь product':'только missing relations'));
+  let response=null,writeError=null;
+  try{
+    response=await request('PUT','/content-manager/collection-types/'+UID+'/'+id+'?locale=kk',
+      payload);
+  }catch(e){writeError=String(e);}
+  receipt.httpStatus=response?.status??'NETWORK';
+  const after=await snapshot(id,state.schema);
+  const errors=[
+    ...compareVersion(before.ru.draft,after.ru.draft),
+    ...compareVersion(before.ru.published,after.ru.published,true)
+  ];
+  if(!after.kk.draft||after.kk.published)
+    errors.push('KK Draft отсутствует либо KK неожиданно Published');
+  if(after.kk.draft){
+    if(!equal(after.kk.draft.business,before.ru.draft.business))
+      errors.push('Контент KK отличается от RU после PUT');
+    if(!equal(after.kk.draft.transferable,before.ru.draft.transferable))
+      errors.push('KK transferable отличается от RU');
+    for(const d of actual.deltas){
+      const pre=before.kk.draft?.relations[d.field]?.entries.map(x=>x.documentId)||[];
+      const expected=[...new Set([...pre,...(connect[d.field]||[]).map(x=>x.documentId)])].sort();
+      const real=after.kk.draft.relations[d.field];
+      const ids=real.entries.map(x=>x.documentId).sort();
+      if(!equal(expected,ids)||real.total!==ids.length)
+        errors.push('KK '+d.field+': relation mismatch expected '+expected.length+
+          ' actual '+real.total);
+    }
+  }
+  if(!response?.ok)errors.push('Неоднозначный PUT: '+
+    (writeError||('HTTP '+response?.status+' '+response?.message)));
+  receipt.verified=errors.length===0;receipt.errors=errors;
+  receipt.kkId=after.kk.draft?.detail.id??null;
+  if(errors.length)throw Error(id+': '+errors.join(' | '));
+  item.before=after;item.plan=plan;
+  localStorage.removeItem(JOURNAL_KEY);
+  return {skipped:false,after};
+}
+async function pilot(){
+  if(state.running||!state.pilotCandidate||checkpoint())return;
+  if(!confirm('Пилот одного Category.product.connect в KK Draft. '+
+    'Контракт такого Save ещё не подтверждён на живой CMS.\n'+
+    'Один PUT, затем полная проверка обеих RU-версий, KK и relations.\n'+
+    'Никакого Publish/автоповтора. Продолжить?'))return;
+  state.running=true;state.stopped=false;stopBtn.disabled=false;pilotBtn.disabled=true;
+  try{
+    const item=state.pilotCandidate;
+    await oneWrite(item,{pilot:true});
+    state.pilotPassed=true;
+    const updated=analyze(item.id,item.name,item.before);
+    Object.assign(item,{deltas:updated.deltas,diffs:updated.diffs,blockers:updated.blockers,
+      extras:updated.extras,missingTargets:updated.missingTargets});
+    state.report.categories=state.scan.map(present);
+    state.running=false;
+    applyBtn.disabled=false;
+    explain('Пилот успешен, сохранность RU и точность KK подтверждены.'+
+      '\nТеперь можно отдельно подтвердить оставшиеся изменения.');
+    csvBtn.onclick();jsonBtn.onclick();
+  }catch(e){reportError(e,'review');
+    end('review','Пилот остановлен. Повторно PUT не отправлять.');
+  }
+}
+async function apply(){
+  if(state.running||!state.pilotPassed||checkpoint())return;
+  if(!confirm('Синхронизировать оставшиеся доступные Category RU → KK?'+
+    '\nТолько один PUT за раз, additive connect; ни одной публикации.'+
+    '\nПри ошибке STOP, с отчётом и checkpoint.'))return;
+  state.running=true;state.stopped=false;applyBtn.disabled=true;stopBtn.disabled=false;
+  try{
+    // Проверка состава brand relation и схемы до write.
+    const schema=await liveSchema(),members=await categories();
+    if(!equal(schema.attributes,state.schema.attributes)||
+       !equal(members.map(x=>x.documentId).sort(),
+         state.members.map(x=>x.documentId).sort()))
+      throw Error('Схема или состав DIOR.categories изменились');
+    for(let i=0;i<state.scan.length;i++){
+      assertRunning();
+      const item=state.scan[i];
+      explain('Применение '+(i+1)+'/'+state.scan.length+': '+item.name);
+      if(item.blockers.length||item.missingTargets.length){
+        // Не изменяем записи с несовместимым состоянием или без KK у targets.
+        continue;
+      }
+      await oneWrite(item);
+      const revised=analyze(item.id,item.name,item.before);
+      Object.assign(item,{deltas:revised.deltas,diffs:revised.diffs,blockers:revised.blockers,
+        extras:revised.extras,missingTargets:revised.missingTargets});
+      state.report.categories=state.scan.map(present);
+      await sleep(200);
+    }
+    end('completed','Работа завершена; недоступные targets помечены review.');
+  }catch(e){reportError(e,'review');
+    end('review','STOP. Данные в отчёте, неоднозначный PUT не повторять.');
+  }
+}
+pilotBtn.onclick=pilot;applyBtn.onclick=apply;
+scan();
 })();
