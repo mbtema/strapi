@@ -509,12 +509,17 @@
       if(row.status==='already_synced' && !row.before?.kkDraft)
         throw Error('В JSON нет существующей KK '+row.documentId);
     }
-    if(!crypto?.subtle)throw Error('Для проверки файла нужен crypto.subtle (secure context)');
   }
-  async function fileSha(fileText) {
-    const data=new TextEncoder().encode(fileText);
-    const digest=await crypto.subtle.digest('SHA-256',data);
-    return Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');
+  // Strapi Admin работает по внутреннему HTTP, где crypto.subtle не доступен.
+  // Два независимых FNV32 + длина дают устойчивый ключ checkpoint файла.
+  function fileTag(fileText) {
+    let a=2166136261,b=349244773;
+    for(let i=0;i<fileText.length;i++) {
+      const c=fileText.charCodeAt(i);
+      a=Math.imul(a^c,16777619)>>>0;
+      b=Math.imul(b^(c^(i&255)),2246822519)>>>0;
+    }
+    return fileText.length.toString(16)+'-'+a.toString(16)+'-'+b.toString(16);
   }
   async function liveCategoryIds() {
     let page=1,total=null,pages=null,output=[];
@@ -673,7 +678,7 @@
       const content=await file.text();
       const audit=JSON.parse(content);
       validateAudit(audit);
-      const sha=await fileSha(content);
+      const sha=fileTag(content);
       const checkpointKey='tm:dior:category:kk:batch:v1:'+sha;
       const existing=localStorage.getItem(checkpointKey);
       let checkpoint=existing?JSON.parse(existing):{done:{},unresolved:null};
@@ -683,7 +688,7 @@
       state.audit=audit;state.checkpoint=checkpoint;
       state.checkpointKey=checkpointKey;
       state.report.auditStartedAt=audit.startedAt;
-      state.report.auditSha256=sha;
+      state.report.auditFileTag=sha;
       state.report.rows=[];
       state.report.errors=[];
       state.report.startedAt=new Date().toISOString();
