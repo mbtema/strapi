@@ -102,10 +102,13 @@
     state.report.summary={
       total:state.audit?.rows?.length||0,
       candidates:state.audit?.rows?.filter(x=>x.status==='ready').length||0,
+      preExistingSynced:state.audit?.rows?.filter(x=>x.status==='already_synced').length||0,
       verifiedWrites:state.report.rows.filter(x=>x.result==='created').length,
+      verifiedInCheckpoint:Object.keys(state.checkpoint?.done||{}).length,
       already:state.report.rows.filter(x=>x.result==='already').length,
       review:state.report.rows.filter(x=>x.result==='review').length,
-      pending:state.report.rows.filter(x=>x.result==='pending').length,
+      pending:(state.audit?.rows?.filter(x=>x.status==='ready').length||0) -
+        state.report.rows.filter(x=>['created','already','review'].includes(x.result)).length,
       getRequests:state.getCount,putRequests:state.putCount
     };
     launch.disabled=true;stop.disabled=true;
