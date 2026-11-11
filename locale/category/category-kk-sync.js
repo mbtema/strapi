@@ -753,5 +753,5 @@ async function apply(){
   }
 }
 pilotBtn.onclick=pilot;applyBtn.onclick=apply;
-scan();
+await scan();
 })();
