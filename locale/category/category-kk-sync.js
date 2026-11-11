@@ -244,7 +244,7 @@
     }
     return value;
   }
-  function normalizeValue(attr, value, fieldPath, mode, blockers, deferred) {
+  function normalizeValue(attr, value, fieldPath, mode, blockers, deferred, warnings = []) {
     const issue = message => {
       if (mode === 'payload') blockers.push(fieldPath + ': ' + message);
     };
@@ -260,8 +260,11 @@
       if (!empty(value)) issue('непустой UID требует отдельной проверки');
       return value;
     }
-    if (attr.unique === true && isLocalized(attr) && !empty(value))
-      issue('локализуемое unique-поле требует проверки');
+    // В Strapi 5.13 unique не проверяется при сохранении Draft.
+    // При Publish ограничение действует в пределах локали, поэтому
+    // переносим исходное значение, но оставляем предупреждение для Publish.
+    if (attr.unique === true && isLocalized(attr) && !empty(value) && mode === 'payload')
+      warnings.push(fieldPath + ': localized unique — проверить перед Publish KK');
     if (SCALAR.has(attr.type)) {
       if (!['json','blocks'].includes(attr.type) && typeof value === 'object')
         issue('ожидался scalar, получен объект');
@@ -309,7 +312,7 @@
           const nested = Object.prototype.hasOwnProperty.call(entry,name)
             ? entry[name] : undefined;
           const normalized = normalizeValue(subAttr, nested, path+'.'+name,
-            mode, blockers, deferred);
+            mode, blockers, deferred, warnings);
           if (normalized !== undefined) out[name] = normalized;
         }
         return out;
@@ -414,7 +417,7 @@
     return errors;
   }
   function buildPayload(schema, ru) {
-    const payload={locale:'kk'},blockers=[],deferred=[];
+    const payload={locale:'kk'},blockers=[],deferred=[],warnings=[];
     for(const [name,attr] of Object.entries(schema.attributes)){
       if(SYSTEM.has(name))continue;
       if(attr.type==='relation'){
@@ -424,9 +427,9 @@
         continue;
       }
       const v=Object.prototype.hasOwnProperty.call(ru,name)?ru[name]:undefined;
-      payload[name]=normalizeValue(attr,v,name,'payload',blockers,deferred);
+      payload[name]=normalizeValue(attr,v,name,'payload',blockers,deferred,warnings);
     }
-    return {payload,blockers,deferred};
+    return {payload,blockers,deferred,warnings};
   }
   async function membership() {
     const seen = new Set();
@@ -507,7 +510,8 @@
           .filter(([, attr]) => !attr.localized).length,
         requiredCount: Object.entries(state.report.schemaFields)
           .filter(([, attr]) => attr.required).length,
-        blockers, deferredRelations: plan.deferred, payload: plan.payload
+        blockers, warnings: plan.warnings,
+        deferredRelations: plan.deferred, payload: plan.payload
       };
       if (blockers.length) {
         fail('Preflight: ' + blockers.join(' | '));
@@ -522,6 +526,7 @@
         ', relations: ' + state.report.preflight.relationFields +
         '.\nSnapshot RU Draft/Published сохранён в журнале.' +
         '\nDynamic Zone и вложенные items/media включены. Новые component id создаст Strapi.' +
+        '\nUnique для Publish KK: ' + plan.warnings.length + ' предупреждений.' +
         '\nRelations — отдельно во втором проходе. Публикации не будет.');
     } catch (error) { fail('Preflight: ' + String(error.message || error)); }
     finally { state.running = false; }
@@ -549,7 +554,8 @@
       const changes = beforeDiff(state.before, before);
       if (changes.length) throw Error('Снимок устарел: ' + changes.join(' | '));
       const plan = buildPayload(state.schema, before.ru.draft.detail);
-      if (plan.blockers.length || !equal(plan.payload, state.plan.payload))
+      if (plan.blockers.length || !equal(plan.payload, state.plan.payload) ||
+          !equal(plan.warnings, state.plan.warnings))
         throw Error('Payload изменился: ' + plan.blockers.join(' | '));
       if (before.kk.draft || before.kk.published)
         throw Error('KK уже существует, PUT запрещён');
