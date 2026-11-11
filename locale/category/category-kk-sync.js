@@ -605,6 +605,15 @@ async function scan(){
     reportError(e,'failed');end('failed','Аудит остановлен, записи не выполнялись.');
   }
 }
+
+const snapshotReport=entry=>entry&&({
+  id:entry.detail.id,
+  status:entry.detail.status,
+  publishedAt:entry.detail.publishedAt,
+  updatedAt:entry.detail.updatedAt,
+  fields:entry.business,
+  relations:relIds(entry)
+});
 async function oneWrite(item,{pilot=false,contentOnly=false}={}){
   const id=item.id;
   // После предыдущих writes другие KK relations могут измениться через inverse relations:
@@ -655,7 +664,12 @@ async function oneWrite(item,{pilot=false,contentOnly=false}={}){
     mode:contentOnly?'content':pilot?'pilot':'apply',relationsConnect:
       Object.fromEntries(Object.entries(connect).map(([f,entries])=>
         [f,entries.map(x=>x.documentId)])),
-    contentUpdated:!!actual.diffs.length,attempted:false,verified:false};
+    contentUpdated:!before.kk.draft||!!actual.diffs.length,
+    sourceRelationsBefore:relIds(before.ru.draft),
+    before:{ruDraft:snapshotReport(before.ru.draft),
+      ruPublished:snapshotReport(before.ru.published),
+      kkDraft:snapshotReport(before.kk.draft)},
+    attempted:false,verified:false};
   state.report.writes.push(receipt);
   if(checkpoint())throw Error('Остался unresolved checkpoint; write запрещён');
   markUnresolved({documentId:id,mode:receipt.mode,at:receipt.at,
@@ -669,6 +683,11 @@ async function oneWrite(item,{pilot=false,contentOnly=false}={}){
   }catch(e){writeError=String(e);}
   receipt.httpStatus=response?.status??'NETWORK';
   const after=await snapshot(id,state.schema);
+  receipt.after={
+    ruDraft:snapshotReport(after.ru.draft),
+    ruPublished:snapshotReport(after.ru.published),
+    kkDraft:snapshotReport(after.kk.draft)
+  };
   const errors=[
     ...compareVersion(before.ru.draft,after.ru.draft),
     ...compareVersion(before.ru.published,after.ru.published,true)
@@ -692,6 +711,11 @@ async function oneWrite(item,{pilot=false,contentOnly=false}={}){
   }
   if(!response?.ok)errors.push('Неоднозначный PUT: '+
     (writeError||('HTTP '+response?.status+' '+response?.message)));
+  receipt.ruDraftPreserved=compareVersion(before.ru.draft,after.ru.draft).length===0;
+  receipt.ruPublishedPreserved=
+    compareVersion(before.ru.published,after.ru.published,true).length===0;
+  receipt.kkContentMatchesRU=!!after.kk.draft&&
+    equal(after.kk.draft.business,before.ru.draft.business);
   receipt.verified=errors.length===0;receipt.errors=errors;
   receipt.kkId=after.kk.draft?.detail.id??null;
   if(errors.length)throw Error(id+': '+errors.join(' | '));
@@ -727,6 +751,13 @@ async function syncContent(){
       await sleep(200);
     }
     state.running=false;stopBtn.disabled=false;
+    // После появления новых KK Category обновляем результаты проверки targets.
+    state.targetCache.clear();
+    state.targetsDone=0;
+    state.targetsTotal=0;
+    for(const item of state.scan)item.missingTargets=[];
+    await checkTargets(state.scan);
+    state.report.categories=state.scan.map(present);
     state.pilotCandidate=null;
     for(const item of state.scan){
       if(item.blockers.length||!item.before.kk.draft)continue;
