@@ -49,16 +49,17 @@ const h=el('strong','DIOR · Category RU → KK · один механизм');
 const statusEl=el('div','Начинаем read-only проверку…');
 statusEl.style.cssText='white-space:pre-wrap;margin:12px 0';
 const controls=el('div');controls.style.cssText='display:flex;gap:8px;flex-wrap:wrap';
+const contentBtn=el('button','Восстановить контент KK');
 const pilotBtn=el('button','Пилот: 1 product.connect');
 const applyBtn=el('button','Применить оставшиеся');
 const stopBtn=el('button','Стоп');
 const csvBtn=el('button','CSV');
 const jsonBtn=el('button','JSON');
-for(const btn of [pilotBtn,applyBtn,stopBtn,csvBtn,jsonBtn]){
+for(const btn of [contentBtn,pilotBtn,applyBtn,stopBtn,csvBtn,jsonBtn]){
   btn.type='button';btn.style.cssText='cursor:pointer;padding:7px 10px';
   controls.append(btn);
 }
-pilotBtn.disabled=true;applyBtn.disabled=true;
+contentBtn.disabled=true;pilotBtn.disabled=true;applyBtn.disabled=true;
 panel.append(h,statusEl,controls);document.body.append(panel);
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const explain=message=>{
@@ -106,7 +107,7 @@ const end=(phase,message)=>{
     getRequests:state.getCount,putRequests:state.putCount,
     pilotPassed:state.pilotPassed
   };
-  pilotBtn.disabled=true;applyBtn.disabled=true;stopBtn.disabled=true;
+  contentBtn.disabled=true;pilotBtn.disabled=true;applyBtn.disabled=true;stopBtn.disabled=true;
   explain(message+'\nCSV и JSON скачаны.');
   csvBtn.onclick();jsonBtn.onclick();
 };
@@ -593,6 +594,8 @@ async function scan(){
       }
     }
     state.pilotCandidate=candidate||null;
+    contentBtn.disabled=!!unresolved||!scans.some(x=>!x.blockers.length&&
+      (!x.before.kk.draft||x.diffs.length));
     pilotBtn.disabled=!candidate||!!unresolved;
     explain('GET-аудит завершён. Непустые различия требуют синхронизации.'+
       (candidate?'\nДоступен один пилот product.connect.':'\nПилот product недоступен: проверь missing targets.')+
@@ -602,7 +605,7 @@ async function scan(){
     reportError(e,'failed');end('failed','Аудит остановлен, записи не выполнялись.');
   }
 }
-async function oneWrite(item,{pilot=false}={}){
+async function oneWrite(item,{pilot=false,contentOnly=false}={}){
   const id=item.id;
   // После предыдущих writes другие KK relations могут измениться через inverse relations:
   // источник RU сравниваем строго, KK перечитываем заново.
@@ -617,11 +620,12 @@ async function oneWrite(item,{pilot=false}={}){
   if(pilot&&(!before.kk.draft||actual.deltas.find(x=>x.field==='product')?.missing.length===0))
     throw Error('Для пилота требуется KK Draft с отсутствующим product');
   const missing=actual.deltas.filter(d=>d.missing.length);
-  if(!actual.diffs.length&&!missing.length)return {skipped:true,after:before};
+  if(before.kk.draft&&!actual.diffs.length&&(contentOnly||!missing.length))
+    return {skipped:true,after:before};
   // Повторно сверяем все KK target IDs до write.
   const connect={};const missingTargets=[];
   for(const d of missing){
-    const wanted=pilot&&d.field==='product'?d.missing:
+    const wanted=contentOnly?[]:pilot&&d.field==='product'?d.missing:
       pilot?[]:d.missing;
     for(const target of wanted){
       // Не доверять старому id: заново GET перед любой записью.
@@ -637,7 +641,7 @@ async function oneWrite(item,{pilot=false}={}){
   }
   if(missingTargets.length)throw Error(id+': отсутствует KK у target: '+
     missingTargets.join(' | '));
-  if(!pilot&&item.missingTargets.length)
+  if(!pilot&&!contentOnly&&item.missingTargets.length)
     throw Error(id+': есть missing target из Preflight');
   const plan=buildPayload(state.schema,before.ru.draft.detail);
   if(plan.blockers.length||!equal(plan.payload,item.plan?.payload))
@@ -648,7 +652,7 @@ async function oneWrite(item,{pilot=false}={}){
     payload[field]={connect:entries,disconnect:[]};
   if(pilot&&!connect.product?.length)throw Error('Не найден продукт для pilot connect');
   const receipt={documentId:id,name:item.name,at:new Date().toISOString(),
-    mode:pilot?'pilot':'apply',relationsConnect:
+    mode:contentOnly?'content':pilot?'pilot':'apply',relationsConnect:
       Object.fromEntries(Object.entries(connect).map(([f,entries])=>
         [f,entries.map(x=>x.documentId)])),
     contentUpdated:!!actual.diffs.length,attempted:false,verified:false};
@@ -657,7 +661,7 @@ async function oneWrite(item,{pilot=false}={}){
   markUnresolved({documentId:id,mode:receipt.mode,at:receipt.at,
     requested:receipt.relationsConnect,reason:'PUT outcome not verified'});
   receipt.attempted=true;
-  explain('PUT KK '+id+' — '+(pilot?'одна связь product':'только missing relations'));
+  explain('PUT KK '+id+' — '+(contentOnly?'только RU-контент':pilot?'одна связь product':'missing relations'));
   let response=null,writeError=null;
   try{
     response=await request('PUT','/content-manager/collection-types/'+UID+'/'+id+'?locale=kk',
@@ -694,6 +698,51 @@ async function oneWrite(item,{pilot=false}={}){
   item.before=after;item.plan=plan;
   localStorage.removeItem(JOURNAL_KEY);
   return {skipped:false,after};
+}
+async function syncContent(){
+  if(state.running||checkpoint())return;
+  const candidates=state.scan.filter(item=>!item.blockers.length&&
+    (!item.before.kk.draft||item.diffs.length));
+  if(!candidates.length)return;
+  if(!confirm('Скопировать RU Draft в '+candidates.length+
+    ' KK Draft (создать отсутствующие и дополнить отличающиеся)?'+
+    '\nБез relations, без Publish. Один PUT за раз с проверкой RU/KK.'))return;
+  state.running=true;state.stopped=false;contentBtn.disabled=true;stopBtn.disabled=false;
+  try{
+    const schema=await liveSchema(),members=await categories();
+    if(!equal(schema.attributes,state.schema.attributes)||
+      !equal(members.map(x=>x.documentId).sort(),
+        state.members.map(x=>x.documentId).sort()))
+      throw Error('Схема/состав DIOR изменились до восстановления контента');
+    for(let i=0;i<candidates.length;i++){
+      assertRunning();
+      const item=candidates[i];
+      explain('Контент RU → KK '+(i+1)+'/'+candidates.length+': '+item.name);
+      await oneWrite(item,{contentOnly:true});
+      const revised=analyze(item.id,item.name,item.before);
+      Object.assign(item,{deltas:revised.deltas,diffs:revised.diffs,
+        blockers:revised.blockers,extras:revised.extras,
+        missingTargets:revised.missingTargets});
+      state.report.categories=state.scan.map(present);
+      await sleep(200);
+    }
+    state.running=false;stopBtn.disabled=false;
+    state.pilotCandidate=null;
+    for(const item of state.scan){
+      if(item.blockers.length||!item.before.kk.draft)continue;
+      const product=item.deltas.find(d=>d.field==='product');
+      if(product&&(await Promise.all(product.missing.map(id=>
+        state.targetCache.get(keyOf(product.target,id))))).some(Boolean)){
+        state.pilotCandidate=item;break;
+      }
+    }
+    pilotBtn.disabled=!state.pilotCandidate;
+    explain('Контент KK проверен. Для relations сначала выполнить pilot product.');
+    csvBtn.onclick();jsonBtn.onclick();
+  }catch(e){
+    reportError(e,'review');
+    end('review','STOP после ошибки синхронизации контента.');
+  }
 }
 async function pilot(){
   if(state.running||!state.pilotCandidate||checkpoint())return;
@@ -752,6 +801,6 @@ async function apply(){
     end('review','STOP. Данные в отчёте, неоднозначный PUT не повторять.');
   }
 }
-pilotBtn.onclick=pilot;applyBtn.onclick=apply;
+contentBtn.onclick=syncContent;pilotBtn.onclick=pilot;applyBtn.onclick=apply;
 await scan();
 })();
