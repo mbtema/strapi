@@ -143,7 +143,11 @@
       const body=await response.text();
       let data=null;
       try { data=body ? JSON.parse(body) : null; }
-      catch { throw Error('GET response не JSON: '+path); }
+      catch {
+        // Strapi может вернуть HTML для отсутствующей locale (404).
+        if (response.status!==404) throw Error('GET response не JSON: '+path);
+        data=null;
+      }
       if(response.ok || response.status===404)
         return {ok:response.ok,status:response.status,data,
           message:response.ok?'':String(data?.error?.message||'')};
