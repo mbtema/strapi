@@ -423,10 +423,11 @@
   }
   function pilotRepairBlockers(before) {
     const blockers = [];
-    if (documentId !== REPAIR_ID) blockers.push('Сценарий восстановления разрешён только для Подарочных наборов');
+    if (documentId !== REPAIR_ID)
+      blockers.push('Сценарий восстановления разрешён только для Подарочных наборов');
     const ru = before.ru.draft, kk = before.kk.draft;
-    if (!ru || !kk || before.kk.published) {
-      blockers.push('Нужны RU Draft и существующая неопубликованная KK Draft');
+    if (!ru || !before.ru.published || !kk || before.kk.published) {
+      blockers.push('Нужны RU Draft/Published и существующая неопубликованная KK Draft');
       return blockers;
     }
     if (kk.detail.id !== REPAIR_KK_ROW_ID || kk.detail.locale !== 'kk' ||
@@ -434,8 +435,21 @@
       blockers.push('KK Draft не совпадает с подтверждённой тестовой записью');
     if (ru.detail.bitrix_id !== REPAIR_BITRIX_ID || kk.detail.bitrix_id !== null)
       blockers.push('Состояние bitrix_id RU/KK отличается от ожидаемого 1902/null');
+    if (!equal(ru.transferable, before.ru.published.transferable))
+      blockers.push('RU Draft и RU Published отличаются после восстановления');
+    // Эталон — проверенный снимок 2026-11-11 после ручного восстановления RU.
+    // Допускаем только один пропущенный баннер с одним media ID 170289.
+    const expectedDynamic = [{
+      __component: 'brand-page.banner-slider',
+      key: 'blk-dior-banner-sets',
+      items: [{ key: 'blk-dior-banner-sets-1', image: 170289, deeplink: null }],
+      showPagination: false, autoScroll: false, hideProductsAfter: false, title: null
+    }];
+    if (!equal(ru.transferable.dynamic, expectedDynamic) ||
+        !equal(kk.transferable.dynamic, []))
+      blockers.push('Dynamic RU/KK отличается от подтверждённого снимка баннера');
     const changed = diff(ru.transferable, kk.transferable);
-    if (!equal(changed, ['bitrix_id']))
+    if (!equal(changed, ['bitrix_id', 'dynamic']))
       blockers.push('Неожиданные различия KK: ' + changed.join(', '));
     for (const [name, relation] of Object.entries(kk.relations)) {
       if (relation.total !== 0)
@@ -556,7 +570,7 @@
         'Дополнить KK Draft (1 PUT)' : 'Создать KK Draft (1 PUT)';
       show('Preflight пройден. Category входит в DIOR.categories (' + brand.total + ').' +
         (state.mode === 'repair' ?
-          '\nПилот восстановления: KK Draft ID 12471, отличается только bitrix_id.' : '') +
+          '\nПилот восстановления: KK Draft ID 12471, отсутствуют bitrix_id и баннер dynamic.' : '') +
         '\nОбщих полей: ' + state.report.preflight.sharedCount +
         ', обязательных: ' + state.report.preflight.requiredCount +
         ', relations: ' + state.report.preflight.relationFields +
