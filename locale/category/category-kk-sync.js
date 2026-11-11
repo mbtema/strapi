@@ -299,6 +299,11 @@
           return { __invalidComponent: true };
         }
         const out = isDZ ? { __component: uid } : {};
+        const unknown = Object.keys(entry).filter(name =>
+          name !== '__component' && name !== '__pivot' &&
+          !SYSTEM.has(name) && !Object.prototype.hasOwnProperty.call(model.attributes,name)
+        );
+        if (unknown.length) issue('поля вне схемы компонента '+uid+': '+unknown.join(', '));
         for (const [name, subAttr] of Object.entries(model.attributes)) {
           if (name === 'id' || SYSTEM.has(name)) continue;
           const nested = Object.prototype.hasOwnProperty.call(entry,name)
