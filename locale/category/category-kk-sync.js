@@ -14,7 +14,7 @@
     'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'localizations'
   ]);
   const SCALAR = new Set([
-    'string', 'text', 'richtext', 'email', 'enumeration', 'json',
+    'string', 'text', 'richtext', 'email', 'enumeration', 'json', 'blocks',
     'integer', 'biginteger', 'float', 'decimal', 'boolean',
     'date', 'time', 'datetime'
   ]);
@@ -46,12 +46,12 @@
 
   document.getElementById(PANEL_ID)?.remove();
   const state = {
-    running: false, stage: 'checking', schema: null, before: null, plan: null,
+    running: false, stage: 'checking', schema: null, components: null, before: null, plan: null,
     attempted: false, getCount: 0,
     report: {
       tool: 'dior-category-kk-sync', version: 1, readOnlyUntilConfirmation: true,
       uid: UID, documentId, brandDocumentId: BRAND_ID,
-      startedAt: new Date().toISOString(), schemaFields: null,
+      startedAt: new Date().toISOString(), schemaFields: null, componentSchemas: null,
       preflight: null, before: null, after: null,
       write: null, verification: null, errors: [], success: false
     }
@@ -230,21 +230,129 @@
     }
     return out;
   }
-  function businessFields(detail, schema) {
-    const result = {};
-    for (const [name, attr] of Object.entries(schema.attributes)) {
-      if (SYSTEM.has(name) || attr.type === 'relation') continue;
-      if (!Object.prototype.hasOwnProperty.call(detail, name)) {
-        result[name] = { __missing: true };
-        continue;
-      }
-      const value = detail[name];
-      if (attr.type === 'media') {
-        const mapped = mediaIDs(value);
-        result[name] = mapped.ok ? mapped.value : { __invalidMedia: true };
-      } else result[name] = value;
+  // При переносе Strapi создает новые component id; переносим только поля по схеме.
+  // Media нормализуется до числового id, вложенные items обходятся рекурсивно.
+  const isObject = x => !!x && typeof x === 'object' && !Array.isArray(x);
+  function normalizeRelation(value) {
+    if (value == null) return null;
+    if (Array.isArray(value)) return value.map(normalizeRelation);
+    if (isObject(value)) {
+      if (Number.isInteger(value.count)) return { count: value.count };
+      if (typeof value.documentId === 'string') return { documentId: value.documentId };
+      if (value.id != null) return { id: value.id };
+      return canonical(value);
     }
-    return canonical(result);
+    return value;
+  }
+  function normalizeValue(attr, value, fieldPath, mode, blockers, deferred) {
+    const issue = message => {
+      if (mode === 'payload') blockers.push(fieldPath + ': ' + message);
+    };
+    if (value === undefined) {
+      issue('поле отсутствует в ответе RU');
+      return { __missing: true };
+    }
+    if (attr.required === true && empty(value))
+      issue('обязательное поле пусто');
+    if (value === null)
+      return attr.type === 'dynamiczone' && mode !== 'snapshot' ? [] : null;
+    if (attr.type === 'uid') {
+      if (!empty(value)) issue('непустой UID требует отдельной проверки');
+      return value;
+    }
+    if (attr.unique === true && isLocalized(attr) && !empty(value))
+      issue('локализуемое unique-поле требует проверки');
+    if (SCALAR.has(attr.type)) {
+      if (!['json','blocks'].includes(attr.type) && typeof value === 'object')
+        issue('ожидался scalar, получен объект');
+      return canonical(value);
+    }
+    if (attr.type === 'media') {
+      const m = mediaIDs(value);
+      if (!m.ok) issue('нет media ID');
+      return m.ok ? m.value : { __invalidMedia: true };
+    }
+    if (attr.type === 'password') {
+      issue('password нельзя копировать напрямую');
+      return null;
+    }
+    if (attr.type === 'relation') {
+      if (mode === 'snapshot') return normalizeRelation(value);
+      if (mode === 'payload') {
+        if (attr.pluginOptions?.i18n?.localized === false &&
+            (value?.count > 0 || value?.documentId || value?.id ||
+              Array.isArray(value) && value.length))
+          issue('вложенная общая relation требует отдельной обработки');
+        deferred.push(fieldPath);
+      }
+      return undefined;
+    }
+    if (attr.type === 'component' || attr.type === 'dynamiczone') {
+      const one = (entry, uid, path, isDZ) => {
+        const model = state.components?.[uid];
+        if (!model?.attributes) {
+          issue('нет схемы компонента '+uid);
+          return { __unknownComponent: uid };
+        }
+        if (!isObject(entry)) {
+          issue('неверная структура компонента '+uid);
+          return { __invalidComponent: true };
+        }
+        const out = isDZ ? { __component: uid } : {};
+        for (const [name, subAttr] of Object.entries(model.attributes)) {
+          if (name === 'id' || SYSTEM.has(name)) continue;
+          const nested = Object.prototype.hasOwnProperty.call(entry,name)
+            ? entry[name] : undefined;
+          const normalized = normalizeValue(subAttr, nested, path+'.'+name,
+            mode, blockers, deferred);
+          if (normalized !== undefined) out[name] = normalized;
+        }
+        return out;
+      };
+      if (attr.type === 'component') {
+        if (typeof attr.component !== 'string') {
+          issue('отсутствует UID компонента');
+          return { __invalidComponentUID: true };
+        }
+        if (attr.repeatable) {
+          if (!Array.isArray(value)) {
+            issue('repeatable component не массив');
+            return { __invalidRepeatable: true };
+          }
+          return value.map((item,i)=>one(item,attr.component,fieldPath+'['+i+']',false));
+        }
+        if (!isObject(value)) {
+          issue('single component не объект');
+          return { __invalidSingle: true };
+        }
+        return one(value,attr.component,fieldPath,false);
+      }
+      if (!Array.isArray(value)) {
+        issue('Dynamic Zone не массив');
+        return { __invalidDynamicZone: true };
+      }
+      return value.map((item,i)=>{
+        const uid=item?.__component;
+        if (typeof uid !== 'string' || !attr.components?.includes(uid)) {
+          issue('неизвестный компонент Dynamic Zone: '+String(uid));
+          return { __invalidDZComponent: String(uid) };
+        }
+        return one(item,uid,fieldPath+'['+i+']',true);
+      });
+    }
+    issue('неподдержанный тип '+String(attr.type));
+    return { __unsupportedType: String(attr.type) };
+  }
+  function businessFields(detail, schema) {
+    const business={}, transferable={};
+    for (const [name,attr] of Object.entries(schema.attributes)) {
+      if (SYSTEM.has(name)||attr.type==='relation') continue;
+      const v=Object.prototype.hasOwnProperty.call(detail,name)
+        ?detail[name]:undefined;
+      business[name]=normalizeValue(attr,v,name,'snapshot',[],[]);
+      transferable[name]=normalizeValue(attr,v,name,'transfer',[],[]);
+    }
+    return { business:canonical(business), transferable:canonical(transferable) };
   }
   async function snapshot(schema) {
     const names = relations(schema);
@@ -268,7 +376,7 @@
         const entry = data[locale][publication];
         data[locale][publication] = entry ? {
           detail: entry,
-          business: businessFields(entry, schema),
+          ...businessFields(entry, schema),
           relations: await relationSnapshot(locale, publication, names)
         } : null;
       }
@@ -301,39 +409,19 @@
     return errors;
   }
   function buildPayload(schema, ru) {
-    const payload = { locale: 'kk' }, blockers = [];
-    for (const [name, attr] of Object.entries(schema.attributes)) {
-      if (SYSTEM.has(name)) continue;
-      if (attr.type === 'relation') continue; // localized relations: отдельно
-      if (!Object.prototype.hasOwnProperty.call(ru, name) || ru[name] === undefined) {
-        blockers.push('RU поле отсутствует: ' + name); continue;
+    const payload={locale:'kk'},blockers=[],deferred=[];
+    for(const [name,attr] of Object.entries(schema.attributes)){
+      if(SYSTEM.has(name))continue;
+      if(attr.type==='relation'){
+        if(attr.pluginOptions?.i18n?.localized===false)
+          blockers.push('Нелокализуемая relation: '+name);
+        else deferred.push(name);
+        continue;
       }
-      const value = ru[name];
-      if (attr.required && empty(value)) {
-        blockers.push('Обязательное поле RU пусто: ' + name); continue;
-      }
-      if (attr.type === 'uid') {
-        if (value == null || value === '') payload[name] = null;
-        else blockers.push('Непустой UID требует отдельной проверки: ' + name);
-      } else if (attr.type === 'password') {
-        blockers.push('Password нельзя переносить напрямую: ' + name);
-      } else if (attr.unique === true && isLocalized(attr) && !empty(value)) {
-        blockers.push('Локализуемое unique-поле: ' + name);
-      } else if (SCALAR.has(attr.type)) {
-        if (attr.type !== 'json' && value !== null && typeof value === 'object')
-          blockers.push('Неверный тип scalar: ' + name);
-        else payload[name] = value;
-      } else if (attr.type === 'media') {
-        const normalized = mediaIDs(value);
-        if (!normalized.ok) blockers.push('Нет media ID: ' + name);
-        else payload[name] = normalized.value;
-      } else if (attr.type === 'component' || attr.type === 'dynamiczone' || attr.type === 'blocks') {
-        if (value === null) payload[name] = null;
-        else if (Array.isArray(value) && !value.length) payload[name] = [];
-        else blockers.push('Непустое сложное поле ' + attr.type + ': ' + name);
-      } else blockers.push('Неизвестный тип ' + attr.type + ': ' + name);
+      const v=Object.prototype.hasOwnProperty.call(ru,name)?ru[name]:undefined;
+      payload[name]=normalizeValue(attr,v,name,'payload',blockers,deferred);
     }
-    return { payload, blockers };
+    return {payload,blockers,deferred};
   }
   async function membership() {
     const seen = new Set();
@@ -381,8 +469,13 @@
     createButton.disabled = true;
     try {
       show('GET: актуальная схема, связь DIOR.categories, RU/KK и все relations…');
-      const list = await get('/content-manager/content-types');
+      const [list, comps] = await Promise.all([
+        get('/content-manager/content-types'), get('/content-manager/components')
+      ]);
       const schema = list?.data?.find(x => x?.uid === UID);
+      if(!Array.isArray(comps?.data) || !comps.data.every(c=>c?.uid&&c?.attributes))
+        throw Error('Невозможно прочитать схемы компонентов');
+      state.components=Object.fromEntries(comps.data.map(c=>[c.uid,c]));
       if (!schema?.attributes || schema.pluginOptions?.i18n?.localized !== true)
         throw Error('Схема Category/i18n не подтверждена');
       const brand = await membership();
@@ -394,6 +487,9 @@
         blockers.push('KK уже существует; повторное создание запрещено');
       state.schema = schema; state.before = before; state.plan = plan;
       state.report.schemaFields = summarizeSchema(schema);
+      state.report.componentSchemas=Object.fromEntries(
+        Object.entries(state.components).map(([uid,c])=>[uid,{attributes:c.attributes}])
+      );
       state.report.before = before;
       state.report.preflight = {
         checkedAt: new Date().toISOString(), brand,
@@ -406,7 +502,7 @@
           .filter(([, attr]) => !attr.localized).length,
         requiredCount: Object.entries(state.report.schemaFields)
           .filter(([, attr]) => attr.required).length,
-        blockers, payload: plan.payload
+        blockers, deferredRelations: plan.deferred, payload: plan.payload
       };
       if (blockers.length) {
         fail('Preflight: ' + blockers.join(' | '));
@@ -420,7 +516,8 @@
         ', обязательных: ' + state.report.preflight.requiredCount +
         ', relations: ' + state.report.preflight.relationFields +
         '.\nSnapshot RU Draft/Published сохранён в журнале.' +
-        '\nНажатие кнопки создаст ровно один KK Draft. Публикации не будет.');
+        '\nDynamic Zone и вложенные items/media включены. Новые component id создаст Strapi.' +
+        '\nRelations — отдельно во втором проходе. Публикации не будет.');
     } catch (error) { fail('Preflight: ' + String(error.message || error)); }
     finally { state.running = false; }
   }
@@ -432,8 +529,13 @@
     state.running = true; createButton.disabled = true;
     try {
       show('GET: сверка актуального состояния перед PUT…');
-      const list = await get('/content-manager/content-types');
+      const [list, comps] = await Promise.all([
+        get('/content-manager/content-types'), get('/content-manager/components')
+      ]);
       const schema = list?.data?.find(x => x?.uid === UID);
+      const actual=Object.fromEntries((comps?.data||[]).map(c=>[c.uid,{attributes:c.attributes}]));
+      if(!Array.isArray(comps?.data) || !equal(actual,state.report.componentSchemas))
+        throw Error('Схемы компонентов изменились после Preflight');
       if (!schema?.attributes || !equal(schema.attributes, state.schema.attributes))
         throw Error('Схема Category изменилась после Preflight');
       const brand = await membership();
@@ -476,7 +578,7 @@
       if (after.kk.draft) {
         for (const [name, attr] of Object.entries(state.schema.attributes)) {
           if (SYSTEM.has(name) || attr.type === 'relation') continue;
-          if (!equal(before.ru.draft.business[name], after.kk.draft.business[name]))
+          if (!equal(before.ru.draft.transferable[name], after.kk.draft.transferable[name]))
             errors.push('KK поле не совпадает с RU: ' + name);
         }
         for (const [name, relation] of Object.entries(after.kk.draft.relations)) {
@@ -489,6 +591,7 @@
           (networkError || response?.message || 'unknown'));
       state.report.verification = {
         checkedAt: new Date().toISOString(), errors,
+        deferredRelations: state.plan.deferred,
         ruBeforeStatus: before.ru.draft.detail.status,
         ruAfterStatus: after.ru.draft?.detail?.status ?? null,
         ruPublishedBefore: before.ru.published?.detail?.publishedAt ?? null,
