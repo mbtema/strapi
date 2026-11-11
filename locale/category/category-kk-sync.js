@@ -54,7 +54,7 @@
     running: false, stage: 'checking', mode: null, schema: null, components: null, before: null, plan: null,
     attempted: false, getCount: 0,
     report: {
-      tool: 'dior-category-kk-sync', version: 1, readOnlyUntilConfirmation: true,
+      tool: 'dior-category-kk-sync', version: 2, readOnlyUntilConfirmation: true,
       uid: UID, documentId, brandDocumentId: BRAND_ID,
       startedAt: new Date().toISOString(), schemaFields: null, componentSchemas: null,
       preflight: null, before: null, after: null,
@@ -556,7 +556,7 @@
         'Дополнить KK Draft (1 PUT)' : 'Создать KK Draft (1 PUT)';
       show('Preflight пройден. Category входит в DIOR.categories (' + brand.total + ').' +
         (state.mode === 'repair' ?
-          '\\nПилот восстановления: KK Draft ID 12471, отличается только bitrix_id.' : '') +
+          '\nПилот восстановления: KK Draft ID 12471, отличается только bitrix_id.' : '') +
         '\nОбщих полей: ' + state.report.preflight.sharedCount +
         ', обязательных: ' + state.report.preflight.requiredCount +
         ', relations: ' + state.report.preflight.relationFields +
