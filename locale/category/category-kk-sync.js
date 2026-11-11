@@ -1,4 +1,5 @@
-// DIOR / Category RU -> KK. Один Category за запуск, только создание KK Draft.
+// DIOR / Category RU -> KK. Один Category за запуск; создание KK Draft
+// либо строго разрешённый пилот восстановления существующей KK.
 // RU Draft/Published + все relations сохраняются и сравниваются до/после PUT.
 // Публикация, пакетная запись, восстановление и автоматический повтор НЕ выполняются.
 (async () => {
@@ -7,6 +8,10 @@
   const BRAND_UID = 'api::brand.brand';
   const BRAND_ID = 'qw7sja6ffpbufvzub5maxyrl';
   const BRAND_FIELD = 'categories';
+  // Восстановление существующей KK разрешено только для проверенного ручного теста.
+  const REPAIR_ID = 'q7mspugwd41y45u566r3xyux';
+  const REPAIR_KK_ROW_ID = 12471;
+  const REPAIR_BITRIX_ID = 1902;
   const KEY = '__tmDiorCategoryKkSync';
   const PANEL_ID = 'tm-dior-category-kk-sync';
   const SYSTEM = new Set([
@@ -46,7 +51,7 @@
 
   document.getElementById(PANEL_ID)?.remove();
   const state = {
-    running: false, stage: 'checking', schema: null, components: null, before: null, plan: null,
+    running: false, stage: 'checking', mode: null, schema: null, components: null, before: null, plan: null,
     attempted: false, getCount: 0,
     report: {
       tool: 'dior-category-kk-sync', version: 1, readOnlyUntilConfirmation: true,
@@ -416,6 +421,28 @@
     compare('KK Published', a.kk.published, b.kk.published, errors, true);
     return errors;
   }
+  function pilotRepairBlockers(before) {
+    const blockers = [];
+    if (documentId !== REPAIR_ID) blockers.push('Сценарий восстановления разрешён только для Подарочных наборов');
+    const ru = before.ru.draft, kk = before.kk.draft;
+    if (!ru || !kk || before.kk.published) {
+      blockers.push('Нужны RU Draft и существующая неопубликованная KK Draft');
+      return blockers;
+    }
+    if (kk.detail.id !== REPAIR_KK_ROW_ID || kk.detail.locale !== 'kk' ||
+        kk.detail.publishedAt !== null)
+      blockers.push('KK Draft не совпадает с подтверждённой тестовой записью');
+    if (ru.detail.bitrix_id !== REPAIR_BITRIX_ID || kk.detail.bitrix_id !== null)
+      blockers.push('Состояние bitrix_id RU/KK отличается от ожидаемого 1902/null');
+    const changed = diff(ru.transferable, kk.transferable);
+    if (!equal(changed, ['bitrix_id']))
+      blockers.push('Неожиданные различия KK: ' + changed.join(', '));
+    for (const [name, relation] of Object.entries(kk.relations)) {
+      if (relation.total !== 0)
+        blockers.push('В KK уже есть relation ' + name + ', перенос отложен');
+    }
+    return blockers;
+  }
   function buildPayload(schema, ru) {
     const payload={locale:'kk'},blockers=[],deferred=[],warnings=[];
     for(const [name,attr] of Object.entries(schema.attributes)){
@@ -491,8 +518,11 @@
       const before = await snapshot(schema);
       const plan = buildPayload(schema, before.ru.draft.detail);
       const blockers = [...plan.blockers];
-      if (before.kk.draft || before.kk.published)
+      const repair = documentId === REPAIR_ID && !!before.kk.draft;
+      if (repair) blockers.push(...pilotRepairBlockers(before));
+      else if (before.kk.draft || before.kk.published)
         blockers.push('KK уже существует; повторное создание запрещено');
+      state.mode = repair ? 'repair' : 'create';
       state.schema = schema; state.before = before; state.plan = plan;
       state.report.schemaFields = summarizeSchema(schema);
       state.report.componentSchemas=Object.fromEntries(
@@ -504,6 +534,9 @@
         ruStatus: before.ru.draft.detail.status,
         ruPublished: !!before.ru.published,
         kkMissing: !before.kk.draft && !before.kk.published,
+        mode: state.mode,
+        kkChangedFields: before.kk.draft ?
+          diff(before.ru.draft.transferable, before.kk.draft.transferable) : [],
         fieldCount: Object.keys(state.report.schemaFields).length,
         relationFields: Object.keys(before.ru.draft.relations).length,
         sharedCount: Object.entries(state.report.schemaFields)
@@ -519,8 +552,11 @@
       }
       state.stage = 'ready';
       createButton.disabled = false;
-      createButton.textContent = 'Создать KK Draft (1 PUT)';
+      createButton.textContent = state.mode === 'repair' ?
+        'Дополнить KK Draft (1 PUT)' : 'Создать KK Draft (1 PUT)';
       show('Preflight пройден. Category входит в DIOR.categories (' + brand.total + ').' +
+        (state.mode === 'repair' ?
+          '\\nПилот восстановления: KK Draft ID 12471, отличается только bitrix_id.' : '') +
         '\nОбщих полей: ' + state.report.preflight.sharedCount +
         ', обязательных: ' + state.report.preflight.requiredCount +
         ', relations: ' + state.report.preflight.relationFields +
@@ -533,8 +569,10 @@
   }
   async function createOne() {
     if (state.running || state.stage !== 'ready') return;
-    if (!confirm('Создать ТОЛЬКО KK Draft для категории ' + documentId +
-      '?\nВсе текущие RU Draft/Published и relations будут повторно проверены перед PUT.'+
+    if (!confirm((state.mode === 'repair' ?
+      'ДОПОЛНИТЬ существующую KK Draft 12471' :
+      'СОЗДАТЬ только KK Draft') + ' для категории ' + documentId +
+      '?\nВсе RU Draft/Published, KK и relations будут повторно проверены перед PUT.'+
       '\nПосле PUT — проверка RU и KK. Без Publish, rollback и повторов.')) return;
     state.running = true; createButton.disabled = true;
     try {
@@ -557,13 +595,19 @@
       if (plan.blockers.length || !equal(plan.payload, state.plan.payload) ||
           !equal(plan.warnings, state.plan.warnings))
         throw Error('Payload изменился: ' + plan.blockers.join(' | '));
-      if (before.kk.draft || before.kk.published)
+      if (state.mode === 'repair') {
+        const issues = pilotRepairBlockers(before);
+        if (issues.length) throw Error('Восстановление KK запрещено: ' + issues.join(' | '));
+      } else if (before.kk.draft || before.kk.published) {
         throw Error('KK уже существует, PUT запрещён');
+      }
       state.report.write = { at: new Date().toISOString(),
+        mode: state.mode, existingKkId: before.kk.draft?.detail?.id ?? null,
         method: 'PUT', locale: 'kk', payload: plan.payload, attempted: false };
       state.attempted = true;
       state.report.write.attempted = true;
-      show('PUT: создаём KK Draft с полным снимком полей RU…');
+      show('PUT: ' + (state.mode === 'repair' ? 'дополняем' : 'создаём') +
+        ' KK Draft с полным снимком полей RU…');
       let response = null, networkError = null;
       try {
         response = await request('PUT',
@@ -584,7 +628,12 @@
       if (before.ru.published?.detail?.id !== after.ru.published?.detail?.id ||
           before.ru.published?.detail?.publishedAt !== after.ru.published?.detail?.publishedAt)
         errors.push('RU Published id/publishedAt изменились');
-      if (!after.kk.draft) errors.push('KK Draft не создана');
+      if (!after.kk.draft) errors.push('KK Draft отсутствует после PUT');
+      if (state.mode === 'repair' && after.kk.draft?.detail?.id !== REPAIR_KK_ROW_ID)
+        errors.push('KK Draft ID изменился после обновления');
+      if (state.mode === 'repair' &&
+          !equal(before.kk.draft?.relations, after.kk.draft?.relations))
+        errors.push('KK relations изменились при обновлении');
       if (after.kk.published) errors.push('KK опубликована без запроса');
       if (after.kk.draft) {
         for (const [name, attr] of Object.entries(state.schema.attributes)) {
@@ -608,13 +657,17 @@
         ruPublishedBefore: before.ru.published?.detail?.publishedAt ?? null,
         ruPublishedAfter: after.ru.published?.detail?.publishedAt ?? null,
         ruContentPreserved: !errors.some(x => x.startsWith('RU ')),
-        kkCreated: !!after.kk.draft
+        mode: state.mode,
+        kkCreated: state.mode === 'create' && !!after.kk.draft,
+        kkUpdated: state.mode === 'repair' && !!after.kk.draft &&
+          after.kk.draft.detail.id === REPAIR_KK_ROW_ID
       };
       if (errors.length) throw Error('Postflight: ' + errors.join(' | '));
       state.stage = 'complete';
       state.report.success = true;
       state.report.finishedAt = new Date().toISOString();
-      show('Готово: KK Draft создана, RU Draft/Published и relations сохранены.' +
+      show('Готово: KK Draft ' + (state.mode === 'repair' ? 'дополнена' : 'создана') +
+        ', RU Draft/Published и relations сохранены.' +
         '\nRU status: ' + before.ru.draft.detail.status + ' → ' +
         after.ru.draft.detail.status + '. Публикации НЕ было.' +
         '\nСкачан единый итоговый JSON.');
