@@ -18,6 +18,15 @@
 - **EXPERIMENT** — PoC/тест; не переносить в production автоматически.
 - **SUPERSEDED** — старый подход; хранится только чтобы не возвращаться к нему без причины.
 
+
+## CANONICAL — DIOR Category RU → KK (2026-11-11)
+
+- **Один инструмент:** `locale/category/category-kk-sync.js` в Console RU-карточки Brand DIOR (`qw7sja6ffpbufvzub5maxyrl`); читает все `DIOR.categories` с пагинацией, схемы Category/компонентов, RU Draft/Published и KK Draft/Published, шесть root relations по `documentId`, и наличие KK у связанных Category/Product/Brand. RU Draft — источник данных, RU Published — контроль сохранности.
+- **Порядок:** автоматический read-only scan → CSV/JSON → создание/восстановление отсутствующего или отличающегося KK Draft из RU (полный payload, пока без relations) → отдельно подтверждённый пилот **одного `Category.product.connect`** → только при успешном postflight последовательное additive добавление остальных недостающих root relations. Не отправлять `disconnect` и не публиковать. При невозможности сопоставить target KK (особенно Product) — review, не создавать Product и не заменять target RU. При любых сомнениях после PUT — STOP, `localStorage` unresolved, никогда не повторять автоматически.
+- **Проверки после каждой записи:** бизнес-поля RU Draft/Published, media, nested components/Dynamic Zone, все RU relation `documentId` и метаданные RU Published должны сохраниться; KK-контент должен соответствовать RU Draft, KK relations — ожидаемому exact set без дублей. Пересоздание внутренних component ID и статус RU `modified` допустимы при сохранении значений.
+- **HISTORICAL:** 2026-11-11 выполнены три live-пилота и массовый первый проход 52 KK Draft (HTTP 200, verified 52/52, 0 ошибок); всего 55 KK Draft, но root relations оставлены пустыми. В исходном снимке RU 999 записей relations на всех 55 Category. Контракт `Category.product.connect` в KK Draft через `PUT ?locale=kk` **пока подтверждён только на имитации API**, не на живой CMS; требуется один пробный Save и отчёт до массовых relation PUT.
+- Старые файлы `category-kk-dry-run.js`, `category-kk-batch.js`, `category-kk-relations-audit.js` удалены из repo после консолидации; их сохранённые CSV/JSON — только исторические результаты, не operational scripts.
+
 ---
 
 # 1. Stable project model
