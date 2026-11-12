@@ -965,7 +965,9 @@
     state.report.unresolved=journal();
     state.report.progress=savedProgress();
     console.error('[DIOR Pipeline] STOP:',reason);
-    render('СТОП: '+reason+'. Скачан полный JSON. Новых записей нет.');
+    const ruDamaged=state.report.operations.some(x=>x.ruDamaged);
+    render('СТОП: '+reason+'. Скачан полный JSON. Новых записей нет.'+
+      (ruDamaged?'\nRU повреждена: восстановление пока НЕ запускалось — recovery-контракт не проверен.':''));
     setAction('Скачать JSON повторно',downloadResult);
     downloadResult();
   }
@@ -1094,6 +1096,8 @@
       const pre=await allVersions(documentId);
       if (stateDifferences(current,pre).length)
         throw Error('Перед Publish KK состояние изменилось');
+      receipt.publishKeyCheck=await globalKeyCheck(pre.ru.draft.detail.key,
+        String(pre.ru.draft.detail.key)+'0',documentId);
       const payload=payloadContent(pre,'kk');
       current=await writeStep(documentId,'publish-kk','POST',
         '/content-manager/collection-types/'+CFG.productUid+'/'+documentId+
