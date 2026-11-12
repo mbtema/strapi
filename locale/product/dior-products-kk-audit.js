@@ -233,8 +233,8 @@
     return { total: p.total, pageCount: p.pageCount };
   }
 
-  async function relationList(uid, documentId, field, locale, status = 'draft') {
-    const entries = [];
+  async function relationList(uid, documentId, field, locale, status = 'draft', withEntries = false) {
+    const entries = [], rows = [];
     let page = 1, first = null;
     for (;;) {
       checkStop();
@@ -249,6 +249,7 @@
           throw Error('Relation ' + field + '/' + locale + ' без documentId (' + documentId + ')');
         }
         entries.push(row.documentId);
+        if (withEntries) rows.push({id:row.id,documentId:row.documentId,locale:row.locale||locale});
       }
       if (page >= p.pageCount || p.pageCount === 0) break;
       if (page >= CFG.maxPages) throw Error('Превышен лимит страниц relation ' + field);
@@ -257,7 +258,7 @@
     if (entries.length !== first.total || new Set(entries).size !== entries.length) {
       throw Error('Relation ' + field + '/' + locale + ' count/duplicate mismatch ' + documentId);
     }
-    return entries.sort();
+    return withEntries ? rows.sort((a,b)=>a.documentId.localeCompare(b.documentId)) : entries.sort();
   }
 
   async function brandProducts() {
@@ -449,13 +450,15 @@
     const data = await detail(CFG.productUid, documentId, locale, status);
     if (!data) return null;
     const pairs = await eachLimited(relationFields, CFG.relationWorkers, async field =>
-      [field, await relationList(CFG.productUid, documentId, field, locale, status)]);
+      [field, await relationList(CFG.productUid, documentId, field, locale, status, true)]);
     return {
+      relationEntries: Object.fromEntries(pairs),
       meta: { id: data.id, status: data.status, publishedAt: data.publishedAt ?? null,
         createdAt: data.createdAt, updatedAt: data.updatedAt },
       detail: data,
       fields: productFields(data, schema, components),
-      relations: Object.fromEntries(pairs)
+      relations: Object.fromEntries(pairs.map(([field,rows])=>
+        [field,rows.map(row=>row.documentId)]))
     };
   }
 
@@ -645,6 +648,67 @@
         row.plan.eligible = false; row.plan.ready = false; row.status = 'blocked';
       }
     }
+  }
+
+  async function filteredProductKey(key,locale,status) {
+    const matches = [], seen = new Set();
+    let page = 1, first = null;
+    while (page <= CFG.maxPages) {
+      const qs = new URLSearchParams({
+        locale, status, page:String(page), pageSize:String(CFG.pageSize)
+      });
+      qs.set('filters[key][$eq]',key);
+      const url = '/content-manager/collection-types/' + CFG.productUid + '?' + qs.toString();
+      const json = await request(url);
+      const rows = Array.isArray(json?.results) ? json.results : json?.data;
+      const pg = json?.pagination || json?.meta?.pagination;
+      if (!Array.isArray(rows) || !Number.isSafeInteger(pg?.total) ||
+          !Number.isSafeInteger(pg?.pageCount) ||
+          (first && (first.total!==pg.total || first.pageCount!==pg.pageCount))) {
+        throw Error('Не подтверждён фильтр уникальности key: ' + locale+'/'+status);
+      }
+      if (!first) first = {total:pg.total,pageCount:pg.pageCount};
+      for (const row of rows) {
+        const product = row?.attributes && !row.documentId ?
+          {...row.attributes,id:row.id} : row;
+        if (typeof product?.documentId !== 'string' ||
+            product?.key !== key || product?.locale !== locale ||
+            seen.has(product.documentId)) {
+          throw Error('Фильтр Product key вернул не тот товар/локаль или дубль');
+        }
+        seen.add(product.documentId);
+        matches.push(product.documentId);
+      }
+      if (page >= pg.pageCount || pg.pageCount === 0) break;
+      page++;
+    }
+    if (!first || page>CFG.maxPages || matches.length!==first.total)
+      throw Error('Неполная выборка по key: '+key);
+    return matches;
+  }
+
+  async function globalKeyCheck(ruKey,desiredKey,documentId) {
+    if (typeof ruKey !== 'string' || !ruKey ||
+        typeof desiredKey !== 'string' || desiredKey !== ruKey+'0') {
+      throw Error('Некорректный контракт формирования key');
+    }
+    // Положительный контроль доказывает, что фильтр действительно применяется.
+    const control = await filteredProductKey(ruKey,'ru','draft');
+    if (!control.includes(documentId)) {
+      throw Error('Не подтверждён CM фильтр по известному RU key: '+ruKey);
+    }
+    const checked = [];
+    for (const locale of ['ru','kk']) {
+      for (const status of ['draft','published']) {
+        const ids = await filteredProductKey(desiredKey,locale,status);
+        const foreign = ids.filter(id=>id!==documentId);
+        if (foreign.length) throw Error('Конфликт уникального key '+
+          desiredKey+' у '+locale+'/'+status+': '+foreign.join(','));
+        checked.push({locale,status,matches:ids});
+      }
+    }
+    return {at:new Date().toISOString(),ruKey,desiredKey,positiveControl:control,
+      checked,scope:'all Product via filtered Content Manager, ru/kk draft/published'};
   }
 
   function choosePilot() {
