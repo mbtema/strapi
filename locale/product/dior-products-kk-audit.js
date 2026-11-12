@@ -712,7 +712,10 @@
   }
 
   function choosePilot() {
-    const rows = state.report.products.filter(r => r?.plan?.ready && r.plan.eligible);
+    const skipped=new Set(state.report.skipped.map(x=>x.documentId));
+    const done=new Set(savedProgress().map(x=>x.id));
+    const rows = state.report.products.filter(r => r?.plan?.ready &&
+      r.plan.eligible && !skipped.has(r.documentId) && !done.has(r.documentId));
     rows.sort((a,b) => b.plan.modifications - a.plan.modifications ||
       b.plan.operationTypes.length - a.plan.operationTypes.length ||
       a.documentId.localeCompare(b.documentId));
@@ -1082,9 +1085,9 @@
     markProgress(documentId,receipt.types);
     return {verified:true,types:receipt.types,receipt};
   }
-  function setPendingState(label,handler) {
+  function setPendingState(message,handler,buttonLabel) {
     state.running=false;state.critical=false;state.stopped=false;
-    render(label);setAction(label.includes('пилот')?'Запустить пилот':'Применить проверенные',handler);
+    render(message);setAction(buttonLabel,handler);
   }
   async function runPilot() {
     if (state.running || journal()) {
@@ -1104,7 +1107,7 @@
       if (output.skipped) {
         state.report.skipped.push({documentId:candidate.documentId,...output});
         state.report.pilotCandidate=choosePilot();
-        setPendingState('Пилот пропущен: '+output.skipped+'. Выбран следующий кандидат.',runPilot);
+        setPendingState('Пилот пропущен: '+output.skipped+'. Выбран следующий кандидат.',runPilot,'Запустить пилот');
         return;
       }
       state.report.verifiedTypes=[...new Set([...state.report.verifiedTypes,...output.types])].sort();
@@ -1113,7 +1116,7 @@
         types:output.types,verified:true};
       state.report.progress=savedProgress();
       downloadResult();
-      setPendingState('Пилот проверен. Можно запустить только подтверждённые операции.',runBatch);
+      setPendingState('Пилот проверен. Можно запустить только подтверждённые операции.',runBatch,'Применить проверенные');
     } catch (error) {
       recordStop(String(error.message||error));
     }
@@ -1157,9 +1160,9 @@
         state.report.pilotCandidate={documentId:row.documentId,name:row.name,
           modifications:row.plan.modifications,types:row.plan.operationTypes,
           plannedActions:row.plan.actions};
-        setPendingState('Остались непроверенные операции. Подготовлен новый пилот.',runPilot);
+        setPendingState('Остались непроверенные операции. Подготовлен новый пилот.',runPilot,'Запустить пилот');
       } else {
-        setPendingState('Обработка завершена. Необработанные товары — в JSON.',runBatch);
+        setPendingState('Обработка завершена. Необработанные товары — в JSON.',runBatch,'Применить проверенные');
         setAction('Скачать JSON повторно',downloadResult);
       }
     } catch (error) {
@@ -1167,20 +1170,36 @@
     }
   }
 
-  function finish(complete, reason = null) {
-    state.running = false;
-    state.report.complete = complete;
-    state.report.failure = reason;
-    state.report.finishedAt = new Date().toISOString();
-    state.report.summary = summarize();
-    window.tmDiorProductsKkAudit = state.report;
-    actionButton.disabled = false;
-    actionButton.textContent = 'Скачать JSON повторно';
-    actionButton.onclick = downloadBackup;
-    render(complete ? 'Dry-run завершён. Полный backup JSON скачан. Записей не было.' :
-      'Dry-run прерван: ' + reason + '. Скачан неполный JSON.');
+  function finish(complete,reason=null) {
+    state.running=false;
+    state.report.complete=complete;state.report.failure=reason;
+    state.report.finishedAt=new Date().toISOString();
+    state.report.summary=summarize();
+    window.tmDiorProductsKkAudit=state.report;
+    if (!complete) {
+      render('Dry-run прерван: '+reason+'. Скачан неполный JSON.');
+      setAction('Скачать JSON повторно',downloadBackup);
+      downloadBackup();
+      return;
+    }
+    state.report.pilotCandidate=choosePilot();
+    state.report.plan.writesEnabled=!!state.report.pilotCandidate&&!journal();
+    state.report.writesEnabled=!!state.report.pilotCandidate&&!journal();
+    if (journal()) {
+      render('Dry-run готов, но есть unresolved журнал. Записи запрещены до ручного разбора.');
+      setAction('Скачать JSON повторно',downloadBackup);
+    } else if (state.report.pilotCandidate) {
+      const pilot=state.report.pilotCandidate;
+      render('Backup JSON скачан. Проверь файл.\nПилот: '+pilot.name+
+        '\n'+pilot.documentId+' · '+pilot.modifications+' изменений');
+      setAction('Запустить пилот',runPilot);
+    } else {
+      render('Dry-run готов. Доступных для пилота товаров нет.');
+      setAction('Скачать JSON повторно',downloadBackup);
+    }
     downloadBackup();
   }
+
 
   try {
     const [types, componentsResponse] = await Promise.all([
