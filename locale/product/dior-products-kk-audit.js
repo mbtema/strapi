@@ -463,6 +463,10 @@
           continue;
         }
         const expected = src[field] + '0';
+        if (attr.maxLength && expected.length > attr.maxLength) {
+          plan.blockers.push('Unique key превышает maxLength: ' + field);
+          continue;
+        }
         if (dst[field] !== expected) {
           plan.actions.push({ kind: 'unique_key', field, ru: src[field], kk: dst[field],
             expected, uniquenessCheck: 'global-check-required-before-write' });
@@ -473,8 +477,10 @@
       if (!equal(ru,kk)) {
         let type = attr.type;
         if (type === 'component' || type === 'dynamiczone') {
-          // Вложенные локализуемые значения должны сохраняться в KK.
-          // Автоматическая запись потребует проверенного recursive payload.
+          // Различия только в локализуемом вложенном контенте допустимы.
+          const issues = base.issues.filter(x => x.path === field ||
+            x.path.startsWith(field+'.') || x.path.startsWith(field+'['));
+          if (!issues.length) continue;
           plan.actions.push({ kind: 'nested_review', field, type, ru, kk });
           plan.blockers.push('Нужен безопасный payload вложенного поля: ' + field);
           continue;
@@ -575,12 +581,13 @@
   // Отсутствие KK у любого target из RU блокирует конкретный товар,
   // не запускает создание справочников и не влияет на другие товары.
   async function verifyRelationTargets(schema) {
+    // Проверяем ВСЕ связи RU, а не только missing для connect:
+    // даже уже совпадающая relation может вести на запись без KK Draft.
     const needs = new Map();
     for (const row of state.report.products.filter(Boolean)) {
-      for (const action of row.plan.actions.filter(a => a.kind === 'relation')) {
-        for (const id of action.connect) {
-          needs.set(action.target + '|' + id, {uid:action.target, id});
-        }
+      for (const [field, ids] of Object.entries(row.snapshots.ru.draft?.relations || {})) {
+        const uid = schema.attributes[field]?.target;
+        for (const id of ids) needs.set(uid + '|' + id, {uid, id});
       }
     }
     state.targetsTotal = needs.size;
@@ -593,10 +600,11 @@
     });
     state.targetCache = new Map(pairs);
     for (const row of state.report.products.filter(Boolean)) {
-      for (const action of row.plan.actions.filter(a => a.kind === 'relation')) {
-        for (const id of action.connect) {
-          if (!state.targetCache.get(action.target + '|' + id))
-            row.plan.missingTargets.push({field: action.field, target: action.target, documentId: id});
+      for (const [field, ids] of Object.entries(row.snapshots.ru.draft?.relations || {})) {
+        const uid = schema.attributes[field]?.target;
+        for (const id of ids) {
+          if (!state.targetCache.get(uid + '|' + id))
+            row.plan.missingTargets.push({field, target:uid, documentId:id});
         }
       }
       if (row.plan.missingTargets.length) {
