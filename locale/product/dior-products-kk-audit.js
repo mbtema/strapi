@@ -20,6 +20,7 @@
   const RESULT_NAME = 'dior-products-kk-result.json';
   const UNRESOLVED_KEY = 'tm:dior:product:unresolved:v1';
   const PROGRESS_KEY = 'tm:dior:product:progress:v1';
+  const STAGE_KEY = 'tm:dior:product:verified-stage:v1';
   const SCALARS = new Set(['string','text','richtext','email','enumeration','json','blocks',
     'integer','biginteger','float','decimal','boolean','date','time','datetime']);
   const PANEL_ID = 'tm-dior-products-kk-audit';
@@ -110,6 +111,12 @@
     try { return JSON.parse(localStorage.getItem(PROGRESS_KEY) || '[]'); }
     catch { return []; }
   };
+  const verifiedStage = () => {
+    try { return JSON.parse(localStorage.getItem(STAGE_KEY)||'null'); }
+    catch { return {reason:'Повреждён stage checkpoint'}; }
+  };
+  const saveStage = entry => localStorage.setItem(STAGE_KEY,JSON.stringify(entry));
+  const clearStage = () => localStorage.removeItem(STAGE_KEY);
   const setJournal = entry => localStorage.setItem(UNRESOLVED_KEY,JSON.stringify(entry));
   const clearJournal = () => localStorage.removeItem(UNRESOLVED_KEY);
   const markProgress = (id,types) => {
@@ -1002,6 +1009,11 @@
       throw error;
     } finally {state.critical=false;}
     entry.verified=true;
+    saveStage({documentId,phase,at:new Date().toISOString(),
+      after:{ru:{draft:versionSummary(after.ru.draft),
+        published:versionSummary(after.ru.published)},
+        kk:{draft:versionSummary(after.kk.draft),
+          published:versionSummary(after.kk.published)}}});
     clearJournal();
     return after;
   }
@@ -1020,13 +1032,20 @@
     if (journal()) throw Error('Осталась unresolved запись: '+journal().documentId);
     await schemaPreflight();
     const before=await allVersions(documentId);
-    if (!versionEqual(baseline.snapshots.ru.draft,before.ru.draft) ||
-        !versionEqual(baseline.snapshots.ru.published,before.ru.published)) {
+    const stage=verifiedStage();
+    if (stage && (stage.reason || stage.documentId!==documentId))
+      throw Error('Есть незавершённый подтверждённый этап другого товара: '+stage.documentId);
+    if (!versionEqual(baseline.snapshots.ru.draft,before.ru.draft))
       return {skipped:'source_changed'};
-    }
-    if (!versionEqual(baseline.snapshots.kk.draft,before.kk.draft) ||
-        !versionEqual(baseline.snapshots.kk.published,before.kk.published)) {
-      return {skipped:'target_changed'};
+    if (stage) {
+      if (stateDifferences(stage.after,before).length)
+        return {skipped:'verified_stage_changed'};
+    } else {
+      if (!versionEqual(baseline.snapshots.ru.published,before.ru.published))
+        return {skipped:'source_changed'};
+      if (!versionEqual(baseline.snapshots.kk.draft,before.kk.draft) ||
+          !versionEqual(baseline.snapshots.kk.published,before.kk.published))
+        return {skipped:'target_changed'};
     }
     const dependencies=await checkFreshDependencies(before);
     if (!dependencies.ok) return {skipped:'missing_kk_target',missing:dependencies.missing};
@@ -1040,7 +1059,7 @@
     state.report.execution=state.report.execution||[];
     state.report.execution.push(receipt);
     let current=before;
-    if (planned.needsSaveKk) {
+    if (planned.needsSaveKk && !stage) {
       const keyAction=planned.actions.find(x=>x.kind==='unique_key');
       if (keyAction) {
         receipt.keyCheck=await globalKeyCheck(before.ru.draft.detail.key,
@@ -1090,6 +1109,7 @@
     receipt.verified=true;receipt.finishedAt=new Date().toISOString();
     receipt.final=current;
     markProgress(documentId,receipt.types);
+    clearStage();
     return {verified:true,types:receipt.types,receipt};
   }
   function setPendingState(message,handler,buttonLabel) {
@@ -1153,6 +1173,12 @@
       '\nПри первой ошибке STOP. Продолжить?')) return;
     state.running=true;state.stopped=false;setAction('Остановить',stopRunning);
     try {
+      const stage=verifiedStage();
+      if (stage) {
+        if (stage.reason || !stage.documentId) throw Error('Некорректный checkpoint');
+        const recovered=await oneProduct(stage.documentId,false);
+        if (!recovered.verified) throw Error('Не удалось продолжить подтверждённый этап '+stage.documentId);
+      }
       const already=savedProgress();
       state.report.checkpointVerifications=[];
       for (const verified of already) {
