@@ -1,6 +1,6 @@
-// DIOR Product RU → KK: единый pipeline. Этап 1: read-only dry-run + полный backup.
+// DIOR Product RU → KK: единый pipeline, read-only preflight и контролируемые записи.
 // Запуск: Strapi Admin -> RU-карточка Brand DIOR -> DevTools Console.
-// Этап 1: только GET, никаких Save/Publish/восстановлений. Backup до любых записей.
+// Все PUT/POST только по ручному запуску, без retry. Повреждение RU: STOP, recovery отдельно.
 (async () => {
   'use strict';
   const CFG = {
@@ -17,6 +17,9 @@
   };
   const KEY = '__tmDiorProductsKkAudit';
   const BACKUP_NAME = 'dior-products-kk-backup.json';
+  const RESULT_NAME = 'dior-products-kk-result.json';
+  const UNRESOLVED_KEY = 'tm:dior:product:unresolved:v1';
+  const PROGRESS_KEY = 'tm:dior:product:progress:v1';
   const SCALARS = new Set(['string','text','richtext','email','enumeration','json','blocks',
     'integer','biginteger','float','decimal','boolean','date','time','datetime']);
   const PANEL_ID = 'tm-dior-products-kk-audit';
@@ -41,6 +44,10 @@
     return;
   }
 
+  const prior = window.tmDiorProductsKkAudit;
+  const reuse = prior?.complete === true && prior?.brandDocumentId === CFG.brandDocumentId &&
+    prior?.products?.length > 0 && prior?.rawSchemas?.product?.attributes &&
+    [3,4].includes(prior.version) && prior?.mode !== 'result';
   document.getElementById(PANEL_ID)?.remove();
   const node = (tag, value) => {
     const el = document.createElement(tag);
@@ -53,7 +60,7 @@
     'width:min(400px,calc(100vw - 32px));max-height:78vh;overflow:auto;' +
     'background:#1e1e32;color:#fff;border:1px solid #7770bf;border-radius:10px;' +
     'padding:14px;box-shadow:0 8px 30px #0009;font:13px/1.5 system-ui';
-  const title = node('strong', 'DIOR · Dry-run RU → KK');
+  const title = node('strong', 'DIOR · RU → KK · Pipeline');
   const info = node('div', 'Читаем схему и список товаров…');
   info.style.cssText = 'margin:9px 0 8px;overflow-wrap:anywhere';
   const barTrack = node('div');
@@ -73,24 +80,43 @@
   document.body.append(panel);
 
   const state = {
-    running: true, stopped: false, phase: 'init', processed: 0, total: 0,
+    running: true, stopped: false, critical: false, phase: 'init', processed: 0, total: 0,
     getCount: 0, getRetries: 0, targetsDone: 0, targetsTotal: 0,
     started: Date.now(), schema: null, components: null, targetCache: new Map(),
     report: {
-      tool: 'dior-products-kk-pipeline', version: 3, mode: 'dry-run',
+      tool: 'dior-products-kk-pipeline', version: 4, mode: 'dry-run',
       brandDocumentId: CFG.brandDocumentId, brandRelation: CFG.brandField,
       source: 'ru/draft', target: 'kk/draft',
       startedAt: new Date().toISOString(), finishedAt: null,
       complete: false, failure: null, summary: null, schema: [],
       rawSchemas: null, plan: null, pilotCandidate: null,
-      writesEnabled: false, backupKind: 'pre-write-complete', products: []
+      writesEnabled: false, backupKind: 'pre-write-complete', products: [],
+      operations: [], verifiedTypes: [], skipped: [], progress: [],
+      safety: {recoveryVerified: false, autoRecoveryEnabled: false,
+        globalKeyUniquenessVerified: false}
     }
   };
   window[KEY] = state;
   window.tmDiorProductsKkAudit = state.report;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const checkStop = () => {
-    if (state.stopped) throw Error('Остановлено пользователем');
+    if (state.stopped && !state.critical) throw Error('Остановлено пользователем');
+  };
+  const journal = () => {
+    try { return JSON.parse(localStorage.getItem(UNRESOLVED_KEY) || 'null'); }
+    catch { return {reason:'Повреждён unresolved journal'}; }
+  };
+  const savedProgress = () => {
+    try { return JSON.parse(localStorage.getItem(PROGRESS_KEY) || '[]'); }
+    catch { return []; }
+  };
+  const setJournal = entry => localStorage.setItem(UNRESOLVED_KEY,JSON.stringify(entry));
+  const clearJournal = () => localStorage.removeItem(UNRESOLVED_KEY);
+  const markProgress = (id,types) => {
+    const rows = savedProgress().filter(row => row.id !== id);
+    rows.push({id,types,at:new Date().toISOString()});
+    localStorage.setItem(PROGRESS_KEY,JSON.stringify(rows));
+    state.report.progress = rows;
   };
   const count = status => state.report.products.filter(p => p?.status === status).length;
   const render = message => {
@@ -102,14 +128,21 @@
     barTrack.setAttribute('aria-valuemax', String(state.total || 1));
     stats.textContent = state.total ?
       'Товары ' + state.processed + '/' + state.total +
-        ' · OK ' + count('ok') + ' · отличия ' + count('diff') +
+        ' · OK ' + count('ok') + ' · ожидают ' + count('pending') +
         (state.targetsTotal ? ' · связи ' + state.targetsDone + '/' + state.targetsTotal : '') :
       'Загружаем список товаров…';
   };
-  actionButton.onclick = () => {
+  const stopRunning = () => {
     state.stopped = true;
     actionButton.disabled = true;
-    render('Останавливаем после текущих запросов…');
+    render(state.critical ? 'Остановка после обязательной проверки текущей записи…' :
+      'Останавливаем после текущих запросов…');
+  };
+  actionButton.onclick = stopRunning;
+  const setAction = (label,handler) => {
+    actionButton.disabled = false;
+    actionButton.textContent = label;
+    actionButton.onclick = handler;
   };
   const canonical = value => {
     if (Array.isArray(value)) return value.map(canonical);
