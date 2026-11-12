@@ -766,6 +766,407 @@
     document.body.append(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),15000);
   }
+
+  function versionSummary(item) {
+    return item && {
+      fields:item.fields, relations:item.relations,
+      meta:item.meta
+    };
+  }
+  async function allVersions(documentId) {
+    const fields = Object.entries(state.schema.attributes).filter(([field,a])=>
+      !SYSTEM.has(field) && a.type === 'relation').map(([field])=>field);
+    const [ruDraft,ruPublished,kkDraft,kkPublished]=await Promise.all([
+      snapshotVersion(documentId,'ru','draft',state.schema,state.components,fields),
+      snapshotVersion(documentId,'ru','published',state.schema,state.components,fields),
+      snapshotVersion(documentId,'kk','draft',state.schema,state.components,fields),
+      snapshotVersion(documentId,'kk','published',state.schema,state.components,fields)
+    ]);
+    return {ru:{draft:ruDraft,published:ruPublished},
+      kk:{draft:kkDraft,published:kkPublished}};
+  }
+  function stateDifferences(a,b) {
+    const bad=[];
+    for (const locale of ['ru','kk']) for (const status of ['draft','published']) {
+      if (!versionEqual(a[locale][status],b[locale][status]))
+        bad.push(locale+'/'+status);
+    }
+    return bad;
+  }
+  function payloadContent(before,locale) {
+    const ru=before.ru.draft?.detail, kk=before.kk.draft?.detail;
+    if (!ru || !kk) throw Error('Нет RU/KK Draft для полного payload');
+    const payload={locale};
+    for (const [field,attr] of Object.entries(state.schema.attributes)) {
+      if (SYSTEM.has(field) || attr.type === 'relation') continue;
+      if (attr.type === 'component' || attr.type === 'dynamiczone') {
+        const a=ru[field],b=kk[field];
+        if (Array.isArray(a) && !a.length && Array.isArray(b) && !b.length) {
+          payload[field]=[]; continue;
+        }
+        if (a == null && b == null) {payload[field]=null;continue;}
+        throw Error('Непроверенный непустой component/DZ: '+field);
+      }
+      let value;
+      if (field === 'key' && attr.unique === true) {
+        value = locale === 'kk' ? String(ru[field])+'0' : ru[field];
+      } else if (attr.type === 'media') {
+        value = normalizeMedia(ru[field]);
+        if (Array.isArray(value) ? value.some(id=>idOfMedia(id)==null) :
+            value!=null && idOfMedia(value)==null) {
+          throw Error('Media без числовых ID: '+field);
+        }
+      } else if (SCALARS.has(attr.type)) {
+        value = locale === 'kk' && flagLocalized(attr) ? kk[field] : ru[field];
+      } else {
+        throw Error('Неподдерживаемое поле payload: '+field+'/'+attr.type);
+      }
+      if (value === undefined) throw Error('Отсутствует поле '+field+' в '+locale+' payload');
+      if (attr.required && !present(value))
+        throw Error('Required поле пусто: '+field+'/'+locale);
+      payload[field]=value;
+    }
+    return payload;
+  }
+  function expectedKkFields(before,payload) {
+    const expected={...before.kk.draft.fields};
+    for (const [field,value] of Object.entries(payload)) {
+      if (field!=='locale' && state.schema.attributes[field]?.type!=='relation')
+        expected[field]=canonical(value);
+    }
+    return expected;
+  }
+  async function checkFreshDependencies(before) {
+    const checked=[];
+    for (const [field,ids] of Object.entries(before.ru.draft.relations)) {
+      const attr=state.schema.attributes[field];
+      for (const id of ids) {
+        const target=await detail(attr.target,id,'kk','draft');
+        if (!Number.isInteger(target?.id) || target.id<=0) {
+          return {ok:false,missing:{field,uid:attr.target,documentId:id}};
+        }
+        checked.push({field,documentId:id,numericId:target.id});
+      }
+    }
+    return {ok:true,checked};
+  }
+  async function payloadRelations(before,plan,payload) {
+    for (const action of plan.actions.filter(x=>x.kind==='relation')) {
+      const connect=[],disconnect=[];
+      for (const documentId of action.connect) {
+        const entity=await detail(action.target,documentId,'kk','draft');
+        if (!Number.isInteger(entity?.id) || entity.id<=0)
+          throw Error('Отсутствует KK target для connect '+action.field+':'+documentId);
+        connect.push({id:entity.id,documentId,locale:'kk'});
+      }
+      const attached=before.kk.draft.relationEntries?.[action.field];
+      if (!Array.isArray(attached))
+        throw Error('Не подтверждены полные KK relation entries: '+action.field);
+      for (const documentId of action.disconnect) {
+        const target=attached.find(x=>x.documentId===documentId);
+        if (!Number.isInteger(target?.id) || target.id<=0)
+          throw Error('Нет numeric ID для disconnect '+action.field+':'+documentId);
+        disconnect.push({id:target.id,documentId,locale:'kk'});
+      }
+      payload[action.field]={connect,disconnect};
+    }
+    return payload;
+  }
+  function assertRuProtected(before,after,what) {
+    const changed=[];
+    for (const status of ['draft','published']) {
+      if (!versionEqual(before.ru[status],after.ru[status]))
+        changed.push('RU '+status);
+    }
+    if (changed.length) {
+      const error=Error(what+': потеря данных '+changed.join(','));
+      error.ruDamaged=true;
+      throw error;
+    }
+  }
+  function assertKKDraftExpected(after,expectedFields,expectedRelations) {
+    if (!after.kk.draft) throw Error('KK Draft исчезла');
+    if (!equal(after.kk.draft.fields,expectedFields))
+      throw Error('KK Draft бизнес-поля не соответствуют ожидаемому snapshot');
+    if (!equal(after.kk.draft.relations,expectedRelations))
+      throw Error('KK Draft relations не совпадают с RU');
+  }
+  function verifyAfterSave(before,after,payload) {
+    assertRuProtected(before,after,'Save KK');
+    if (!versionEqual(before.kk.published,after.kk.published))
+      throw Error('Save KK неожиданно изменил KK Published');
+    assertKKDraftExpected(after,expectedKkFields(before,payload),before.ru.draft.relations);
+  }
+  function verifyAfterPublish(before,after,locale) {
+    if (locale==='ru') {
+      if (!versionEqual(before.ru.draft,after.ru.draft))
+        throw Error('Publish RU изменил RU Draft');
+      if (!versionEqual(after.ru.draft,after.ru.published))
+        throw Error('RU Published не совпадает с RU Draft');
+      if (!versionEqual(before.kk.draft,after.kk.draft) ||
+          !versionEqual(before.kk.published,after.kk.published))
+        throw Error('Publish RU изменил KK');
+    } else {
+      assertRuProtected(before,after,'Publish KK');
+      if (!versionEqual(before.kk.draft,after.kk.draft))
+        throw Error('Publish KK изменил KK Draft');
+      if (!versionEqual(after.kk.draft,after.kk.published))
+        throw Error('KK Published не соответствует KK Draft');
+    }
+  }
+  async function schemaPreflight() {
+    const [types,componentsResponse] = await Promise.all([
+      request('/content-manager/content-types'),
+      request('/content-manager/components')
+    ]);
+    const schema=types?.data?.find(x=>x.uid===CFG.productUid);
+    if (!schema?.attributes || !equal(schema.attributes,state.schema.attributes) ||
+        !equal(componentsResponse?.data,state.report.rawSchemas.components))
+      throw Error('Схемы Product/компонентов изменились после backup');
+  }
+  function safeReadReport() {
+    const p=state.report;
+    return {
+      ...p,mode:p.mode,
+      products:p.products.filter(Boolean),
+      sourceBackup:{file:BACKUP_NAME,at:p.startedAt}
+    };
+  }
+  function downloadResult() {
+    const output=safeReadReport();
+    const u=URL.createObjectURL(new Blob([JSON.stringify(output,null,2)],
+      {type:'application/json;charset=utf-8'}));
+    const a=node('a');
+    a.href=u;a.download=RESULT_NAME;document.body.append(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(u),15000);
+  }
+  function recordStop(reason) {
+    state.running=false;state.critical=false;
+    state.report.mode='result';state.report.executionFailure=reason;
+    state.report.stoppedAt=new Date().toISOString();
+    state.report.unresolved=journal();
+    state.report.progress=savedProgress();
+    console.error('[DIOR Pipeline] STOP:',reason);
+    render('СТОП: '+reason+'. Скачан полный JSON. Новых записей нет.');
+    setAction('Скачать JSON повторно',downloadResult);
+    downloadResult();
+  }
+  async function writeStep(documentId,phase,method,url,payload,before,verify) {
+    if (journal()) throw Error('Есть unresolved операция: сначала ручной разбор журнала');
+    const entry={documentId,phase,method,url,at:new Date().toISOString(),
+      attempted:false,verified:false,
+      payload, snapshots:{before}, errors:[]};
+    state.report.operations.push(entry);
+    setJournal({documentId,phase,method,at:entry.at,reason:'Результат записи не подтверждён'});
+    entry.attempted=true;
+    state.critical=true;
+    render('Запись '+phase+' '+documentId+' и обязательная GET-проверка…');
+    let response=null,networkError=null;
+    try {
+      const r=await fetch(url,{
+        method,credentials:'include',cache:'no-store',
+        headers:{Authorization:'Bearer '+token,Accept:'application/json',
+          'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+      const body=await r.text();
+      let data=null;
+      try{data=body?JSON.parse(body):null;}catch{/* Неоднозначный результат */ }
+      response={status:r.status,ok:r.ok,message:data?.error?.message||body.slice(0,250)};
+    } catch (error) {networkError=String(error.message||error);}
+    entry.response=response||{status:'NETWORK',ok:false,message:networkError};
+    let after;
+    try {after=await allVersions(documentId);}
+    catch (error) {
+      entry.verificationError=String(error.message||error);
+      throw Error('Невозможно прочитать postflight '+phase+': '+entry.verificationError);
+    }
+    entry.snapshots.after=after;
+    try {
+      verify(before,after);
+      if (!response?.ok || networkError)
+        throw Error('Неоднозначный HTTP/NETWORK '+phase+': '+entry.response.message);
+    } catch (error) {
+      entry.errors.push(String(error.message||error));
+      entry.ruDamaged=!!error.ruDamaged;
+      throw error;
+    } finally {state.critical=false;}
+    entry.verified=true;
+    clearJournal();
+    return after;
+  }
+  function requiredTypes(plan) {
+    const types=[...plan.operationTypes];
+    if (plan.needPublishRu) types.push('publish:ru');
+    if (plan.needPublishKk) types.push('publish:kk');
+    return [...new Set(types)].sort();
+  }
+  function baselineRow(documentId) {
+    return state.report.products.find(row=>row?.documentId===documentId);
+  }
+  async function oneProduct(documentId,pilot=false) {
+    const baseline=baselineRow(documentId);
+    if (!baseline?.plan?.eligible) return {skipped:'blocked'};
+    if (journal()) throw Error('Осталась unresolved запись: '+journal().documentId);
+    await schemaPreflight();
+    const before=await allVersions(documentId);
+    if (!versionEqual(baseline.snapshots.ru.draft,before.ru.draft) ||
+        !versionEqual(baseline.snapshots.ru.published,before.ru.published)) {
+      return {skipped:'source_changed'};
+    }
+    if (!versionEqual(baseline.snapshots.kk.draft,before.kk.draft) ||
+        !versionEqual(baseline.snapshots.kk.published,before.kk.published)) {
+      return {skipped:'target_changed'};
+    }
+    const dependencies=await checkFreshDependencies(before);
+    if (!dependencies.ok) return {skipped:'missing_kk_target',missing:dependencies.missing};
+    const planned=baseline.plan;
+    if (!planned.ready) return {skipped:'verified'};
+    if (!pilot && requiredTypes(planned).some(x=>!state.report.verifiedTypes.includes(x)))
+      return {skipped:'untested_operation',types:requiredTypes(planned)};
+    const receipt={documentId,name:baseline.name,pilot,at:new Date().toISOString(),
+      types:requiredTypes(planned),plannedActions:planned.actions,
+      baseline:before,steps:[],verified:false};
+    state.report.execution=state.report.execution||[];
+    state.report.execution.push(receipt);
+    let current=before;
+    if (planned.needsSaveKk) {
+      const keyAction=planned.actions.find(x=>x.kind==='unique_key');
+      if (keyAction) {
+        receipt.keyCheck=await globalKeyCheck(before.ru.draft.detail.key,
+          keyAction.expected,documentId);
+        state.report.safety.globalKeyUniquenessVerified=true;
+      }
+      const payload=await payloadRelations(current,planned,payloadContent(current,'kk'));
+      const url='/content-manager/collection-types/'+CFG.productUid+'/'+documentId+'?locale=kk';
+      const actualBefore=await allVersions(documentId);
+      if (stateDifferences(current,actualBefore).length)
+        return {skipped:'preflight_changed'};
+      current=await writeStep(documentId,'save-kk','PUT',url,payload,actualBefore,
+        (pre,post)=>verifyAfterSave(pre,post,payload));
+      receipt.steps.push('save-kk');
+      checkStop();
+    }
+    // Даже если Save не нужен, Published сравниваем с последним Draft.
+    if (!versionEqual(current.ru.draft,current.ru.published)) {
+      const pre=await allVersions(documentId);
+      if (stateDifferences(current,pre).length)
+        throw Error('Перед Publish RU состояние изменилось');
+      const payload=payloadContent(pre,'ru');
+      current=await writeStep(documentId,'publish-ru','POST',
+        '/content-manager/collection-types/'+CFG.productUid+'/'+documentId+
+          '/actions/publish?locale=ru',payload,pre,
+        (a,b)=>verifyAfterPublish(a,b,'ru'));
+      receipt.steps.push('publish-ru');
+      checkStop();
+    }
+    if (!versionEqual(current.kk.draft,current.kk.published)) {
+      const pre=await allVersions(documentId);
+      if (stateDifferences(current,pre).length)
+        throw Error('Перед Publish KK состояние изменилось');
+      const payload=payloadContent(pre,'kk');
+      current=await writeStep(documentId,'publish-kk','POST',
+        '/content-manager/collection-types/'+CFG.productUid+'/'+documentId+
+          '/actions/publish?locale=kk',payload,pre,
+        (a,b)=>verifyAfterPublish(a,b,'kk'));
+      receipt.steps.push('publish-kk');
+      checkStop();
+    }
+    if (!versionEqual(current.ru.draft,current.ru.published) ||
+        !versionEqual(current.kk.draft,current.kk.published) ||
+        !equal(current.ru.draft.relations,current.kk.draft.relations)) {
+      throw Error('Финальная сверка Published/relations не выполнена');
+    }
+    receipt.verified=true;receipt.finishedAt=new Date().toISOString();
+    receipt.final=current;
+    markProgress(documentId,receipt.types);
+    return {verified:true,types:receipt.types,receipt};
+  }
+  function setPendingState(label,handler) {
+    state.running=false;state.critical=false;state.stopped=false;
+    render(label);setAction(label.includes('пилот')?'Запустить пилот':'Применить проверенные',handler);
+  }
+  async function runPilot() {
+    if (state.running || journal()) {
+      if (journal())render('СТОП: unresolved журнал, записи запрещены');
+      return;
+    }
+    const candidate=state.report.pilotCandidate;
+    if (!candidate) return;
+    const description=candidate.name+'\n'+candidate.documentId+
+      '\nИзменений: '+candidate.modifications+'\nТипы: '+candidate.types.join(', ');
+    if (!confirm('Подтверждаю, что полный '+BACKUP_NAME+' сохранён на диске.'+
+      '\n\nЗапустить пилот ОДНОГО товара?\n'+description+
+      '\n\nПри подозрении на потерю RU — STOP; авто-recovery ещё не проверен.')) return;
+    state.running=true;state.stopped=false;setAction('Остановить',stopRunning);
+    try {
+      const output=await oneProduct(candidate.documentId,true);
+      if (output.skipped) {
+        state.report.skipped.push({documentId:candidate.documentId,...output});
+        state.report.pilotCandidate=choosePilot();
+        setPendingState('Пилот пропущен: '+output.skipped+'. Выбран следующий кандидат.',runPilot);
+        return;
+      }
+      state.report.verifiedTypes=[...new Set([...state.report.verifiedTypes,...output.types])].sort();
+      state.report.mode='pilot-verified';
+      state.report.pilotResult={documentId:candidate.documentId,at:new Date().toISOString(),
+        types:output.types,verified:true};
+      state.report.progress=savedProgress();
+      downloadResult();
+      setPendingState('Пилот проверен. Можно запустить только подтверждённые операции.',runBatch);
+    } catch (error) {
+      recordStop(String(error.message||error));
+    }
+  }
+  async function runBatch() {
+    if (state.running || journal() || !state.report.pilotResult?.verified) return;
+    if (!confirm('Последовательная обработка только проверенных операций.'+
+      '\nНепроверенные типы и изменённые товары будут пропущены.'+
+      '\nПри первой ошибке STOP. Продолжить?')) return;
+    state.running=true;state.stopped=false;setAction('Остановить',stopRunning);
+    try {
+      const rows=state.report.products.filter(row=>row?.plan?.ready && row.plan.eligible &&
+        row.documentId!==state.report.pilotResult.documentId);
+      for (let i=0;i<rows.length;i++) {
+        checkStop();
+        const row=rows[i];
+        if (savedProgress().some(p=>p.id===row.documentId)) continue;
+        const needed=requiredTypes(row.plan);
+        if (needed.some(x=>!state.report.verifiedTypes.includes(x))) {
+          state.report.skipped.push({documentId:row.documentId,
+            reason:'untested_operation',types:needed.filter(x=>!state.report.verifiedTypes.includes(x))});
+          continue;
+        }
+        render('Проверяем товар '+(i+1)+'/'+rows.length+' · '+row.name);
+        const output=await oneProduct(row.documentId);
+        if (output.skipped)
+          state.report.skipped.push({documentId:row.documentId,reason:output.skipped,
+            missing:output.missing||null});
+        await sleep(200);
+      }
+      state.report.mode='batch-finished';state.report.progress=savedProgress();
+      downloadResult();
+      const remaining=state.report.products.filter(r=>r?.plan?.ready && r.plan.eligible &&
+        !savedProgress().some(p=>p.id===r.documentId) &&
+        requiredTypes(r.plan).some(x=>!state.report.verifiedTypes.includes(x)));
+      remaining.sort((a,b)=>b.plan.modifications-a.plan.modifications ||
+        b.plan.operationTypes.length-a.plan.operationTypes.length ||
+        a.documentId.localeCompare(b.documentId));
+      if (remaining.length) {
+        const row=remaining[0];
+        state.report.pilotCandidate={documentId:row.documentId,name:row.name,
+          modifications:row.plan.modifications,types:row.plan.operationTypes,
+          plannedActions:row.plan.actions};
+        setPendingState('Остались непроверенные операции. Подготовлен новый пилот.',runPilot);
+      } else {
+        setPendingState('Обработка завершена. Необработанные товары — в JSON.',runBatch);
+        setAction('Скачать JSON повторно',downloadResult);
+      }
+    } catch (error) {
+      recordStop(String(error.message||error));
+    }
+  }
+
   function finish(complete, reason = null) {
     state.running = false;
     state.report.complete = complete;
