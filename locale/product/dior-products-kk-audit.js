@@ -936,6 +936,13 @@
     };
   }
   function downloadResult() {
+    state.report.runtimeSummary={
+      getRequests:state.getCount,getRetries:state.getRetries,
+      writesAttempted:state.report.operations?.length||0,
+      writesVerified:state.report.operations?.filter(x=>x.verified).length||0,
+      productsVerified:savedProgress().length,
+      productsSkipped:state.report.skipped?.length||0
+    };
     const output=safeReadReport();
     const u=URL.createObjectURL(new Blob([JSON.stringify(output,null,2)],
       {type:'application/json;charset=utf-8'}));
@@ -1121,6 +1128,24 @@
       recordStop(String(error.message||error));
     }
   }
+  async function verifyCompletedFromCheckpoint(documentId) {
+    const original=baselineRow(documentId);
+    if (!original?.snapshots.ru.draft) throw Error('Checkpoint без RU baseline '+documentId);
+    const now=await allVersions(documentId);
+    if (!versionEqual(original.snapshots.ru.draft,now.ru.draft))
+      throw Error('RU Draft обработанного товара изменён: '+documentId);
+    if (!versionEqual(now.ru.draft,now.ru.published))
+      throw Error('RU Published обработанного товара устарела: '+documentId);
+    if (!versionEqual(now.kk.draft,now.kk.published))
+      throw Error('KK Published обработанного товара устарела: '+documentId);
+    if (!equal(now.ru.draft.relations,now.kk.draft.relations))
+      throw Error('Связи обработанного товара расходятся: '+documentId);
+    const desired=expectedKkFields(now,payloadContent(now,'kk'));
+    if (!equal(now.kk.draft.fields,desired))
+      throw Error('KK поля обработанного товара расходятся: '+documentId);
+    return {documentId,verified:true,at:new Date().toISOString()};
+  }
+
   async function runBatch() {
     if (state.running || journal() || !state.report.pilotResult?.verified) return;
     if (!confirm('Последовательная обработка только проверенных операций.'+
@@ -1128,6 +1153,13 @@
       '\nПри первой ошибке STOP. Продолжить?')) return;
     state.running=true;state.stopped=false;setAction('Остановить',stopRunning);
     try {
+      const already=savedProgress();
+      state.report.checkpointVerifications=[];
+      for (const verified of already) {
+        checkStop();
+        const result=await verifyCompletedFromCheckpoint(verified.id);
+        state.report.checkpointVerifications.push(result);
+      }
       const rows=state.report.products.filter(row=>row?.plan?.ready && row.plan.eligible &&
         row.documentId!==state.report.pilotResult.documentId);
       for (let i=0;i<rows.length;i++) {
