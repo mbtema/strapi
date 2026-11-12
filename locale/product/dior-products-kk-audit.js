@@ -46,7 +46,7 @@
   const panel = node('section');
   panel.id = PANEL_ID;
   panel.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483640;' +
-    'width:min(480px,calc(100vw - 32px));max-height:78vh;overflow:auto;' +
+    'width:min(400px,calc(100vw - 32px));max-height:78vh;overflow:auto;' +
     'background:#1e1e32;color:#fff;border:1px solid #7770bf;border-radius:10px;' +
     'padding:14px;box-shadow:0 8px 30px #0009;font:13px/1.5 system-ui';
   const title = node('strong', 'DIOR · Аудит товаров RU / KK');
@@ -534,6 +534,8 @@
         productSchema.pluginOptions?.i18n?.localized !== true) {
       throw Error('Не подтверждены схемы Brand.products или локализуемого Product');
     }
+    const brand = await detail(CFG.brandUid, CFG.brandDocumentId, 'ru');
+    if (!brand) throw Error('RU Brand DIOR не найден');
     const components = Object.fromEntries(componentsList.map(x => [x.uid, x]));
     state.report.schema = nestedSchemaLines(productSchema.attributes, components, '');
     const relationFields = Object.entries(productSchema.attributes)
