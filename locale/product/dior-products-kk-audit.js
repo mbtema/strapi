@@ -1170,7 +1170,7 @@
     }
   }
 
-  function finish(complete,reason=null) {
+  function finish(complete,reason=null,fromMemory=false) {
     state.running=false;
     state.report.complete=complete;state.report.failure=reason;
     state.report.finishedAt=new Date().toISOString();
@@ -1190,14 +1190,14 @@
       setAction('Скачать JSON повторно',downloadBackup);
     } else if (state.report.pilotCandidate) {
       const pilot=state.report.pilotCandidate;
-      render('Backup JSON скачан. Проверь файл.\nПилот: '+pilot.name+
+      render((fromMemory?'Используем ранее проверенный backup. Проверь файл.':'Backup JSON скачан. Проверь файл.')+'\nПилот: '+pilot.name+
         '\n'+pilot.documentId+' · '+pilot.modifications+' изменений');
       setAction('Запустить пилот',runPilot);
     } else {
       render('Dry-run готов. Доступных для пилота товаров нет.');
       setAction('Скачать JSON повторно',downloadBackup);
     }
-    downloadBackup();
+    if (!fromMemory) downloadBackup();
   }
 
 
@@ -1225,6 +1225,28 @@
     state.components = components;
     state.report.schema = nestedSchemaLines(productSchema.attributes, components, '');
     state.report.rawSchemas = { product: productSchema, components: componentsResponse.data };
+    if (reuse) {
+      const actualMembers=await brandProducts();
+      const priorMembers=prior.products.map(row=>row.documentId).sort();
+      if (!equal(actualMembers,priorMembers)) throw Error(
+        'Состав Brand DIOR изменился после backup: требуется новый dry-run');
+      if (!equal(prior.rawSchemas.product.attributes,productSchema.attributes) ||
+          !equal(prior.rawSchemas.components,componentsResponse.data)) {
+        throw Error('Схема отличается от сохранённого backup. Нужен новый dry-run');
+      }
+      state.report={...prior,version:4,mode:'dry-run',complete:true,failure:null,
+        operations:prior.operations||[],execution:prior.execution||[],
+        verifiedTypes:prior.verifiedTypes||[],skipped:prior.skipped||[],
+        progress:savedProgress(),safety:{recoveryVerified:false,autoRecoveryEnabled:false,
+          globalKeyUniquenessVerified:false},
+        writesEnabled:false};
+      state.total=prior.products.length;
+      state.processed=state.total;
+      state.report.schema=nestedSchemaLines(productSchema.attributes,components,'');
+      window.tmDiorProductsKkAudit=state.report;
+      finish(true,null,true);
+      return;
+    }
     const relationFields = Object.entries(productSchema.attributes)
       .filter(([name, a]) => !SYSTEM.has(name) && a.type === 'relation')
       .map(([name, a]) => {
