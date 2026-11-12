@@ -108,7 +108,8 @@
     catch { return {reason:'Повреждён unresolved journal'}; }
   };
   const savedProgress = () => {
-    try { return JSON.parse(localStorage.getItem(PROGRESS_KEY) || '[]'); }
+    try { const x=JSON.parse(localStorage.getItem(PROGRESS_KEY) || '[]');
+      return Array.isArray(x)?x:[]; }
     catch { return []; }
   };
   const verifiedStage = () => {
@@ -1289,7 +1290,9 @@
   }
 
 
+  let rescanLink=null;
   async function initial(imported=null) {
+    rescanLink?.remove();rescanLink=null;
     state.running=true;state.stopped=false;
     setAction('Остановить',stopRunning);
     try {
@@ -1399,7 +1402,7 @@
     if (!r || r.complete!==true || ![3,4].includes(r.version) ||
         r.tool!=='dior-products-kk-pipeline' ||
         r.brandDocumentId!==CFG.brandDocumentId ||
-        r.mode==='result' || !r.rawSchemas?.product?.attributes ||
+        r.mode!=='dry-run' || !r.rawSchemas?.product?.attributes ||
         !Array.isArray(r.rawSchemas.components) || !Array.isArray(r.products) ||
         !r.products.length || !Array.isArray(r.schema)) {
       throw Error('Не полный backup pipeline DIOR версии 3/4');
@@ -1440,9 +1443,9 @@
     state.running=false;
     render('Открой сохранённый backup JSON, чтобы не повторять полный аудит.');
     setAction('Загрузить backup',()=>fileInput.click());
-    const rescan=node('a','Выполнить новый dry-run вместо загрузки');
-    rescan.style.cssText='display:block;margin-top:9px;color:#c5c0ff;text-decoration:underline;cursor:pointer';
-    rescan.onclick=()=>initial();
-    panel.append(rescan);
+    rescanLink=node('a','Выполнить новый dry-run вместо загрузки');
+    rescanLink.style.cssText='display:block;margin-top:9px;color:#c5c0ff;text-decoration:underline;cursor:pointer';
+    rescanLink.onclick=()=>initial();
+    panel.append(rescanLink);
   }
 })();
