@@ -1,6 +1,6 @@
-// DIOR Brand.products: read-only Product RU Draft vs KK Draft audit.
+// DIOR Product RU → KK: единый pipeline. Этап 1: read-only dry-run + полный backup.
 // Запуск: Strapi Admin -> RU-карточка Brand DIOR -> DevTools Console.
-// Только GET. Один JSON с итогами, схемой и точными различиями. Полные снимки остаются в памяти.
+// Этап 1: только GET, никаких Save/Publish/восстановлений. Backup до любых записей.
 (async () => {
   'use strict';
   const CFG = {
@@ -11,10 +11,14 @@
     pageSize: 100,
     productWorkers: 2,
     relationWorkers: 3,
+    targetWorkers: 4,
     maxPages: 200,
     retries: 3
   };
   const KEY = '__tmDiorProductsKkAudit';
+  const BACKUP_NAME = 'dior-products-kk-backup.json';
+  const SCALARS = new Set(['string','text','richtext','email','enumeration','json','blocks',
+    'integer','biginteger','float','decimal','boolean','date','time','datetime']);
   const PANEL_ID = 'tm-dior-products-kk-audit';
   const SYSTEM = new Set([
     'id', 'documentId', 'locale', 'status', 'publishedAt', 'createdAt',
@@ -49,7 +53,7 @@
     'width:min(400px,calc(100vw - 32px));max-height:78vh;overflow:auto;' +
     'background:#1e1e32;color:#fff;border:1px solid #7770bf;border-radius:10px;' +
     'padding:14px;box-shadow:0 8px 30px #0009;font:13px/1.5 system-ui';
-  const title = node('strong', 'DIOR · Аудит товаров RU / KK');
+  const title = node('strong', 'DIOR · Dry-run RU → KK');
   const info = node('div', 'Читаем схему и список товаров…');
   info.style.cssText = 'margin:9px 0 8px;overflow-wrap:anywhere';
   const barTrack = node('div');
@@ -70,13 +74,16 @@
 
   const state = {
     running: true, stopped: false, phase: 'init', processed: 0, total: 0,
-    getCount: 0, getRetries: 0, started: Date.now(),
+    getCount: 0, getRetries: 0, targetsDone: 0, targetsTotal: 0,
+    started: Date.now(), schema: null, components: null, targetCache: new Map(),
     report: {
-      tool: 'dior-products-kk-audit', version: 2, mode: 'read-only',
+      tool: 'dior-products-kk-pipeline', version: 3, mode: 'dry-run',
       brandDocumentId: CFG.brandDocumentId, brandRelation: CFG.brandField,
       source: 'ru/draft', target: 'kk/draft',
       startedAt: new Date().toISOString(), finishedAt: null,
-      complete: false, failure: null, summary: null, schema: [], products: []
+      complete: false, failure: null, summary: null, schema: [],
+      rawSchemas: null, plan: null, pilotCandidate: null,
+      writesEnabled: false, backupKind: 'pre-write-complete', products: []
     }
   };
   window[KEY] = state;
@@ -95,7 +102,8 @@
     barTrack.setAttribute('aria-valuemax', String(state.total || 1));
     stats.textContent = state.total ?
       'Товары ' + state.processed + '/' + state.total +
-        ' · OK ' + count('ok') + ' · отличия ' + count('diff') :
+        ' · OK ' + count('ok') + ' · отличия ' + count('diff') +
+        (state.targetsTotal ? ' · связи ' + state.targetsDone + '/' + state.targetsTotal : '') :
       'Загружаем список товаров…';
   };
   actionButton.onclick = () => {
@@ -164,15 +172,18 @@
     throw Error('GET retries exhausted: ' + url);
   }
 
-  async function detail(uid, documentId, locale) {
-    const result = await request(detailPath(uid, documentId, locale), true);
+  async function detail(uid, documentId, locale, status = 'draft') {
+    const result = await request(detailPath(uid, documentId, locale, status), true);
     if (result === null) return null;
     const data = result?.data;
-    if (data == null || (typeof data === 'object' && !Array.isArray(data) && !Object.keys(data).length))
-      return null;
+    if (data == null || (typeof data === 'object' && !Array.isArray(data) &&
+        !Object.keys(data).length)) return null;
     if (!data || typeof data !== 'object' || Array.isArray(data) ||
         data.documentId !== documentId || data.locale !== locale) {
-      throw Error('Неожиданный detail ' + uid + '/' + documentId + '/' + locale);
+      throw Error('Неожиданный detail ' + uid + '/' + documentId + '/' + locale + '/' + status);
+    }
+    if (status === 'published' && data.publishedAt == null) {
+      throw Error('Не подтверждена Published версия ' + locale + '/' + documentId);
     }
     return data;
   }
@@ -189,13 +200,13 @@
     return { total: p.total, pageCount: p.pageCount };
   }
 
-  async function relationList(uid, documentId, field, locale) {
+  async function relationList(uid, documentId, field, locale, status = 'draft') {
     const entries = [];
     let page = 1, first = null;
     for (;;) {
       checkStop();
       const endpoint = '/content-manager/relations/' + uid + '/' + documentId + '/' +
-        encodeURIComponent(field) + '?locale=' + locale + '&status=draft&page=' +
+        encodeURIComponent(field) + '?locale=' + locale + '&status=' + status + '&page=' +
         page + '&pageSize=' + CFG.pageSize;
       const json = await request(endpoint);
       const p = pagination(json, page, first);
@@ -319,7 +330,7 @@
     const hasRu = present(ru), hasKk = present(kk);
     if (attr.required && !hasRu) issue(issues, 'required_ru_empty', path, 'Required RU пусто');
     if (hasRu && !hasKk) {
-      issue(issues, localized ? 'localized_kk_empty' : 'shared_kk_empty', path,
+      issue(issues, localized ? 'translation_review' : 'shared_kk_empty', path,
         'RU заполнено, KK пусто', short(ru), short(kk));
       return;
     }
@@ -389,6 +400,8 @@
     }
     const ar = attr.type === 'media' ? normalizeMedia(ru) : canonical(ru);
     const ak = attr.type === 'media' ? normalizeMedia(kk) : canonical(kk);
+    if (path === 'key' && attr.unique === true && !localized &&
+        typeof ar === 'string' && ar.length && ak === ar + '0') return;
     if (localized) {
       if (!equal(ar, ak)) meta.localizedDifferent++;
     } else if (!equal(ar, ak)) {
@@ -396,111 +409,257 @@
     }
   }
 
-  async function auditProduct(documentId, schema, components, relationFields) {
-    const [ru, kk] = await Promise.all([
-      detail(CFG.productUid, documentId, 'ru'),
-      detail(CFG.productUid, documentId, 'kk')
-    ]);
-    const base = {
-      documentId, name: ru?.name || ru?.name1 || '',
-      status: 'ok', issues: [], localizedDifferent: 0, kkOnlyFilled: 0,
-      snapshots: { ru: null, kk: null }
+  // Каждый снимок содержит исходный detail для аварийного восстановления,
+  // нормализованные поля (без служебных ID вложенных компонентов)
+  // и полные relation documentId, прочитанные со ВСЕХ страниц.
+  async function snapshotVersion(documentId, locale, status, schema, components, relationFields) {
+    const data = await detail(CFG.productUid, documentId, locale, status);
+    if (!data) return null;
+    const pairs = await eachLimited(relationFields, CFG.relationWorkers, async field =>
+      [field, await relationList(CFG.productUid, documentId, field, locale, status)]);
+    return {
+      meta: { id: data.id, status: data.status, publishedAt: data.publishedAt ?? null,
+        createdAt: data.createdAt, updatedAt: data.updatedAt },
+      detail: data,
+      fields: productFields(data, schema, components),
+      relations: Object.fromEntries(pairs)
     };
-    const getSnapshot = async (data, locale) => {
-      if (!data) return null;
-      const values = await eachLimited(relationFields, CFG.relationWorkers, async field => {
-        return [field, await relationList(CFG.productUid, documentId, field, locale)];
-      });
-      return {
-        meta: { id: data.id, status: data.status, publishedAt: data.publishedAt ?? null },
-        fields: productFields(data, schema, components),
-        relations: Object.fromEntries(values)
-      };
+  }
+
+  const versionEqual = (a,b) => {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    return equal(a.fields,b.fields) && equal(a.relations,b.relations);
+  };
+
+  function analyzePlan(base, schema, components, relationFields) {
+    const draftRu = base.snapshots.ru.draft, draftKk = base.snapshots.kk.draft;
+    const pubRu = base.snapshots.ru.published, pubKk = base.snapshots.kk.published;
+    const plan = {
+      actions: [], operationTypes: [], blockers: [], translationReview: [],
+      missingTargets: [], modifications: 0, fieldTypes: [],
+      needPublishRu: false, needPublishKk: false, needsSaveKk: false,
+      eligible: false, ready: false
     };
-    const [ruSnapshot, kkSnapshot] = await Promise.all([
-      getSnapshot(ru, 'ru'), getSnapshot(kk, 'kk')
-    ]);
-    base.snapshots.ru = ruSnapshot;
-    base.snapshots.kk = kkSnapshot;
-    if (!ru) {
-      base.status = 'review';
-      issue(base.issues, 'missing_ru', '*', 'RU Draft отсутствует');
-      return base;
-    }
-    if (!kk) {
-      base.status = 'missing_kk';
-      issue(base.issues, 'missing_kk', '*', 'KK Draft отсутствует');
-      return base;
-    }
-    const meta = { localizedDifferent: 0, kkOnlyFilled: 0 };
+    if (!draftRu) plan.blockers.push('RU Draft отсутствует');
+    if (!draftKk) plan.blockers.push('KK Draft отсутствует: перевод не создаём автоматически');
+    if (!draftRu || !draftKk) return plan;
+    const src = draftRu.detail, dst = draftKk.detail;
     for (const [field, attr] of Object.entries(schema.attributes)) {
-      if (SYSTEM.has(field) || attr.type === 'relation') continue;
-      compareField(attr, ru[field], kk[field], field, components, base.issues, meta);
+      if (SYSTEM.has(field) || attr?.type === 'relation') continue;
+      const ru = draftRu.fields[field], kk = draftKk.fields[field];
+      const localized = flagLocalized(attr);
+      if (attr.required && !present(ru)) {
+        plan.blockers.push('Обязательное поле RU пусто: ' + field);
+        continue;
+      }
+      if (localized) {
+        if (present(ru) && !present(kk)) plan.translationReview.push(field);
+        continue;
+      }
+      if (attr.unique === true) {
+        if (field !== 'key' || typeof src[field] !== 'string' || !src[field].length) {
+          plan.blockers.push('Unique field требует отдельного контракта: ' + field);
+          continue;
+        }
+        const expected = src[field] + '0';
+        if (dst[field] !== expected) {
+          plan.actions.push({ kind: 'unique_key', field, ru: src[field], kk: dst[field],
+            expected, uniquenessCheck: 'global-check-required-before-write' });
+          plan.operationTypes.push('unique:key');
+        }
+        continue;
+      }
+      if (!equal(ru,kk)) {
+        let type = attr.type;
+        if (type === 'component' || type === 'dynamiczone') {
+          // Вложенные локализуемые значения должны сохраняться в KK.
+          // Автоматическая запись потребует проверенного recursive payload.
+          plan.actions.push({ kind: 'nested_review', field, type, ru, kk });
+          plan.blockers.push('Нужен безопасный payload вложенного поля: ' + field);
+          continue;
+        }
+        if (!SCALARS.has(type) && type !== 'media') {
+          plan.blockers.push('Неподдержанный тип: ' + field + '/' + type);
+          continue;
+        }
+        if (type === 'media' && (ru?.__invalidMedia || kk?.__invalidMedia)) {
+          plan.blockers.push('Не подтверждены media ID: ' + field);
+          continue;
+        }
+        plan.actions.push({ kind: type === 'media' ? 'media' : 'field',
+          field, type, ru, kk, expected: ru });
+        plan.operationTypes.push(type === 'media' ? 'media' : 'field:' + type);
+      }
     }
     for (const field of relationFields) {
-      const source = ruSnapshot.relations[field], target = kkSnapshot.relations[field];
-      const rs = new Set(source), ks = new Set(target);
-      const missing = source.filter(id => !ks.has(id));
-      const extra = target.filter(id => !rs.has(id));
-      if (missing.length || extra.length) {
-        issue(base.issues, 'relation_diff', field,
+      const attr = schema.attributes[field];
+      const ruIds = draftRu.relations[field] || [];
+      const kkIds = draftKk.relations[field] || [];
+      const ruSet = new Set(ruIds), kkSet = new Set(kkIds);
+      const connect = ruIds.filter(id => !kkSet.has(id));
+      const disconnect = kkIds.filter(id => !ruSet.has(id));
+      if (connect.length || disconnect.length) {
+        plan.actions.push({ kind: 'relation', field, target: attr.target,
+          connect, disconnect, ruTotal: ruIds.length, kkTotal: kkIds.length });
+        if (connect.length) plan.operationTypes.push('relation:' + field + ':connect');
+        if (disconnect.length) plan.operationTypes.push('relation:' + field + ':disconnect');
+      }
+    }
+    for (const item of base.issues) {
+      if (item.kind === 'translation_review' && !plan.translationReview.includes(item.path))
+        plan.translationReview.push(item.path);
+      if (['unverified','component_structure','required_ru_empty'].includes(item.kind))
+        plan.blockers.push(item.path + ': ' + item.detail);
+    }
+    plan.operationTypes = [...new Set(plan.operationTypes)].sort();
+    plan.fieldTypes = [...new Set(plan.actions.map(a => a.type || a.kind))].sort();
+    plan.modifications = plan.actions.reduce((n,a) =>
+      n + (a.kind === 'relation' ? a.connect.length + a.disconnect.length : 1), 0);
+    plan.needsSaveKk = plan.actions.length > 0;
+    plan.needPublishRu = !versionEqual(draftRu,pubRu);
+    plan.needPublishKk = plan.needsSaveKk || !versionEqual(draftKk,pubKk);
+    plan.blockers = [...new Set(plan.blockers)];
+    plan.eligible = !plan.blockers.length;
+    plan.ready = plan.eligible && (plan.needsSaveKk || plan.needPublishRu || plan.needPublishKk);
+    return plan;
+  }
+
+  async function auditProduct(documentId, schema, components, relationFields) {
+    const base = {
+      documentId, name: '', status: 'ok', issues: [],
+      localizedDifferent: 0, kkOnlyFilled: 0,
+      snapshots: { ru: { draft: null, published: null },
+        kk: { draft: null, published: null } }, plan: null
+    };
+    const versions = await Promise.all([
+      snapshotVersion(documentId,'ru','draft',schema,components,relationFields),
+      snapshotVersion(documentId,'ru','published',schema,components,relationFields),
+      snapshotVersion(documentId,'kk','draft',schema,components,relationFields),
+      snapshotVersion(documentId,'kk','published',schema,components,relationFields)
+    ]);
+    base.snapshots.ru.draft = versions[0];
+    base.snapshots.ru.published = versions[1];
+    base.snapshots.kk.draft = versions[2];
+    base.snapshots.kk.published = versions[3];
+    const ru = versions[0], kk = versions[2];
+    base.name = ru?.detail.name || ru?.detail.name1 || '';
+    if (!ru) issue(base.issues,'missing_ru','*','RU Draft отсутствует');
+    if (!kk) issue(base.issues,'missing_kk','*','KK Draft отсутствует');
+    if (ru && kk) {
+      const meta = { localizedDifferent: 0, kkOnlyFilled: 0 };
+      for (const [field, attr] of Object.entries(schema.attributes)) {
+        if (SYSTEM.has(field) || attr.type === 'relation') continue;
+        compareField(attr,ru.detail[field],kk.detail[field],field,components,base.issues,meta);
+      }
+      for (const field of relationFields) {
+        const source = ru.relations[field], target = kk.relations[field];
+        const rs = new Set(source), ks = new Set(target);
+        const missing = source.filter(id => !ks.has(id));
+        const extra = target.filter(id => !rs.has(id));
+        if (missing.length || extra.length) issue(base.issues,'relation_diff',field,
           'Не хватает KK: ' + missing.length + '; лишних KK: ' + extra.length,
           missing, extra);
       }
+      base.localizedDifferent = meta.localizedDifferent;
+      base.kkOnlyFilled = meta.kkOnlyFilled;
     }
-    base.localizedDifferent = meta.localizedDifferent;
-    base.kkOnlyFilled = meta.kkOnlyFilled;
-    base.status = base.issues.some(x => x.kind !== 'unverified') ? 'diff' :
-      base.issues.length ? 'review' : 'ok';
+    base.plan = analyzePlan(base,schema,components,relationFields);
+    base.status = !ru ? 'review' : !kk ? 'missing_kk' :
+      base.plan.blockers.length ? 'review' :
+      base.plan.ready ? 'pending' :
+      base.issues.some(x=>x.kind!=='translation_review') ? 'diff' : 'ok';
     return base;
+  }
+
+  // Отсутствие KK у любого target из RU блокирует конкретный товар,
+  // не запускает создание справочников и не влияет на другие товары.
+  async function verifyRelationTargets(schema) {
+    const needs = new Map();
+    for (const row of state.report.products.filter(Boolean)) {
+      for (const action of row.plan.actions.filter(a => a.kind === 'relation')) {
+        for (const id of action.connect) {
+          needs.set(action.target + '|' + id, {uid:action.target, id});
+        }
+      }
+    }
+    state.targetsTotal = needs.size;
+    const pairs = await eachLimited([...needs.values()], CFG.targetWorkers, async target => {
+      const found = await detail(target.uid,target.id,'kk','draft');
+      const ok = !!found && Number.isInteger(found.id) && found.id > 0;
+      state.targetsDone++;
+      render('Проверяем наличие KK у связанных записей…');
+      return [target.uid + '|' + target.id, ok];
+    });
+    state.targetCache = new Map(pairs);
+    for (const row of state.report.products.filter(Boolean)) {
+      for (const action of row.plan.actions.filter(a => a.kind === 'relation')) {
+        for (const id of action.connect) {
+          if (!state.targetCache.get(action.target + '|' + id))
+            row.plan.missingTargets.push({field: action.field, target: action.target, documentId: id});
+        }
+      }
+      if (row.plan.missingTargets.length) {
+        row.plan.blockers.push('Нет KK Draft у '+row.plan.missingTargets.length+' связанных записей');
+        row.plan.eligible = false; row.plan.ready = false; row.status = 'blocked';
+      }
+    }
+  }
+
+  function choosePilot() {
+    const rows = state.report.products.filter(r => r?.plan?.ready && r.plan.eligible);
+    rows.sort((a,b) => b.plan.modifications - a.plan.modifications ||
+      b.plan.operationTypes.length - a.plan.operationTypes.length ||
+      a.documentId.localeCompare(b.documentId));
+    const p = rows[0];
+    return p ? { documentId:p.documentId, name:p.name,
+      modifications:p.plan.modifications, types:p.plan.operationTypes,
+      plannedActions:p.plan.actions, needPublishRu:p.plan.needPublishRu,
+      needPublishKk:p.plan.needPublishKk } : null;
   }
 
   function summarize() {
     const rows = state.report.products.filter(Boolean);
     const issues = rows.flatMap(r => r.issues || []);
+    const ruRelations = rows.reduce((n,r) => n + Object.values(
+      r.snapshots.ru.draft?.relations || {}).reduce((x,ids)=>x+ids.length,0),0);
+    const kkRelations = rows.reduce((n,r) => n + Object.values(
+      r.snapshots.kk.draft?.relations || {}).reduce((x,ids)=>x+ids.length,0),0);
     return {
-      total: state.total, processed: rows.length, ok: count('ok'),
-      diff: count('diff'), missingKk: count('missing_kk'), review: count('review'),
-      localizedValueDifferencesAllowed: rows.reduce((sum, r) => sum + r.localizedDifferent, 0),
-      kkOnlyLocalizedFilledAllowed: rows.reduce((sum, r) => sum + r.kkOnlyFilled, 0),
-      relationIssues: issues.filter(x => x.kind === 'relation_diff').length,
-      missingLocalizedIssues: issues.filter(x => x.kind === 'localized_kk_empty').length,
-      sharedIssues: issues.filter(x => x.kind === 'shared_value_diff' || x.kind === 'shared_kk_empty').length,
-      relationEntriesRu: rows.reduce((sum, r) => sum + (r.snapshots.ru ?
-        Object.values(r.snapshots.ru.relations).reduce((n, ids) => n + ids.length, 0) : 0), 0),
-      relationEntriesKk: rows.reduce((sum, r) => sum + (r.snapshots.kk ?
-        Object.values(r.snapshots.kk.relations).reduce((n, ids) => n + ids.length, 0) : 0), 0),
-      missingRelationEntries: issues.filter(x => x.kind === 'relation_diff').reduce(
-        (sum, x) => sum + x.ru.length, 0),
-      extraRelationEntries: issues.filter(x => x.kind === 'relation_diff').reduce(
-        (sum, x) => sum + x.kk.length, 0),
-      uniqueFieldsInSchema: state.report.schema.filter(x => x.unique).length,
-      localizedFieldsInSchema: state.report.schema.filter(x => x.localized).length,
-      relationFieldsInSchema: state.report.schema.filter(x => x.type === 'relation').length,
-      getRequests: state.getCount, getRetries: state.getRetries
+      total:state.total, processed:rows.length,
+      ok:count('ok'), pending:count('pending'), review:count('review'),
+      blocked:count('blocked'), missingKk:count('missing_kk'),
+      plannedWrites:rows.filter(r=>r.plan?.needsSaveKk&&r.plan.eligible).length,
+      plannedPublishesRu:rows.filter(r=>r.plan?.needPublishRu&&r.plan.eligible).length,
+      plannedPublishesKk:rows.filter(r=>r.plan?.needPublishKk&&r.plan.eligible).length,
+      plannedChanges:rows.filter(r=>r.plan?.eligible).reduce((n,r)=>n+r.plan.modifications,0),
+      translationReviews:rows.reduce((n,r)=>n+r.plan.translationReview.length,0),
+      relationDifferences:issues.filter(x=>x.kind==='relation_diff').length,
+      sharedDifferences:issues.filter(x=>x.kind==='shared_value_diff'||x.kind==='shared_kk_empty').length,
+      relationEntriesRu:ruRelations, relationEntriesKk:kkRelations,
+      missingRelationEntries:issues.filter(x=>x.kind==='relation_diff').reduce((n,x)=>n+x.ru.length,0),
+      extraRelationEntries:issues.filter(x=>x.kind==='relation_diff').reduce((n,x)=>n+x.kk.length,0),
+      uniqueFieldsInSchema:state.report.schema.filter(x=>x.unique).length,
+      localizedFieldsInSchema:state.report.schema.filter(x=>x.localized).length,
+      relationFieldsInSchema:state.report.schema.filter(x=>x.type==='relation').length,
+      getRequests:state.getCount, getRetries:state.getRetries
     };
   }
-  function downloadReport() {
-    // Сохраняем всю схему, итоги и точные расхождения для работы с одним файлом.
-    // Полные RU/KK snapshots используются при сравнении, но в JSON не дублируются.
-    const report = {
+  function downloadBackup() {
+    // Единственный полный JSON dry-run: схема, RU/KK Draft/Published,
+    // план изменений, проблемы, проверенные target KK и пилотный кандидат.
+    const output = {
       ...state.report,
-      format: 'findings',
-      products: state.report.products.filter(Boolean).map(({ snapshots, ...product }) => ({
-        ...product,
-        url: location.origin + '/admin/content-manager/collection-types/' +
-          CFG.productUid + '/' + product.documentId + '?plugins[i18n][locale]=ru'
-      }))
+      products: state.report.products.filter(Boolean)
     };
-    const objectUrl = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)],
-      { type: 'application/json;charset=utf-8' }));
+    const blob = new Blob([JSON.stringify(output,null,2)],{
+      type:'application/json;charset=utf-8'
+    });
+    const url = URL.createObjectURL(blob);
     const a = node('a');
-    a.href = objectUrl;
-    a.download = 'dior-products-kk-audit.json';
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    a.download = BACKUP_NAME; a.href = url;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),15000);
   }
   function finish(complete, reason = null) {
     state.running = false;
@@ -511,10 +670,10 @@
     window.tmDiorProductsKkAudit = state.report;
     actionButton.disabled = false;
     actionButton.textContent = 'Скачать JSON повторно';
-    actionButton.onclick = downloadReport;
-    render(complete ? 'Аудит завершён. Один JSON скачан.' :
-      'Аудит прерван: ' + reason + '. Скачан неполный JSON.');
-    downloadReport();
+    actionButton.onclick = downloadBackup;
+    render(complete ? 'Dry-run завершён. Полный backup JSON скачан. Записей не было.' :
+      'Dry-run прерван: ' + reason + '. Скачан неполный JSON.');
+    downloadBackup();
   }
 
   try {
@@ -537,7 +696,10 @@
     const brand = await detail(CFG.brandUid, CFG.brandDocumentId, 'ru');
     if (!brand) throw Error('RU Brand DIOR не найден');
     const components = Object.fromEntries(componentsList.map(x => [x.uid, x]));
+    state.schema = productSchema;
+    state.components = components;
     state.report.schema = nestedSchemaLines(productSchema.attributes, components, '');
+    state.report.rawSchemas = { product: productSchema, components: componentsResponse.data };
     const relationFields = Object.entries(productSchema.attributes)
       .filter(([name, a]) => !SYSTEM.has(name) && a.type === 'relation')
       .map(([name, a]) => {
@@ -570,6 +732,14 @@
     if (state.report.products.some(x => !x) || state.processed !== state.total) {
       throw Error('Не все товары обработаны');
     }
+    await verifyRelationTargets(productSchema);
+    checkStop();
+    state.report.pilotCandidate = choosePilot();
+    state.report.plan = { phase:'dry-run-completed', records:state.total,
+      writesEnabled:false, publicationEnabled:false,
+      blockedCount:count('blocked')+count('review')+count('missing_kk'),
+      backupRequired:true, uniquenessCheck:'global-product-key-check-pending',
+      note:'Перед pilot необходима подтверждённая проверка PUT/POST и recovery на live.' };
     finish(true);
   } catch (error) {
     const message = String(error.message || error);
