@@ -909,8 +909,9 @@
   }
   function verifyAfterPublish(before,after,locale) {
     if (locale==='ru') {
-      if (!versionEqual(before.ru.draft,after.ru.draft))
-        throw Error('Publish RU изменил RU Draft');
+      if (!versionEqual(before.ru.draft,after.ru.draft)) {
+        const e=Error('Publish RU изменил RU Draft'); e.ruDamaged=true; throw e;
+      }
       if (!versionEqual(after.ru.draft,after.ru.published))
         throw Error('RU Published не совпадает с RU Draft');
       if (!versionEqual(before.kk.draft,after.kk.draft) ||
@@ -1240,14 +1241,35 @@
       downloadBackup();
       return;
     }
+    const incomplete=verifiedStage();
     state.report.pilotCandidate=choosePilot();
+    if (incomplete && incomplete.documentId) {
+      const row=baselineRow(incomplete.documentId);
+      if (row) state.report.pilotCandidate={
+        documentId:row.documentId,name:row.name,
+        modifications:row.plan.modifications,types:row.plan.operationTypes,
+        plannedActions:row.plan.actions
+      };
+    }
     state.report.plan.writesEnabled=!!state.report.pilotCandidate&&!journal();
     state.report.writesEnabled=!!state.report.pilotCandidate&&!journal();
-    if (journal()) {
-      render('Dry-run готов, но есть unresolved журнал. Записи запрещены до ручного разбора.');
+    if (journal() || incomplete?.reason) {
+      render('Записи запрещены: unresolved journal или повреждённый checkpoint.');
       setAction('Скачать JSON повторно',downloadBackup);
+    } else if (incomplete?.documentId && state.report.pilotCandidate) {
+      render('Найден подтверждённый незавершённый этап: '+incomplete.phase+
+        '\n'+incomplete.documentId+'. Повторного PUT не будет.');
+      setAction('Продолжить товар',runPilot);
     } else if (state.report.pilotResult?.verified) {
       render('Ранее пилот проверен. Можно применить подтверждённые операции.');
+      setAction('Применить проверенные',runBatch);
+    } else if (savedProgress().length) {
+      // После перезагрузки подтверждённые Product будут заново проверены
+      // внутри runBatch до любых новых записей.
+      const p=savedProgress()[0];
+      state.report.pilotResult={documentId:p.id,verified:true,
+        recoveredFromCheckpoint:true,types:p.types};
+      render('В checkpoint есть завершённый пилот. Перед batch пройдёт повторный GET.');
       setAction('Применить проверенные',runBatch);
     } else if (state.report.pilotCandidate) {
       const pilot=state.report.pilotCandidate;
@@ -1302,7 +1324,9 @@
       }
       state.report={...sourceReport,version:4,mode:'dry-run',complete:true,failure:null,
         operations:sourceReport.operations||[],execution:sourceReport.execution||[],
-        verifiedTypes:sourceReport.verifiedTypes||[],skipped:sourceReport.skipped||[],
+        verifiedTypes:[...new Set([...(sourceReport.verifiedTypes||[]),
+          ...savedProgress().flatMap(x=>x.types||[])])],
+        skipped:sourceReport.skipped||[],
         progress:savedProgress(),safety:{recoveryVerified:false,autoRecoveryEnabled:false,
           globalKeyUniquenessVerified:false},
         writesEnabled:false};
