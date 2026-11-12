@@ -1,6 +1,6 @@
 // DIOR Brand.products: read-only Product RU Draft vs KK Draft audit.
 // Запуск: Strapi Admin -> RU-карточка Brand DIOR -> DevTools Console.
-// Только GET. Результат: сводный CSV, CSV проблем, CSV схемы, JSON со снимками.
+// Только GET. Один JSON с итогами, схемой и точными различиями. Полные снимки остаются в памяти.
 (async () => {
   'use strict';
   const CFG = {
@@ -49,31 +49,30 @@
     'width:min(480px,calc(100vw - 32px));max-height:78vh;overflow:auto;' +
     'background:#1e1e32;color:#fff;border:1px solid #7770bf;border-radius:10px;' +
     'padding:14px;box-shadow:0 8px 30px #0009;font:13px/1.5 system-ui';
-  const title = node('strong', 'DIOR · Products RU / KK · только GET');
-  const info = node('div', 'Читаем схему и Brand.products…');
-  info.style.cssText = 'white-space:pre-wrap;margin:12px 0;overflow-wrap:anywhere';
-  const buttons = node('div');
-  buttons.style.cssText = 'display:flex;flex-wrap:wrap;gap:7px';
-  const stopButton = node('button', 'Стоп');
-  const csvButton = node('button', 'Сводный CSV');
-  const diffButton = node('button', 'Проблемы CSV');
-  const schemaButton = node('button', 'Схема CSV');
-  const jsonButton = node('button', 'JSON-снимки');
-  for (const button of [stopButton, csvButton, diffButton, schemaButton, jsonButton]) {
-    button.type = 'button';
-    button.style.cssText = 'padding:7px 9px;cursor:pointer;color:#fff;' +
-      'background:#444266;border:1px solid #7770bf;border-radius:5px';
-    buttons.append(button);
-  }
-  for (const button of [csvButton, diffButton, schemaButton, jsonButton]) button.disabled = true;
-  panel.append(title, info, buttons);
+  const title = node('strong', 'DIOR · Аудит товаров RU / KK');
+  const info = node('div', 'Читаем схему и список товаров…');
+  info.style.cssText = 'margin:9px 0 8px;overflow-wrap:anywhere';
+  const barTrack = node('div');
+  barTrack.setAttribute('role', 'progressbar');
+  barTrack.setAttribute('aria-valuemin', '0');
+  barTrack.style.cssText = 'height:7px;background:#34344c;border-radius:7px;overflow:hidden';
+  const barFill = node('div');
+  barFill.style.cssText = 'height:100%;width:0%;background:#aaa6ee;transition:width .15s';
+  barTrack.append(barFill);
+  const stats = node('div', 'Загружаем список товаров…');
+  stats.style.cssText = 'margin:9px 0 11px;color:#cbcbe2;font-size:12px';
+  const actionButton = node('button', 'Остановить');
+  actionButton.type = 'button';
+  actionButton.style.cssText = 'padding:7px 11px;cursor:pointer;color:#fff;' +
+    'background:#444266;border:1px solid #7770bf;border-radius:5px';
+  panel.append(title, info, barTrack, stats, actionButton);
   document.body.append(panel);
 
   const state = {
     running: true, stopped: false, phase: 'init', processed: 0, total: 0,
     getCount: 0, getRetries: 0, started: Date.now(),
     report: {
-      tool: 'dior-products-kk-audit', version: 1, mode: 'read-only',
+      tool: 'dior-products-kk-audit', version: 2, mode: 'read-only',
       brandDocumentId: CFG.brandDocumentId, brandRelation: CFG.brandField,
       source: 'ru/draft', target: 'kk/draft',
       startedAt: new Date().toISOString(), finishedAt: null,
@@ -89,17 +88,20 @@
   const count = status => state.report.products.filter(p => p?.status === status).length;
   const render = message => {
     if (message) state.phase = message;
-    const sec = Math.max(1, (Date.now() - state.started) / 1000);
-    info.textContent = state.phase + '\nТоваров: ' + state.processed + '/' + (state.total || '?') +
-      ' · OK ' + count('ok') + ' · отличия ' + count('diff') +
-      ' · нет KK ' + count('missing_kk') + ' · review ' + count('review') +
-      '\nGET ' + state.getCount + ' · retries ' + state.getRetries +
-      ' · скорость ' + (state.processed / sec).toFixed(2) + ' товара/с';
+    info.textContent = state.phase;
+    const percent = state.total ? 100 * state.processed / state.total : 0;
+    barFill.style.width = percent.toFixed(1) + '%';
+    barTrack.setAttribute('aria-valuenow', String(state.processed));
+    barTrack.setAttribute('aria-valuemax', String(state.total || 1));
+    stats.textContent = state.total ?
+      'Товары ' + state.processed + '/' + state.total +
+        ' · OK ' + count('ok') + ' · отличия ' + count('diff') :
+      'Загружаем список товаров…';
   };
-  stopButton.onclick = () => {
+  actionButton.onclick = () => {
     state.stopped = true;
-    stopButton.disabled = true;
-    render('Остановка запрошена. Завершаем текущие GET…');
+    actionButton.disabled = true;
+    render('Останавливаем после текущих запросов…');
   };
   const canonical = value => {
     if (Array.isArray(value)) return value.map(canonical);
@@ -478,57 +480,28 @@
       getRequests: state.getCount, getRetries: state.getRetries
     };
   }
-  function csvEscape(value) {
-    let s = typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
-    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
-    return '"' + s.replace(/"/g, '""') + '"';
-  }
-  function makeCsv(columns, rows) {
-    return '\uFEFF' + [columns.join(';'), ...rows.map(row =>
-      columns.map(c => csvEscape(row[c])).join(';'))].join('\r\n');
-  }
-  function download(file, content, mime) {
-    const objectUrl = URL.createObjectURL(new Blob([content], { type: mime }));
+  function downloadReport() {
+    // Сохраняем всю схему, итоги и точные расхождения для работы с одним файлом.
+    // Полные RU/KK snapshots используются при сравнении, но в JSON не дублируются.
+    const report = {
+      ...state.report,
+      format: 'findings',
+      products: state.report.products.filter(Boolean).map(({ snapshots, ...product }) => ({
+        ...product,
+        url: location.origin + '/admin/content-manager/collection-types/' +
+          CFG.productUid + '/' + product.documentId + '?plugins[i18n][locale]=ru'
+      }))
+    };
+    const objectUrl = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)],
+      { type: 'application/json;charset=utf-8' }));
     const a = node('a');
-    a.href = objectUrl; a.download = file;
-    document.body.append(a); a.click(); a.remove();
+    a.href = objectUrl;
+    a.download = 'dior-products-kk-audit.json';
+    document.body.append(a);
+    a.click();
+    a.remove();
     setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
   }
-  const summaryCols = [
-    'documentId', 'name', 'status', 'issueCount', 'relationIssueCount',
-    'missingLocalizedCount', 'sharedIssueCount', 'ruRelationEntries',
-    'kkRelationEntries', 'missingRelationEntries', 'extraRelationEntries',
-    'localizedDifferentAllowed', 'kkOnlyFilledAllowed', 'issues', 'url'
-  ];
-  const issueCols = ['documentId', 'name', 'status', 'kind', 'path', 'detail', 'ru', 'kk'];
-  const schemaCols = ['path', 'type', 'scope', 'localized', 'explicitlyLocalized',
-    'unique', 'required', 'repeatable', 'target', 'component'];
-  const prefix = 'dior-products-kk-audit';
-  const summaryRows = () => state.report.products.filter(Boolean).map(r => ({
-    documentId: r.documentId, name: r.name, status: r.status,
-    issueCount: r.issues.length,
-    relationIssueCount: r.issues.filter(x => x.kind === 'relation_diff').length,
-    missingLocalizedCount: r.issues.filter(x => x.kind === 'localized_kk_empty').length,
-    sharedIssueCount: r.issues.filter(x => x.kind.startsWith('shared_')).length,
-    ruRelationEntries: r.snapshots.ru ?
-      Object.values(r.snapshots.ru.relations).reduce((n, ids) => n + ids.length, 0) : '',
-    kkRelationEntries: r.snapshots.kk ?
-      Object.values(r.snapshots.kk.relations).reduce((n, ids) => n + ids.length, 0) : '',
-    missingRelationEntries: r.issues.filter(x => x.kind === 'relation_diff').reduce((n, x) => n + x.ru.length, 0),
-    extraRelationEntries: r.issues.filter(x => x.kind === 'relation_diff').reduce((n, x) => n + x.kk.length, 0),
-    localizedDifferentAllowed: r.localizedDifferent,
-    kkOnlyFilledAllowed: r.kkOnlyFilled,
-    issues: r.issues.map(x => x.kind + ':' + x.path).join(' | '),
-    url: location.origin + '/admin/content-manager/collection-types/' +
-      CFG.productUid + '/' + r.documentId + '?plugins[i18n][locale]=ru'
-  }));
-  const issueRows = () => state.report.products.filter(Boolean).flatMap(r => r.issues.map(x => ({
-    documentId: r.documentId, name: r.name, status: r.status, ...x
-  })));
-  csvButton.onclick = () => download(prefix + '.csv', makeCsv(summaryCols, summaryRows()), 'text/csv;charset=utf-8');
-  diffButton.onclick = () => download(prefix + '-issues.csv', makeCsv(issueCols, issueRows()), 'text/csv;charset=utf-8');
-  schemaButton.onclick = () => download(prefix + '-schema.csv', makeCsv(schemaCols, state.report.schema), 'text/csv;charset=utf-8');
-  jsonButton.onclick = () => download(prefix + '.json', JSON.stringify(state.report, null, 2), 'application/json;charset=utf-8');
   function finish(complete, reason = null) {
     state.running = false;
     state.report.complete = complete;
@@ -536,12 +509,12 @@
     state.report.finishedAt = new Date().toISOString();
     state.report.summary = summarize();
     window.tmDiorProductsKkAudit = state.report;
-    for (const b of [csvButton, diffButton, schemaButton, jsonButton]) b.disabled = false;
-    stopButton.disabled = true;
-    render(complete ? 'Аудит завершён. Все результаты скачаны.' :
-      'НЕПОЛНЫЙ аудит: ' + reason + '\nЧастичные результаты скачаны.');
-    // Автоматически сохраняем все файлы; браузер может спросить разрешение на multiple downloads.
-    csvButton.onclick(); diffButton.onclick(); schemaButton.onclick(); jsonButton.onclick();
+    actionButton.disabled = false;
+    actionButton.textContent = 'Скачать JSON повторно';
+    actionButton.onclick = downloadReport;
+    render(complete ? 'Аудит завершён. Один JSON скачан.' :
+      'Аудит прерван: ' + reason + '. Скачан неполный JSON.');
+    downloadReport();
   }
 
   try {
