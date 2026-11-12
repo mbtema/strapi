@@ -1220,9 +1220,13 @@
     if (journal()) {
       render('Dry-run готов, но есть unresolved журнал. Записи запрещены до ручного разбора.');
       setAction('Скачать JSON повторно',downloadBackup);
+    } else if (state.report.pilotResult?.verified) {
+      render('Ранее пилот проверен. Можно применить подтверждённые операции.');
+      setAction('Применить проверенные',runBatch);
     } else if (state.report.pilotCandidate) {
       const pilot=state.report.pilotCandidate;
-      render((fromMemory?'Используем ранее проверенный backup. Проверь файл.':'Backup JSON скачан. Проверь файл.')+'\nПилот: '+pilot.name+
+      render((fromMemory?'Используем сохранённый backup. Проверь файл.':
+        'Backup JSON скачан. Проверь файл.')+'\nПилот: '+pilot.name+
         '\n'+pilot.documentId+' · '+pilot.modifications+' изменений');
       setAction('Запустить пилот',runPilot);
     } else {
@@ -1233,7 +1237,10 @@
   }
 
 
-  try {
+  async function initial(imported=null) {
+    state.running=true;state.stopped=false;
+    setAction('Остановить',stopRunning);
+    try {
     const [types, componentsResponse] = await Promise.all([
       request('/content-manager/content-types'),
       request('/content-manager/components')
@@ -1257,22 +1264,23 @@
     state.components = components;
     state.report.schema = nestedSchemaLines(productSchema.attributes, components, '');
     state.report.rawSchemas = { product: productSchema, components: componentsResponse.data };
-    if (reuse) {
+    const sourceReport=imported || (reuse?prior:null);
+    if (sourceReport) {
       const actualMembers=await brandProducts();
-      const priorMembers=prior.products.map(row=>row.documentId).sort();
+      const priorMembers=sourceReport.products.map(row=>row.documentId).sort();
       if (!equal(actualMembers,priorMembers)) throw Error(
         'Состав Brand DIOR изменился после backup: требуется новый dry-run');
-      if (!equal(prior.rawSchemas.product.attributes,productSchema.attributes) ||
-          !equal(prior.rawSchemas.components,componentsResponse.data)) {
+      if (!equal(sourceReport.rawSchemas.product.attributes,productSchema.attributes) ||
+          !equal(sourceReport.rawSchemas.components,componentsResponse.data)) {
         throw Error('Схема отличается от сохранённого backup. Нужен новый dry-run');
       }
-      state.report={...prior,version:4,mode:'dry-run',complete:true,failure:null,
-        operations:prior.operations||[],execution:prior.execution||[],
-        verifiedTypes:prior.verifiedTypes||[],skipped:prior.skipped||[],
+      state.report={...sourceReport,version:4,mode:'dry-run',complete:true,failure:null,
+        operations:sourceReport.operations||[],execution:sourceReport.execution||[],
+        verifiedTypes:sourceReport.verifiedTypes||[],skipped:sourceReport.skipped||[],
         progress:savedProgress(),safety:{recoveryVerified:false,autoRecoveryEnabled:false,
           globalKeyUniquenessVerified:false},
         writesEnabled:false};
-      state.total=prior.products.length;
+      state.total=sourceReport.products.length;
       state.processed=state.total;
       state.report.schema=nestedSchemaLines(productSchema.attributes,components,'');
       window.tmDiorProductsKkAudit=state.report;
@@ -1320,9 +1328,67 @@
       backupRequired:true, uniquenessCheck:'global-product-key-check-pending',
       note:'Перед pilot необходима подтверждённая проверка PUT/POST и recovery на live.' };
     finish(true);
-  } catch (error) {
-    const message = String(error.message || error);
-    console.error('[DIOR Product Audit] STOP:', message);
-    finish(false, message);
+    } catch (error) {
+      const message=String(error.message||error);
+      console.error('[DIOR Pipeline] STOP:',message);
+      if (imported) {
+        state.running=false;state.report.failure=message;
+        render('Backup не принят: '+message+'. Записи не выполнялись.');
+        setAction('Загрузить backup',()=>fileInput.click());
+      } else {
+        finish(false,message);
+      }
+    }
+  }
+
+  function validateBackup(r) {
+    if (!r || r.complete!==true || ![3,4].includes(r.version) ||
+        r.tool!=='dior-products-kk-pipeline' ||
+        r.brandDocumentId!==CFG.brandDocumentId ||
+        r.mode==='result' || !r.rawSchemas?.product?.attributes ||
+        !Array.isArray(r.rawSchemas.components) || !Array.isArray(r.products) ||
+        !r.products.length || !Array.isArray(r.schema)) {
+      throw Error('Не полный backup pipeline DIOR версии 3/4');
+    }
+    const ids=new Set();
+    for (const row of r.products) {
+      if (!row?.documentId || ids.has(row.documentId) ||
+          !row.snapshots?.ru?.draft?.fields || !row.snapshots?.ru?.draft?.relations ||
+          !row.snapshots?.kk?.draft?.fields || !row.snapshots?.kk?.draft?.relations ||
+          !row.plan?.actions || !Array.isArray(row.plan.operationTypes)) {
+        throw Error('Backup содержит отсутствующие/повторные или неполные записи');
+      }
+      ids.add(row.documentId);
+    }
+    return r;
+  }
+  const fileInput=node('input');
+  fileInput.type='file';
+  fileInput.accept='.json,application/json';
+  fileInput.style.display='none';
+  panel.append(fileInput);
+  fileInput.onchange=async()=>{
+    try {
+      const file=fileInput.files?.[0];
+      if (!file) return;
+      render('Читаем резервную копию…');
+      const parsed=validateBackup(JSON.parse(await file.text()));
+      await initial(parsed);
+    } catch (error) {
+      state.running=false;
+      render('Не удалось прочитать backup: '+String(error.message||error));
+      setAction('Загрузить backup',()=>fileInput.click());
+    } finally {fileInput.value='';}
+  };
+  if (reuse) {
+    await initial();
+  } else {
+    state.running=false;
+    render('Открой сохранённый backup JSON, чтобы не повторять полный аудит.');
+    setAction('Загрузить backup',()=>fileInput.click());
+    const rescan=node('a','Выполнить новый dry-run вместо загрузки');
+    rescan.style.cssText='display:block;margin-top:9px;color:#c5c0ff;text-decoration:underline;cursor:pointer';
+    rescan.onclick=()=>initial();
+    panel.append(rescan);
   }
 })();
