@@ -1423,25 +1423,37 @@
       '\nПри первой ошибке STOP, без автоматического восстановления RU.')) return;
     state.running=true;state.stopped=false;setAction('Остановить',stopRunning);
     try {
-      const output=await oneProduct(candidate.documentId,true);
-      if (output.skipped) {
-        state.report.skipped.push({documentId:candidate.documentId,reason:output.skipped});
-        state.report.pilotCandidate=choosePilot();
-        setPendingState('Пилот пропущен: '+output.skipped+'. Массовый запуск не начат.',runPilot,'Запустить другой пилот');
+      for (;;) {
+        checkStop();
+        const selected=state.report.pilotCandidate;
+        if (!selected) {
+          state.running=false;
+          render('Для пилота нет доступных товаров: все кандидаты пропущены.');
+          setAction('Скачать результат JSON',downloadResult);
+          downloadResult();
+          return;
+        }
+        render('Проверяем пилот '+selected.name+' · '+selected.documentId);
+        const output=await oneProduct(selected.documentId,true);
+        if (output.skipped) {
+          if (output.skipped!=='unpublished_kk_target') {
+            state.report.skipped.push({documentId:selected.documentId,
+              reason:output.skipped,missing:output.missing||null});
+          }
+          state.report.pilotCandidate=choosePilot();
+          continue; // Нет успешного пилота: выбираем следующий без новой записи.
+        }
+        state.report.verifiedTypes=[...new Set([
+          ...state.report.verifiedTypes,...output.types])].sort();
+        state.report.mode='pilot-verified';
+        state.report.pilotResult={documentId:selected.documentId,
+          at:new Date().toISOString(),types:output.types,verified:true};
+        state.report.progress=savedProgress();
+        checkStop();
+        state.running=false;
+        await runBatch();
         return;
       }
-      state.report.verifiedTypes=[...new Set([...state.report.verifiedTypes,...output.types])].sort();
-      state.report.mode='pilot-verified';
-      state.report.pilotResult={documentId:candidate.documentId,at:new Date().toISOString(),
-        types:output.types,verified:true};
-      state.report.progress=savedProgress();
-      // Если пользователь остановил во время финальной проверки пилота,
-      // не переходить к batch даже при подтверждённой записи.
-      checkStop();
-      // Без второй кнопки и подтверждения. Результат скачивается в конце
-      // batch или при STOP, чтобы не дублировать многомегабайтный JSON.
-      state.running=false;
-      await runBatch();
     } catch (error) {
       recordStop(String(error.message||error));
     }
