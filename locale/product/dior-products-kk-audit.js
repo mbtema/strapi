@@ -910,13 +910,17 @@
     }
     return {ok:true,checked};
   }
-  // Content Manager status=published может вернуть 404/пустое data либо
-  // запись с publishedAt=null, если target существует только в KK Draft.
+  // Content Manager status=published может вернуть HTTP 200 с data: {} (или []),
+  // когда у KK target есть только Draft. Это подтверждено реальным GET Attribute.
+  // Пустое data означает отсутствие Published, а не ошибку формата.
   // Никаких записей в target: только GET текущего состояния.
   async function kkPublishedDependency(uid,documentId) {
     const json=await request(detailPath(uid,documentId,'kk','published'),true);
     if (json===null || json.data==null) return false;
     const item=json.data;
+    if (Array.isArray(item) && item.length===0) return false;
+    if (item && typeof item==='object' && !Array.isArray(item) &&
+        Object.keys(item).length===0) return false;
     if (!item || typeof item!=='object' || Array.isArray(item) ||
         item.documentId!==documentId || item.locale!=='kk')
       throw Error('Неожиданный ответ Published KK target '+uid+'/'+documentId);
