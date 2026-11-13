@@ -1253,7 +1253,8 @@
     const original=baselineRow(j?.documentId);
     if (state.running || j?.phase!=='save-kk' || j?.method!=='PUT' ||
         j?.reason!=='Результат записи не подтверждён' ||
-        !original?.plan?.keyReview?.length || original.plan.needsSaveKk ||
+        !original?.plan?.keyReview?.length || !original.plan.eligible ||
+        original.plan.needsSaveKk ||
         !original.snapshots?.ru?.draft || !original.snapshots?.kk?.draft) {
       render('GET-сверка ключа невозможна: требуется ручной разбор unresolved');
       return;
@@ -1365,10 +1366,10 @@
       add('KK Published все поля и переводы',!!after.kk.published && equal(fields,after.kk.published.fields));
       add('KK Draft все relations',equal(original.snapshots.ru.draft.relations,after.kk.draft?.relations));
       add('KK Published все relations',equal(original.snapshots.ru.draft.relations,after.kk.published?.relations));
-      add('RU/KK key одинаковый в обеих версиях',
+      add('Исходные RU.key и KK.key сохранены',
         ['draft','published'].every(status=>
-          after.ru[status]?.fields?.key === after.kk[status]?.fields?.key &&
-          after.ru[status]?.fields?.key === original.snapshots.ru.draft.fields.key));
+          after.ru[status]?.fields?.key===original.snapshots.ru.draft.fields.key &&
+          after.kk[status]?.fields?.key===original.snapshots.kk.draft.fields.key));
       const failed=record.conditions.filter(x=>!x.ok).map(x=>x.name);
       record.verified=!failed.length;
       if (failed.length) {
@@ -1458,10 +1459,10 @@
         !!now.kk.published && equal(
           publishedVisibleRelations(now.kk.draft.relations,pub.missing),
           now.kk.published.relations));
-      add('RU/KK key всех версий совпадают',
+      add('RU.key и KK.key сохранены каждый из своей локали',
         ['draft','published'].every(status=>
-          now.ru[status]?.fields?.key===now.kk[status]?.fields?.key &&
-          now.ru[status]?.fields?.key===original.snapshots.ru.draft.fields.key));
+          now.ru[status]?.fields?.key===original.snapshots.ru.draft.fields.key &&
+          now.kk[status]?.fields?.key===original.snapshots.kk.draft.fields.key));
       checkStop();
       const failures=record.conditions.filter(x=>!x.ok).map(x=>x.name);
       if (failures.length) throw Error('Postflight не подтверждён: '+failures.join('; '));
