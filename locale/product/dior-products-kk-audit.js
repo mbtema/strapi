@@ -1243,6 +1243,80 @@
     clearStage();
     return {verified:true,types:receipt.types,receipt};
   }
+  // В старом v7 PUT KK мог вернуть 200, но key остался прежним.
+  // Если у Product из backup единственное изменение Draft — ошибочная
+  // попытка перенести key, проверяем все четыре версии строго read-only.
+  // Лишь подтверждённое полное отсутствие бизнес-изменений позволяет
+  // снять unresolved. Повторного PUT/POST этого товара здесь нет.
+  async function reconcileStoppedPreservedKey() {
+    const j=journal();
+    const original=baselineRow(j?.documentId);
+    if (state.running || j?.phase!=='save-kk' || j?.method!=='PUT' ||
+        j?.reason!=='Результат записи не подтверждён' ||
+        !original?.plan?.keyReview?.length || original.plan.needsSaveKk ||
+        !original.snapshots?.ru?.draft || !original.snapshots?.kk?.draft) {
+      render('GET-сверка ключа невозможна: требуется ручной разбор unresolved');
+      return;
+    }
+    if (!confirm('Проверить остановленный Save KK только через GET?\n'+
+      j.documentId+'\nВсе поля и связи RU/KK Draft/Published должны быть точно как в backup.'+
+      '\nЕсли совпадут, снимем unresolved и продолжим остальные DIOR Product без'+
+      ' повторного PUT данного товара.')) return;
+    state.running=true;state.stopped=false;
+    setAction('Остановить',stopRunning);
+    const record={documentId:j.documentId,
+      kind:'preserve-existing-kk-key-reconciliation',at:new Date().toISOString(),
+      verified:false,conditions:[],before:original.snapshots,
+      keyReview:original.plan.keyReview};
+    state.report.reconciliations=state.report.reconciliations||[];
+    state.report.reconciliations.push(record);
+    try {
+      await schemaPreflight();
+      const live=await allVersions(j.documentId);
+      record.after=live;
+      for (const locale of ['ru','kk']) for (const status of ['draft','published']) {
+        record.conditions.push({name:locale+'/'+status+' поля и relations как в backup',
+          ok:versionEqual(original.snapshots[locale][status],live[locale][status])});
+      }
+      record.conditions.push({name:'Сохранён исходный KK.key',
+        ok:live.kk.draft?.fields?.key===original.snapshots.kk.draft.fields.key &&
+          live.kk.published?.fields?.key===original.snapshots.kk.published?.fields?.key});
+      record.conditions.push({name:'KK.key отличается от RU.key, другие изменения не требуются',
+        ok:live.ru.draft?.fields?.key!==live.kk.draft?.fields?.key &&
+          original.plan.needsSaveKk===false});
+      checkStop();
+      const failed=record.conditions.filter(x=>!x.ok).map(x=>x.name);
+      if (failed.length)
+        throw Error('STOP: неподтверждённый Save KK: '+failed.join('; '));
+      record.verified=true;
+      record.finishedAt=new Date().toISOString();
+      record.disposition='no_business_changes_preserve_kk_key';
+      clearJournal();
+      clearStage();
+      state.report.unresolved=null;
+      state.report.executionFailure=null;
+      state.running=false;
+      const p=savedProgress().find(x=>x.automatedPilot===true);
+      if (p) {
+        state.report.pilotResult={documentId:p.id,verified:true,
+          recoveredFromCheckpoint:true,types:p.types||[]};
+        render('Save KK проверен: изменений нет, KK.key сохранён. Продолжаем остальные товары.');
+        await runBatch();
+      } else {
+        state.report.pilotCandidate=choosePilot();
+        render('Сверка завершена. Для массового запуска нужен автоматический пилот.');
+        setAction('Запустить пилот → все товары',runPilot);
+        downloadResult();
+      }
+    } catch(error) {
+      state.running=false;
+      record.failure=String(error.message||error);
+      render('СТОП: '+record.failure+'. Unresolved сохранён, записи запрещены.');
+      setAction('Скачать JSON результата',downloadResult);
+      downloadResult();
+    }
+  }
+
   // После ручной публикации уже частично записанного пилота разрешён
   // ТОЛЬКО read-only контроль: никаких повторных PUT/POST и неочевидной
   // автоматической перезаписи из backup.
@@ -1604,9 +1678,16 @@
         setAction('Проверить Publish KK → продолжить',reconcileStoppedPublication);
       } else if (j?.phase==='save-kk' && j?.method==='PUT' && j?.documentId &&
           j?.reason==='Результат записи не подтверждён' && !incomplete?.reason) {
-        render('Есть незавершённый пилот '+j.documentId+
-          '. Перед любым новым пилотом нужна GET-сверка после ручной публикации.');
-        setAction('Проверить остановленный пилот',reconcileStoppedPilot);
+        const row=baselineRow(j.documentId);
+        if (row?.plan?.keyReview?.length && !row.plan.needsSaveKk) {
+          render('Старый PUT KK не изменил key у '+j.documentId+
+            '. Доступна read-only сверка всех четырёх версий из backup.');
+          setAction('Проверить KK.key → продолжить',reconcileStoppedPreservedKey);
+        } else {
+          render('Есть незавершённый Save KK '+j.documentId+
+            '. Требуется read-only сверка исходного состояния.');
+          setAction('Проверить остановленный пилот',reconcileStoppedPilot);
+        }
       } else {
         render('Записи запрещены: unresolved journal или повреждённый checkpoint.');
         setAction('Скачать JSON повторно',downloadBackup);
