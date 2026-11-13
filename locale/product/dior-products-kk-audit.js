@@ -1491,7 +1491,7 @@
       if (stage) {
         if (stage.reason || !stage.documentId) throw Error('Некорректный checkpoint');
         const recovered=await oneProduct(stage.documentId,false);
-        if (!recovered.verified)
+        if (!recovered.verified && recovered.skipped!=='unpublished_kk_target')
           throw Error('Не удалось продолжить подтверждённый этап '+stage.documentId);
       }
       const already=savedProgress();
@@ -1589,9 +1589,16 @@
         setAction('Скачать JSON повторно',downloadBackup);
       }
     } else if (incomplete?.documentId && state.report.pilotCandidate) {
+      const p=savedProgress().find(row=>row.automatedPilot===true);
       render('Найден подтверждённый незавершённый этап: '+incomplete.phase+
         '\n'+incomplete.documentId+'. Повторного PUT не будет.');
-      setAction('Продолжить товар',runPilot);
+      if (p) {
+        state.report.pilotResult={documentId:p.id,verified:true,
+          recoveredFromCheckpoint:true,types:p.types||[]};
+        setAction('Продолжить синхронизацию',runBatch);
+      } else {
+        setAction('Продолжить товар',runPilot);
+      }
     } else if (state.report.pilotResult?.verified) {
       render('Пилот проверен. Нажми «Продолжить», чтобы синхронизировать все оставшиеся товары.');
       setAction('Продолжить синхронизацию',runBatch);
