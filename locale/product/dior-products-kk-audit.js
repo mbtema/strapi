@@ -2,6 +2,7 @@
 // Запуск: Strapi Admin -> RU-карточка Brand DIOR -> DevTools Console.
 // Все PUT/POST только по ручному запуску, без retry. Повреждение RU: STOP, recovery отдельно.
 // Strapi Product.key unique + nonlocalized: одинаковый key у RU и KK одного documentId.
+// Один ручной пилот -> при успешном postflight автоматическая обработка всех доступных Product.
 (async () => {
   'use strict';
   const CFG = {
@@ -49,7 +50,7 @@
   const prior = window.tmDiorProductsKkAudit;
   const reuse = prior?.complete === true && prior?.brandDocumentId === CFG.brandDocumentId &&
     prior?.products?.length > 0 && prior?.rawSchemas?.product?.attributes &&
-    [3,4,5].includes(prior.version) && prior?.mode === 'dry-run';
+    [3,4,5,6].includes(prior.version) && prior?.mode === 'dry-run';
   document.getElementById(PANEL_ID)?.remove();
   const node = (tag, value) => {
     const el = document.createElement(tag);
@@ -83,10 +84,11 @@
 
   const state = {
     running: true, stopped: false, critical: false, phase: 'init', processed: 0, total: 0,
+    batch: null,
     getCount: 0, getRetries: 0, targetsDone: 0, targetsTotal: 0,
     started: Date.now(), schema: null, components: null, targetCache: new Map(),
     report: {
-      tool: 'dior-products-kk-pipeline', version: 5, mode: 'dry-run',
+      tool: 'dior-products-kk-pipeline', version: 6, mode: 'dry-run',
       brandDocumentId: CFG.brandDocumentId, brandRelation: CFG.brandField,
       source: 'ru/draft', target: 'kk/draft',
       startedAt: new Date().toISOString(), finishedAt: null,
@@ -131,11 +133,16 @@
   const render = message => {
     if (message) state.phase = message;
     info.textContent = state.phase;
-    const percent = state.total ? 100 * state.processed / state.total : 0;
+    const batch = state.batch;
+    const percent = batch && state.report.mode==='batch-running' ?
+      (batch.total ? 100 * batch.processed / batch.total : 100) :
+      (state.total ? 100 * state.processed / state.total : 0);
     barFill.style.width = percent.toFixed(1) + '%';
-    barTrack.setAttribute('aria-valuenow', String(state.processed));
-    barTrack.setAttribute('aria-valuemax', String(state.total || 1));
-    stats.textContent = state.total ?
+    barTrack.setAttribute('aria-valuenow', String(batch && state.report.mode==='batch-running' ? batch.processed : state.processed));
+    barTrack.setAttribute('aria-valuemax', String(batch && state.report.mode==='batch-running' ? batch.total || 1 : state.total || 1));
+    stats.textContent = batch && state.report.mode==='batch-running' ?
+      'Batch '+batch.processed+'/'+batch.total+' · проверено '+batch.verified+
+      ' · пропущено '+batch.skipped+' · GET '+state.getCount : state.total ?
       'Товары ' + state.processed + '/' + state.total +
         ' · OK ' + count('ok') + ' · ожидают ' + count('pending') +
         (state.targetsTotal ? ' · связи ' + state.targetsDone + '/' + state.targetsTotal : '') :
@@ -1075,8 +1082,6 @@
     if (!dependencies.ok) return {skipped:'missing_kk_target',missing:dependencies.missing};
     const planned=baseline.plan;
     if (!planned.ready) return {skipped:'verified'};
-    if (!pilot && requiredTypes(planned).some(x=>!state.report.verifiedTypes.includes(x)))
-      return {skipped:'untested_operation',types:requiredTypes(planned)};
     const receipt={documentId,name:baseline.name,pilot,at:new Date().toISOString(),
       types:requiredTypes(planned),plannedActions:planned.actions,
       baseline:before,steps:[],verified:false};
@@ -1230,7 +1235,7 @@
   }
   async function runPilot() {
     if (state.running || journal()) {
-      if (journal())render('СТОП: unresolved журнал, записи запрещены');
+      if (journal()) render('СТОП: unresolved журнал, записи запрещены');
       return;
     }
     const candidate=state.report.pilotCandidate;
@@ -1238,15 +1243,17 @@
     const description=candidate.name+'\n'+candidate.documentId+
       '\nИзменений: '+candidate.modifications+'\nТипы: '+candidate.types.join(', ');
     if (!confirm('Подтверждаю, что полный '+BACKUP_NAME+' сохранён на диске.'+
-      '\n\nЗапустить пилот ОДНОГО товара?\n'+description+
-      '\n\nПри подозрении на потерю RU — STOP; авто-recovery ещё не проверен.')) return;
+      '\n\nЗапустить пилот одного товара, а после полного успеха '+
+      'АВТОМАТИЧЕСКИ синхронизировать ВСЕ доступные товары DIOR?\n'+description+
+      '\n\nОстальные типы изменений будут проверяться для каждого товара.'+
+      '\nПри первой ошибке STOP, без автоматического восстановления RU.')) return;
     state.running=true;state.stopped=false;setAction('Остановить',stopRunning);
     try {
       const output=await oneProduct(candidate.documentId,true);
       if (output.skipped) {
-        state.report.skipped.push({documentId:candidate.documentId,...output});
+        state.report.skipped.push({documentId:candidate.documentId,reason:output.skipped});
         state.report.pilotCandidate=choosePilot();
-        setPendingState('Пилот пропущен: '+output.skipped+'. Выбран следующий кандидат.',runPilot,'Запустить пилот');
+        setPendingState('Пилот пропущен: '+output.skipped+'. Массовый запуск не начат.',runPilot,'Запустить другой пилот');
         return;
       }
       state.report.verifiedTypes=[...new Set([...state.report.verifiedTypes,...output.types])].sort();
@@ -1254,8 +1261,13 @@
       state.report.pilotResult={documentId:candidate.documentId,at:new Date().toISOString(),
         types:output.types,verified:true};
       state.report.progress=savedProgress();
-      downloadResult();
-      setPendingState('Пилот проверен. Можно запустить только подтверждённые операции.',runBatch,'Применить проверенные');
+      // Если пользователь остановил во время финальной проверки пилота,
+      // не переходить к batch даже при подтверждённой записи.
+      checkStop();
+      // Без второй кнопки и подтверждения. Результат скачивается в конце
+      // batch или при STOP, чтобы не дублировать многомегабайтный JSON.
+      state.running=false;
+      await runBatch();
     } catch (error) {
       recordStop(String(error.message||error));
     }
@@ -1279,62 +1291,67 @@
   }
 
   async function runBatch() {
+    // Вызывается сразу после успешного пилота или вручную при возобновлении
+    // ранее подтверждённого пилота. Второго confirm нет.
     if (state.running || journal() || !state.report.pilotResult?.verified) return;
-    if (!confirm('Последовательная обработка только проверенных операций.'+
-      '\nНепроверенные типы и изменённые товары будут пропущены.'+
-      '\nПри первой ошибке STOP. Продолжить?')) return;
-    state.running=true;state.stopped=false;setAction('Остановить',stopRunning);
+    state.running=true;state.stopped=false;
+    state.report.mode='batch-running';
+    state.batch={total:0,processed:0,verified:0,skipped:0,alreadyDone:0,
+      startedAt:new Date().toISOString(),finishedAt:null};
+    state.report.batchSummary=state.batch;
+    setAction('Остановить',stopRunning);
     try {
       const stage=verifiedStage();
       if (stage) {
         if (stage.reason || !stage.documentId) throw Error('Некорректный checkpoint');
         const recovered=await oneProduct(stage.documentId,false);
-        if (!recovered.verified) throw Error('Не удалось продолжить подтверждённый этап '+stage.documentId);
+        if (!recovered.verified)
+          throw Error('Не удалось продолжить подтверждённый этап '+stage.documentId);
       }
       const already=savedProgress();
       state.report.checkpointVerifications=[];
-      for (const verified of already) {
+      for (let i=0;i<already.length;i++) {
         checkStop();
-        const result=await verifyCompletedFromCheckpoint(verified.id);
+        render('Повторная проверка checkpoint '+(i+1)+'/'+already.length);
+        const result=await verifyCompletedFromCheckpoint(already[i].id);
         state.report.checkpointVerifications.push(result);
       }
+      // Только запланированные, доступные товары. Недостающие KK targets
+      // уже отмечены как blocked и не получат PUT/POST.
       const rows=state.report.products.filter(row=>row?.plan?.ready && row.plan.eligible &&
         row.documentId!==state.report.pilotResult.documentId);
-      for (let i=0;i<rows.length;i++) {
+      state.batch.total=rows.length;
+      const completed=new Set(savedProgress().map(p=>p.id));
+      for (const row of rows) {
         checkStop();
-        const row=rows[i];
-        if (savedProgress().some(p=>p.id===row.documentId)) continue;
-        const needed=requiredTypes(row.plan);
-        if (needed.some(x=>!state.report.verifiedTypes.includes(x))) {
-          state.report.skipped.push({documentId:row.documentId,
-            reason:'untested_operation',types:needed.filter(x=>!state.report.verifiedTypes.includes(x))});
-          continue;
+        if (completed.has(row.documentId)) {
+          state.batch.alreadyDone++;
+        } else {
+          render('Синхронизируем '+row.name+' · '+row.documentId);
+          const output=await oneProduct(row.documentId);
+          if (output.verified) {
+            state.batch.verified++;
+            completed.add(row.documentId);
+          } else {
+            state.batch.skipped++;
+            state.report.skipped.push({documentId:row.documentId,
+              reason:output.skipped||'unverified',missing:output.missing||null});
+          }
+          await sleep(200);
         }
-        render('Проверяем товар '+(i+1)+'/'+rows.length+' · '+row.name);
-        const output=await oneProduct(row.documentId);
-        if (output.skipped)
-          state.report.skipped.push({documentId:row.documentId,reason:output.skipped,
-            missing:output.missing||null});
-        await sleep(200);
+        state.batch.processed++;
+        render('Синхронизация DIOR: '+state.batch.processed+'/'+state.batch.total);
       }
-      state.report.mode='batch-finished';state.report.progress=savedProgress();
+      checkStop();
+      state.batch.finishedAt=new Date().toISOString();
+      state.report.mode='batch-finished';
+      state.report.progress=savedProgress();
+      state.running=false;
+      render('Обработка завершена: '+state.batch.verified+' проверено, '+
+        state.batch.skipped+' пропущено, '+state.batch.alreadyDone+' уже были выполнены.'+
+        '\nЗаблокированные товары остаются в отчёте.');
+      setAction('Скачать JSON повторно',downloadResult);
       downloadResult();
-      const remaining=state.report.products.filter(r=>r?.plan?.ready && r.plan.eligible &&
-        !savedProgress().some(p=>p.id===r.documentId) &&
-        requiredTypes(r.plan).some(x=>!state.report.verifiedTypes.includes(x)));
-      remaining.sort((a,b)=>b.plan.modifications-a.plan.modifications ||
-        b.plan.operationTypes.length-a.plan.operationTypes.length ||
-        a.documentId.localeCompare(b.documentId));
-      if (remaining.length) {
-        const row=remaining[0];
-        state.report.pilotCandidate={documentId:row.documentId,name:row.name,
-          modifications:row.plan.modifications,types:row.plan.operationTypes,
-          plannedActions:row.plan.actions};
-        setPendingState('Остались непроверенные операции. Подготовлен новый пилот.',runPilot,'Запустить пилот');
-      } else {
-        setPendingState('Обработка завершена. Необработанные товары — в JSON.',runBatch,'Применить проверенные');
-        setAction('Скачать JSON повторно',downloadResult);
-      }
     } catch (error) {
       recordStop(String(error.message||error));
     }
@@ -1380,22 +1397,23 @@
         '\n'+incomplete.documentId+'. Повторного PUT не будет.');
       setAction('Продолжить товар',runPilot);
     } else if (state.report.pilotResult?.verified) {
-      render('Ранее пилот проверен. Можно применить подтверждённые операции.');
-      setAction('Применить проверенные',runBatch);
+      render('Пилот проверен. Нажми «Продолжить», чтобы синхронизировать все оставшиеся товары.');
+      setAction('Продолжить синхронизацию',runBatch);
     } else if (savedProgress().some(p=>p.automatedPilot===true)) {
       // Признак автоматического успешного пилота сохраняется отдельно от
       // ручного восстановления: оно НЕ подтверждает pipeline Publish.
       const p=savedProgress().find(p=>p.automatedPilot===true);
       state.report.pilotResult={documentId:p.id,verified:true,
         recoveredFromCheckpoint:true,types:p.types};
-      render('Автоматический пилот пройден ранее. Перед batch будет повторный GET.');
-      setAction('Применить проверенные',runBatch);
+      render('Автоматический пилот уже выполнен. При продолжении повторно проверим checkpoint.');
+      setAction('Продолжить синхронизацию',runBatch);
     } else if (state.report.pilotCandidate) {
       const pilot=state.report.pilotCandidate;
       render((fromMemory?'Используем сохранённый backup. Проверь файл.':
         'Backup JSON скачан. Проверь файл.')+'\nПилот: '+pilot.name+
-        '\n'+pilot.documentId+' · '+pilot.modifications+' изменений');
-      setAction('Запустить пилот',runPilot);
+        '\n'+pilot.documentId+' · '+pilot.modifications+' изменений'+
+        '\nПосле успеха пилота остальные доступные товары запускаются автоматически.');
+      setAction('Запустить пилот → все товары',runPilot);
     } else {
       render('Dry-run готов. Доступных для пилота товаров нет.');
       setAction('Скачать JSON повторно',downloadBackup);
@@ -1443,7 +1461,7 @@
           !equal(sourceReport.rawSchemas.components,componentsResponse.data)) {
         throw Error('Схема отличается от сохранённого backup. Нужен новый dry-run');
       }
-      state.report={...sourceReport,version:5,mode:'dry-run',complete:true,failure:null,
+      state.report={...sourceReport,version:6,mode:'dry-run',complete:true,failure:null,
         products:refreshPlansFromBackup(sourceReport.products,productSchema,components),
         operations:[],execution:[],
         verifiedTypes:[...new Set([...(sourceReport.verifiedTypes||[]),
@@ -1517,13 +1535,13 @@
   }
 
   function validateBackup(r) {
-    if (!r || r.complete!==true || ![3,4,5].includes(r.version) ||
+    if (!r || r.complete!==true || ![3,4,5,6].includes(r.version) ||
         r.tool!=='dior-products-kk-pipeline' ||
         r.brandDocumentId!==CFG.brandDocumentId ||
         r.mode!=='dry-run' || !r.rawSchemas?.product?.attributes ||
         !Array.isArray(r.rawSchemas.components) || !Array.isArray(r.products) ||
         !r.products.length || !Array.isArray(r.schema)) {
-      throw Error('Не полный backup pipeline DIOR версии 3/4/5');
+      throw Error('Не полный backup pipeline DIOR версии 3/4/5/6');
     }
     const ids=new Set();
     for (const row of r.products) {
