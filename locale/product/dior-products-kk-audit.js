@@ -4,6 +4,7 @@
 // Strapi Product.key unique + nonlocalized: одинаковый key у RU и KK одного documentId.
 // Один ручной пилот -> после postflight автоматическая обработка eligible Product.
 // Неопубликованные KK target => defer Product без Publish и без публикации справочников.
+// Отличающийся KK.key — допустимый сохранённый идентификатор: НЕ менять и не блокировать relations.
 (async () => {
   'use strict';
   const CFG = {
@@ -52,7 +53,7 @@
   const prior = window.tmDiorProductsKkAudit;
   const reuse = prior?.complete === true && prior?.brandDocumentId === CFG.brandDocumentId &&
     prior?.products?.length > 0 && prior?.rawSchemas?.product?.attributes &&
-    [3,4,5,6,7].includes(prior.version) && prior?.mode === 'dry-run';
+    [3,4,5,6,7,8].includes(prior.version) && prior?.mode === 'dry-run';
   document.getElementById(PANEL_ID)?.remove();
   const node = (tag, value) => {
     const el = document.createElement(tag);
@@ -90,7 +91,7 @@
     getCount: 0, getRetries: 0, targetsDone: 0, targetsTotal: 0,
     started: Date.now(), schema: null, components: null, targetCache: new Map(),
     report: {
-      tool: 'dior-products-kk-pipeline', version: 7, mode: 'dry-run',
+      tool: 'dior-products-kk-pipeline', version: 8, mode: 'dry-run',
       brandDocumentId: CFG.brandDocumentId, brandRelation: CFG.brandField,
       source: 'ru/draft', target: 'kk/draft',
       startedAt: new Date().toISOString(), finishedAt: null,
@@ -475,7 +476,11 @@
     if (localized) {
       if (!equal(ar, ak)) meta.localizedDifferent++;
     } else if (!equal(ar, ak)) {
-      issue(issues, 'shared_value_diff', path, 'Разные значения нелокализуемого поля', short(ar), short(ak));
+      if (path === 'key' && attr.unique === true)
+        issue(issues,'key_preserved',path,'Сохраняем имеющийся KK.key; он может отличаться от RU.key',
+          short(ar),short(ak));
+      else issue(issues, 'shared_value_diff', path,
+        'Разные значения нелокализуемого поля', short(ar), short(ak));
     }
   }
 
@@ -509,7 +514,7 @@
     const pubRu = base.snapshots.ru.published, pubKk = base.snapshots.kk.published;
     const plan = {
       actions: [], operationTypes: [], blockers: [], translationReview: [],
-      missingTargets: [], modifications: 0, fieldTypes: [],
+      missingTargets: [], keyReview: [], modifications: 0, fieldTypes: [],
       needPublishRu: false, needPublishKk: false, needsSaveKk: false,
       eligible: false, ready: false
     };
@@ -534,13 +539,14 @@
           plan.blockers.push('Unique field требует отдельного контракта: ' + field);
           continue;
         }
-        // У одного documentId общий key во всех локалях.
-        // unique запрещает повторное значение у ДРУГОГО Product, не у kk того же документа.
-        const expected = src[field];
-        if (dst[field] !== expected) {
-          plan.actions.push({ kind: 'unique_key', field, ru: src[field], kk: dst[field],
-            expected, uniquenessCheck: 'global-check-required-before-write' });
-          plan.operationTypes.push('unique:key');
+        // Подтверждено live: в некоторых Product KK.key отличается от RU.key,
+        // и Content Manager игнорирует попытку изменить его через PUT KK.
+        // Никогда не заменяем существующий KK.key; отличия отражаем в отчёте.
+        if (typeof dst[field] !== 'string' || !dst[field].length) {
+          plan.blockers.push('KK unique key отсутствует, нет безопасного контракта: '+field);
+        } else if (dst[field] !== src[field]) {
+          plan.keyReview.push({field,ru:src[field],kk:dst[field],
+            resolution:'preserve_existing_kk'});
         }
         continue;
       }
@@ -655,7 +661,12 @@
     const fields=Object.entries(schema.attributes).filter(([name,a])=>
       !SYSTEM.has(name) && a.type==='relation').map(([name])=>name);
     return products.map(original=>{
-      const row={...original};
+      const row={...original,
+        issues:(original.issues||[]).map(issue=>issue.path==='key' &&
+          issue.kind==='shared_value_diff'?{
+            ...issue,kind:'key_preserved',
+            detail:'Сохраняем имеющийся KK.key; он может отличаться от RU.key'
+          }:issue)};
       const plan=analyzePlan(row,schema,components,fields);
       const missing=original.plan?.missingTargets||[];
       plan.missingTargets=missing;
@@ -801,6 +812,7 @@
       translationReviews:rows.reduce((n,r)=>n+r.plan.translationReview.length,0),
       relationDifferences:issues.filter(x=>x.kind==='relation_diff').length,
       sharedDifferences:issues.filter(x=>x.kind==='shared_value_diff'||x.kind==='shared_kk_empty').length,
+      preservedKkKeyDifferences:rows.filter(r=>r.plan?.keyReview?.length).length,
       relationEntriesRu:ruRelations, relationEntriesKk:kkRelations,
       missingRelationEntries:issues.filter(x=>x.kind==='relation_diff').reduce((n,x)=>n+x.ru.length,0),
       extraRelationEntries:issues.filter(x=>x.kind==='relation_diff').reduce((n,x)=>n+x.kk.length,0),
@@ -869,7 +881,7 @@
       }
       let value;
       if (field === 'key' && attr.unique === true) {
-        value = ru[field];
+        value = locale === 'kk' ? kk[field] : ru[field];
       } else if (attr.type === 'media') {
         value = normalizeMedia(ru[field]);
         if (Array.isArray(value) ? value.some(id=>idOfMedia(id)==null) :
@@ -1234,7 +1246,8 @@
     const fields={...originalKk.fields};
     for (const [name,a] of Object.entries(state.schema.attributes)) {
       if (SYSTEM.has(name) || a.type==='relation') continue;
-      if (!flagLocalized(a)) fields[name]=originalRu.fields[name];
+      if (!flagLocalized(a) && !(name==='key' && a.unique===true))
+        fields[name]=originalRu.fields[name];
     }
     return fields;
   }
@@ -1668,7 +1681,7 @@
           !equal(sourceReport.rawSchemas.components,componentsResponse.data)) {
         throw Error('Схема отличается от сохранённого backup. Нужен новый dry-run');
       }
-      state.report={...sourceReport,version:7,mode:'dry-run',complete:true,failure:null,
+      state.report={...sourceReport,version:8,mode:'dry-run',complete:true,failure:null,
         products:refreshPlansFromBackup(sourceReport.products,productSchema,components),
         operations:[],execution:[],
         verifiedTypes:[...new Set([...(sourceReport.verifiedTypes||[]),
@@ -1681,7 +1694,7 @@
       state.processed=state.total;
       state.report.schema=nestedSchemaLines(productSchema.attributes,components,'');
       state.report.plan={...state.report.plan,
-        uniquenessCheck:'unique-across-products-shared-within-document',
+        uniquenessCheck:'unique-among-other-products-preserve-existing-kk-key',
         revalidatedFrom:sourceReport.version};
       window.tmDiorProductsKkAudit=state.report;
       finish(true,null,true);
@@ -1742,13 +1755,13 @@
   }
 
   function validateBackup(r) {
-    if (!r || r.complete!==true || ![3,4,5,6,7].includes(r.version) ||
+    if (!r || r.complete!==true || ![3,4,5,6,7,8].includes(r.version) ||
         r.tool!=='dior-products-kk-pipeline' ||
         r.brandDocumentId!==CFG.brandDocumentId ||
         r.mode!=='dry-run' || !r.rawSchemas?.product?.attributes ||
         !Array.isArray(r.rawSchemas.components) || !Array.isArray(r.products) ||
         !r.products.length || !Array.isArray(r.schema)) {
-      throw Error('Не полный backup pipeline DIOR версии 3/4/5/6/7');
+      throw Error('Не полный backup pipeline DIOR версии 3/4/5/6/7/8');
     }
     const ids=new Set();
     for (const row of r.products) {
