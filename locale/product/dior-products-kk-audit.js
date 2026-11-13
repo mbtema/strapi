@@ -121,9 +121,9 @@
   const clearStage = () => localStorage.removeItem(STAGE_KEY);
   const setJournal = entry => localStorage.setItem(UNRESOLVED_KEY,JSON.stringify(entry));
   const clearJournal = () => localStorage.removeItem(UNRESOLVED_KEY);
-  const markProgress = (id,types) => {
+  const markProgress = (id,types,metadata={}) => {
     const rows = savedProgress().filter(row => row.id !== id);
-    rows.push({id,types,at:new Date().toISOString()});
+    rows.push({id,types,at:new Date().toISOString(),...metadata});
     localStorage.setItem(PROGRESS_KEY,JSON.stringify(rows));
     state.report.progress = rows;
   };
@@ -1084,12 +1084,10 @@
     state.report.execution.push(receipt);
     let current=before;
     if (planned.needsSaveKk && !stage) {
-      const keyAction=planned.actions.find(x=>x.kind==='unique_key');
-      if (keyAction) {
-        receipt.keyCheck=await globalKeyCheck(before.ru.draft.detail.key,
-          keyAction.expected,documentId);
-        state.report.safety.globalKeyUniquenessVerified=true;
-      }
+      // Даже если ключ уже совпадает, проверяем его уникальность по другим Product.
+      receipt.keyCheck=await globalKeyCheck(before.ru.draft.detail.key,
+        before.ru.draft.detail.key,documentId);
+      state.report.safety.globalKeyUniquenessVerified=true;
       const payload=await payloadRelations(current,planned,payloadContent(current,'kk'));
       const url='/content-manager/collection-types/'+CFG.productUid+'/'+documentId+'?locale=kk';
       const actualBefore=await allVersions(documentId);
@@ -1134,10 +1132,98 @@
     }
     receipt.verified=true;receipt.finishedAt=new Date().toISOString();
     receipt.final=current;
-    markProgress(documentId,receipt.types);
+    markProgress(documentId,receipt.types,{automatedPilot:pilot});
     clearStage();
     return {verified:true,types:receipt.types,receipt};
   }
+  // После ручной публикации уже частично записанного пилота разрешён
+  // ТОЛЬКО read-only контроль: никаких повторных PUT/POST и неочевидной
+  // автоматической перезаписи из backup.
+  function expectedKkFromOriginalBackup(baseline) {
+    const originalRu=baseline.snapshots.ru.draft;
+    const originalKk=baseline.snapshots.kk.draft;
+    const fields={...originalKk.fields};
+    for (const [name,a] of Object.entries(state.schema.attributes)) {
+      if (SYSTEM.has(name) || a.type==='relation') continue;
+      if (!flagLocalized(a)) fields[name]=originalRu.fields[name];
+    }
+    return fields;
+  }
+  async function reconcileStoppedPilot() {
+    const unresolved=journal();
+    if (state.running) return;
+    if (unresolved?.reason !== 'Результат записи не подтверждён' ||
+        unresolved?.phase !== 'save-kk' || unresolved?.method !== 'PUT' ||
+        !unresolved?.documentId) {
+      render('Нельзя сверить автоматически: журнал не соответствует Save KK.');
+      return;
+    }
+    const original=baselineRow(unresolved.documentId);
+    if (!original?.snapshots?.ru?.draft || !original.snapshots?.kk?.draft) {
+      render('Нет полного исходного снимка остановленного товара');
+      return;
+    }
+    if (!confirm('Выполнить только GET-проверку остановленного товара?\n'+
+      'Никаких Save/Publish и автоматической очистки без успешного сравнения.')) return;
+    state.running=true;state.stopped=false;
+    setAction('Остановить',stopRunning);
+    const record={documentId:unresolved.documentId,kind:'manual-publish-reconciliation',
+      at:new Date().toISOString(),verified:false,conditions:[],before:original.snapshots};
+    state.report.reconciliations=state.report.reconciliations||[];
+    state.report.reconciliations.push(record);
+    try {
+      await schemaPreflight();
+      const after=await allVersions(unresolved.documentId);
+      record.after=after;
+      const add=(name,ok)=>{record.conditions.push({name,ok});};
+      add('RU Draft неизменён',versionEqual(original.snapshots.ru.draft,after.ru.draft));
+      add('RU Published неизменён',versionEqual(original.snapshots.ru.published,after.ru.published));
+      const fields=expectedKkFromOriginalBackup(original);
+      add('KK Draft все поля и переводы',!!after.kk.draft && equal(fields,after.kk.draft.fields));
+      add('KK Published все поля и переводы',!!after.kk.published && equal(fields,after.kk.published.fields));
+      add('KK Draft все relations',equal(original.snapshots.ru.draft.relations,after.kk.draft?.relations));
+      add('KK Published все relations',equal(original.snapshots.ru.draft.relations,after.kk.published?.relations));
+      add('RU/KK key одинаковый в обеих версиях',
+        ['draft','published'].every(status=>
+          after.ru[status]?.fields?.key === after.kk[status]?.fields?.key &&
+          after.ru[status]?.fields?.key === original.snapshots.ru.draft.fields.key));
+      const failed=record.conditions.filter(x=>!x.ok).map(x=>x.name);
+      record.verified=!failed.length;
+      if (failed.length) {
+        record.failure=failed;
+        state.running=false;
+        render('НЕ СВЕРЕНО: '+failed.join('; ')+'. Unresolved не очищен.');
+        setAction('Скачать JSON результата',downloadResult);
+        downloadResult();
+        return;
+      }
+      // Проверка после ручного Publish не делает Publish проверенной операцией скрипта.
+      // Отмечаем только этот Product, а новый пилот выбирается из оставшихся.
+      record.finishedAt=new Date().toISOString();
+      markProgress(unresolved.documentId,[],{manualRecovered:true});
+      clearJournal();
+      clearStage();
+      state.report.pilotCandidate=choosePilot();
+      state.report.mode='manual-reconciled';
+      downloadResult();
+      state.running=false;
+      if (state.report.pilotCandidate) {
+        render('Ручной пилот сверён по GET. Новый пилот нужен для проверки POST Publish.'+
+          '\n'+state.report.pilotCandidate.name);
+        setAction('Запустить пилот',runPilot);
+      } else {
+        render('Ручная проверка выполнена; доступных товаров нет.');
+        setAction('Скачать JSON результата',downloadResult);
+      }
+    } catch (error) {
+      state.running=false;
+      record.failure=[String(error.message||error)];
+      render('Проверка прервана: '+record.failure[0]+'. Unresolved не очищен.');
+      setAction('Скачать JSON результата',downloadResult);
+      downloadResult();
+    }
+  }
+
   function setPendingState(message,handler,buttonLabel) {
     state.running=false;state.critical=false;state.stopped=false;
     render(message);setAction(buttonLabel,handler);
@@ -1279,8 +1365,16 @@
     state.report.plan.writesEnabled=!!state.report.pilotCandidate&&!journal();
     state.report.writesEnabled=!!state.report.pilotCandidate&&!journal();
     if (journal() || incomplete?.reason) {
-      render('Записи запрещены: unresolved journal или повреждённый checkpoint.');
-      setAction('Скачать JSON повторно',downloadBackup);
+      const j=journal();
+      if (j?.phase==='save-kk' && j?.method==='PUT' && j?.documentId &&
+          j?.reason==='Результат записи не подтверждён' && !incomplete?.reason) {
+        render('Есть незавершённый пилот '+j.documentId+
+          '. Перед любым новым пилотом нужна GET-сверка после ручной публикации.');
+        setAction('Проверить остановленный пилот',reconcileStoppedPilot);
+      } else {
+        render('Записи запрещены: unresolved journal или повреждённый checkpoint.');
+        setAction('Скачать JSON повторно',downloadBackup);
+      }
     } else if (incomplete?.documentId && state.report.pilotCandidate) {
       render('Найден подтверждённый незавершённый этап: '+incomplete.phase+
         '\n'+incomplete.documentId+'. Повторного PUT не будет.');
@@ -1288,13 +1382,13 @@
     } else if (state.report.pilotResult?.verified) {
       render('Ранее пилот проверен. Можно применить подтверждённые операции.');
       setAction('Применить проверенные',runBatch);
-    } else if (savedProgress().length) {
-      // После перезагрузки подтверждённые Product будут заново проверены
-      // внутри runBatch до любых новых записей.
-      const p=savedProgress()[0];
+    } else if (savedProgress().some(p=>p.automatedPilot===true)) {
+      // Признак автоматического успешного пилота сохраняется отдельно от
+      // ручного восстановления: оно НЕ подтверждает pipeline Publish.
+      const p=savedProgress().find(p=>p.automatedPilot===true);
       state.report.pilotResult={documentId:p.id,verified:true,
         recoveredFromCheckpoint:true,types:p.types};
-      render('В checkpoint есть завершённый пилот. Перед batch пройдёт повторный GET.');
+      render('Автоматический пилот пройден ранее. Перед batch будет повторный GET.');
       setAction('Применить проверенные',runBatch);
     } else if (state.report.pilotCandidate) {
       const pilot=state.report.pilotCandidate;
