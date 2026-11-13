@@ -2,7 +2,8 @@
 // Запуск: Strapi Admin -> RU-карточка Brand DIOR -> DevTools Console.
 // Все PUT/POST только по ручному запуску, без retry. Повреждение RU: STOP, recovery отдельно.
 // Strapi Product.key unique + nonlocalized: одинаковый key у RU и KK одного documentId.
-// Один ручной пилот -> при успешном postflight автоматическая обработка всех доступных Product.
+// Один ручной пилот -> после postflight автоматическая обработка eligible Product.
+// Неопубликованные KK target => defer Product без Publish и без публикации справочников.
 (async () => {
   'use strict';
   const CFG = {
@@ -23,6 +24,7 @@
   const UNRESOLVED_KEY = 'tm:dior:product:unresolved:v1';
   const PROGRESS_KEY = 'tm:dior:product:progress:v1';
   const STAGE_KEY = 'tm:dior:product:verified-stage:v1';
+  const DEFERRED_KEY = 'tm:dior:product:unpublished-targets:v1';
   const SCALARS = new Set(['string','text','richtext','email','enumeration','json','blocks',
     'integer','biginteger','float','decimal','boolean','date','time','datetime']);
   const PANEL_ID = 'tm-dior-products-kk-audit';
@@ -50,7 +52,7 @@
   const prior = window.tmDiorProductsKkAudit;
   const reuse = prior?.complete === true && prior?.brandDocumentId === CFG.brandDocumentId &&
     prior?.products?.length > 0 && prior?.rawSchemas?.product?.attributes &&
-    [3,4,5,6].includes(prior.version) && prior?.mode === 'dry-run';
+    [3,4,5,6,7].includes(prior.version) && prior?.mode === 'dry-run';
   document.getElementById(PANEL_ID)?.remove();
   const node = (tag, value) => {
     const el = document.createElement(tag);
@@ -88,7 +90,7 @@
     getCount: 0, getRetries: 0, targetsDone: 0, targetsTotal: 0,
     started: Date.now(), schema: null, components: null, targetCache: new Map(),
     report: {
-      tool: 'dior-products-kk-pipeline', version: 6, mode: 'dry-run',
+      tool: 'dior-products-kk-pipeline', version: 7, mode: 'dry-run',
       brandDocumentId: CFG.brandDocumentId, brandRelation: CFG.brandField,
       source: 'ru/draft', target: 'kk/draft',
       startedAt: new Date().toISOString(), finishedAt: null,
@@ -123,6 +125,26 @@
   const clearStage = () => localStorage.removeItem(STAGE_KEY);
   const setJournal = entry => localStorage.setItem(UNRESOLVED_KEY,JSON.stringify(entry));
   const clearJournal = () => localStorage.removeItem(UNRESOLVED_KEY);
+  const savedDeferred = () => {
+    try {
+      const data=JSON.parse(localStorage.getItem(DEFERRED_KEY)||'null');
+      return data?.backupAt===state.report.startedAt && Array.isArray(data.rows) ?
+        data.rows.filter(row=>row?.documentId && row.reason==='unpublished_kk_target') : [];
+    } catch { return []; }
+  };
+  function deferProduct(documentId,missing,stage='before-save') {
+    if (!Array.isArray(missing) || !missing.length)
+      throw Error('Нельзя отложить товар без подтверждённой KK Published-зависимости');
+    const rows=savedDeferred().filter(row=>row.documentId!==documentId);
+    const entry={documentId,reason:'unpublished_kk_target',
+      missing,stage,at:new Date().toISOString()};
+    rows.push(entry);
+    localStorage.setItem(DEFERRED_KEY,JSON.stringify({backupAt:state.report.startedAt,rows}));
+    state.report.skipped=state.report.skipped||[];
+    state.report.skipped=state.report.skipped.filter(row=>row.documentId!==documentId);
+    state.report.skipped.push(entry);
+    return entry;
+  }
   const markProgress = (id,types,metadata={}) => {
     const rows = savedProgress().filter(row => row.id !== id);
     rows.push({id,types,at:new Date().toISOString(),...metadata});
@@ -888,6 +910,47 @@
     }
     return {ok:true,checked};
   }
+  // Content Manager status=published может вернуть 404/пустое data либо
+  // запись с publishedAt=null, если target существует только в KK Draft.
+  // Никаких записей в target: только GET текущего состояния.
+  async function kkPublishedDependency(uid,documentId) {
+    const json=await request(detailPath(uid,documentId,'kk','published'),true);
+    if (json===null || json.data==null) return false;
+    const item=json.data;
+    if (!item || typeof item!=='object' || Array.isArray(item) ||
+        item.documentId!==documentId || item.locale!=='kk')
+      throw Error('Неожиданный ответ Published KK target '+uid+'/'+documentId);
+    return typeof item.publishedAt==='string' && item.publishedAt.length>0;
+  }
+  async function publicationDependencies(snapshot) {
+    const source=snapshot?.ru?.draft;
+    if (!source?.relations) throw Error('Нет RU Draft relations перед проверкой Publish KK');
+    const targets=new Map(),refs=[];
+    for (const [field,ids] of Object.entries(source.relations)) {
+      const uid=state.schema.attributes[field]?.target;
+      if (!uid?.startsWith('api::') || !Array.isArray(ids))
+        throw Error('Не подтверждена схема relation перед Publish: '+field);
+      for (const documentId of ids) {
+        if (typeof documentId!=='string' || !documentId)
+          throw Error('Некорректный target documentId: '+field);
+        const key=uid+'|'+documentId;
+        targets.set(key,{uid,documentId});
+        refs.push({field,uid,documentId,key});
+      }
+    }
+    // Проверяем полные связи, включая те, которые уже существовали в KK Draft.
+    const verified=await eachLimited([...targets.entries()],CFG.targetWorkers,async ([key,t])=>
+      [key,await kkPublishedDependency(t.uid,t.documentId)]);
+    const statuses=new Map(verified);
+    const missing=refs.filter(x=>!statuses.get(x.key)).map(({field,uid,documentId})=>
+      ({field,uid,documentId}));
+    return {ok:missing.length===0,missing,checked:targets.size};
+  }
+  function publishedVisibleRelations(draftRelations,missing) {
+    const omit=new Set(missing.map(x=>x.field+'|'+x.documentId));
+    return Object.fromEntries(Object.entries(draftRelations).map(([field,ids])=>
+      [field,ids.filter(id=>!omit.has(field+'|'+id))]));
+  }
   async function payloadRelations(before,plan,payload) {
     for (const action of plan.actions.filter(x=>x.kind==='relation')) {
       const connect=[],disconnect=[];
@@ -1081,6 +1144,14 @@
     const dependencies=await checkFreshDependencies(before);
     if (!dependencies.ok) return {skipped:'missing_kk_target',missing:dependencies.missing};
     const planned=baseline.plan;
+    if (planned.needPublishKk || planned.needsSaveKk) {
+      const published=await publicationDependencies(before);
+      if (!published.ok) {
+        deferProduct(documentId,published.missing,stage?'after-verified-save':'before-save');
+        if (stage) clearStage(); // Save уже проверен; запрет повторного PUT сохраняется через defer.
+        return {skipped:'unpublished_kk_target',missing:published.missing};
+      }
+    }
     if (!planned.ready) return {skipped:'verified'};
     const receipt={documentId,name:baseline.name,pilot,at:new Date().toISOString(),
       types:requiredTypes(planned),plannedActions:planned.actions,
@@ -1120,6 +1191,15 @@
       const pre=await allVersions(documentId);
       if (stateDifferences(current,pre).length)
         throw Error('Перед Publish KK состояние изменилось');
+      const publication=await publicationDependencies(pre);
+      if (!publication.ok) {
+        // Изменение target после Save. Подтверждённый Save уже в stage journal.
+        deferProduct(documentId,publication.missing,'after-verified-save');
+        clearStage();
+        receipt.skipped='unpublished_kk_target';
+        receipt.missing=publication.missing;
+        return {skipped:'unpublished_kk_target',missing:publication.missing};
+      }
       receipt.publishKeyCheck=await globalKeyCheck(pre.ru.draft.detail.key,
         pre.ru.draft.detail.key,documentId);
       const payload=payloadContent(pre,'kk');
@@ -1461,12 +1541,12 @@
           !equal(sourceReport.rawSchemas.components,componentsResponse.data)) {
         throw Error('Схема отличается от сохранённого backup. Нужен новый dry-run');
       }
-      state.report={...sourceReport,version:6,mode:'dry-run',complete:true,failure:null,
+      state.report={...sourceReport,version:7,mode:'dry-run',complete:true,failure:null,
         products:refreshPlansFromBackup(sourceReport.products,productSchema,components),
         operations:[],execution:[],
         verifiedTypes:[...new Set([...(sourceReport.verifiedTypes||[]),
           ...savedProgress().flatMap(x=>x.types||[])])],
-        skipped:[],
+        skipped:savedDeferred(),
         progress:savedProgress(),safety:{recoveryVerified:false,autoRecoveryEnabled:false,
           globalKeyUniquenessVerified:false},
         writesEnabled:false};
@@ -1535,13 +1615,13 @@
   }
 
   function validateBackup(r) {
-    if (!r || r.complete!==true || ![3,4,5,6].includes(r.version) ||
+    if (!r || r.complete!==true || ![3,4,5,6,7].includes(r.version) ||
         r.tool!=='dior-products-kk-pipeline' ||
         r.brandDocumentId!==CFG.brandDocumentId ||
         r.mode!=='dry-run' || !r.rawSchemas?.product?.attributes ||
         !Array.isArray(r.rawSchemas.components) || !Array.isArray(r.products) ||
         !r.products.length || !Array.isArray(r.schema)) {
-      throw Error('Не полный backup pipeline DIOR версии 3/4/5/6');
+      throw Error('Не полный backup pipeline DIOR версии 3/4/5/6/7');
     }
     const ids=new Set();
     for (const row of r.products) {
