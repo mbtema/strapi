@@ -125,10 +125,10 @@
   const clearStage = () => localStorage.removeItem(STAGE_KEY);
   const setJournal = entry => localStorage.setItem(UNRESOLVED_KEY,JSON.stringify(entry));
   const clearJournal = () => localStorage.removeItem(UNRESOLVED_KEY);
-  const savedDeferred = () => {
+  const savedDeferred = (backupAt=state.report.startedAt) => {
     try {
       const data=JSON.parse(localStorage.getItem(DEFERRED_KEY)||'null');
-      return data?.backupAt===state.report.startedAt && Array.isArray(data.rows) ?
+      return data?.backupAt===backupAt && Array.isArray(data.rows) ?
         data.rows.filter(row=>row?.documentId && row.reason==='unpublished_kk_target') : [];
     } catch { return []; }
   };
@@ -1309,6 +1309,100 @@
     }
   }
 
+  // После HTTP 200 на Publish KK из предыдущего запуска статус записи
+  // неопределён: никаких повторных POST/PUT. Сначала обязательная GET-сверка
+  // со stage и исходным полным backup. Только ожидаемая разница по реально
+  // неопубликованным KK target позволяет снять блокировку и продолжить batch.
+  async function reconcileStoppedPublication() {
+    if (state.running) return;
+    const j=journal(),stage=verifiedStage();
+    if (!j || j.phase!=='publish-kk' || j.method!=='POST' ||
+        j.reason!=='Результат записи не подтверждён' || !j.documentId ||
+        !stage || stage.documentId!==j.documentId ||
+        !['save-kk','publish-ru'].includes(stage.phase) || !stage.after) {
+      render('Нельзя восстановить автоматически: требуется корректный журнал Publish KK и подтверждённый этап');
+      return;
+    }
+    const original=baselineRow(j.documentId);
+    if (!original?.snapshots?.ru?.draft || !original.snapshots?.kk?.draft) {
+      render('Исходный snapshot остановленного товара отсутствует');
+      return;
+    }
+    if (!confirm('Проверить остановленный Publish KK только через GET?\n'+j.documentId+
+      '\nЕсли найдены ТОЛЬКО отсутствующие KK Published-зависимости, товар будет отложен,'+
+      '\nзатем продолжится синхронизация остальных DIOR Product.\n'+
+      'Никаких повторных POST или PUT этого товара.')) return;
+    state.running=true;state.stopped=false;
+    setAction('Остановить',stopRunning);
+    const record={documentId:j.documentId,kind:'publish-kk-unpublished-target-reconciliation',
+      at:new Date().toISOString(),verified:false,conditions:[],before:original.snapshots,
+      verifiedStage:stage};
+    state.report.reconciliations=state.report.reconciliations||[];
+    state.report.reconciliations.push(record);
+    const add=(name,ok)=>record.conditions.push({name,ok:!!ok});
+    try {
+      await schemaPreflight();
+      const now=await allVersions(j.documentId);
+      record.after=now;
+      add('RU Draft как в backup',versionEqual(original.snapshots.ru.draft,now.ru.draft));
+      add('RU Draft как после Save',versionEqual(stage.after.ru.draft,now.ru.draft));
+      add('RU Published не изменена после Save',versionEqual(stage.after.ru.published,now.ru.published));
+      add('KK Draft не изменена после Save',versionEqual(stage.after.kk.draft,now.kk.draft));
+      const expectedFields=expectedKkFromOriginalBackup(original);
+      add('KK Draft поля, media, переводы из backup',
+        !!now.kk.draft && equal(expectedFields,now.kk.draft.fields));
+      add('KK Draft relations полностью соответствуют RU',
+        equal(now.ru.draft?.relations,now.kk.draft?.relations));
+      add('KK Published поля, media, переводы совпадают с KK Draft',
+        !!now.kk.published && equal(now.kk.draft?.fields,now.kk.published.fields));
+      const pub=await publicationDependencies(now);
+      record.publishedDependencies=pub;
+      add('KK Published relations совпадают с доступными Published targets',
+        !!now.kk.published && equal(
+          publishedVisibleRelations(now.kk.draft.relations,pub.missing),
+          now.kk.published.relations));
+      add('RU/KK key всех версий совпадают',
+        ['draft','published'].every(status=>
+          now.ru[status]?.fields?.key===now.kk[status]?.fields?.key &&
+          now.ru[status]?.fields?.key===original.snapshots.ru.draft.fields.key));
+      checkStop();
+      const failures=record.conditions.filter(x=>!x.ok).map(x=>x.name);
+      if (failures.length) throw Error('Postflight не подтверждён: '+failures.join('; '));
+      record.verified=true;
+      record.finishedAt=new Date().toISOString();
+      if (pub.missing.length) {
+        record.disposition='unpublished_kk_target';
+        deferProduct(j.documentId,pub.missing,'after-previous-publish-http200');
+      } else {
+        record.disposition='verified_postflight_get';
+        markProgress(j.documentId,[],{reconciledPostflight:true});
+      }
+      clearJournal();
+      clearStage();
+      state.report.unresolved=null;
+      state.report.executionFailure=null;
+      const previousPilot=savedProgress().find(p=>p.automatedPilot===true);
+      state.running=false;
+      if (previousPilot) {
+        state.report.pilotResult={documentId:previousPilot.id,verified:true,
+          recoveredFromCheckpoint:true,types:previousPilot.types||[]};
+        render('Остановленная публикация сверена по GET. Продолжаем остальные товары.');
+        await runBatch();
+      } else {
+        state.report.pilotCandidate=choosePilot();
+        render('Публикация проверена; для массовой обработки нужен успешный автоматический пилот');
+        setAction('Запустить пилот → все товары',runPilot);
+        downloadResult();
+      }
+    } catch(error) {
+      state.running=false;
+      record.failure=String(error.message||error);
+      render('СТОП: '+record.failure+'. Unresolved не очищен; повторного Publish нет.');
+      setAction('Скачать JSON результата',downloadResult);
+      downloadResult();
+    }
+  }
+
   function setPendingState(message,handler,buttonLabel) {
     state.running=false;state.critical=false;state.stopped=false;
     render(message);setAction(buttonLabel,handler);
@@ -1402,9 +1496,12 @@
         row.documentId!==state.report.pilotResult.documentId);
       state.batch.total=rows.length;
       const completed=new Set(savedProgress().map(p=>p.id));
+      const deferred=new Set(savedDeferred().map(p=>p.documentId));
       for (const row of rows) {
         checkStop();
-        if (completed.has(row.documentId)) {
+        if (deferred.has(row.documentId)) {
+          state.batch.skipped++;
+        } else if (completed.has(row.documentId)) {
           state.batch.alreadyDone++;
         } else {
           render('Синхронизируем '+row.name+' · '+row.documentId);
@@ -1414,7 +1511,8 @@
             completed.add(row.documentId);
           } else {
             state.batch.skipped++;
-            state.report.skipped.push({documentId:row.documentId,
+            if (output.skipped==='unpublished_kk_target') deferred.add(row.documentId);
+            else state.report.skipped.push({documentId:row.documentId,
               reason:output.skipped||'unverified',missing:output.missing||null});
           }
           await sleep(200);
@@ -1463,7 +1561,13 @@
     state.report.writesEnabled=!!state.report.pilotCandidate&&!journal();
     if (journal() || incomplete?.reason) {
       const j=journal();
-      if (j?.phase==='save-kk' && j?.method==='PUT' && j?.documentId &&
+      if (j?.phase==='publish-kk' && j?.method==='POST' &&
+          j?.reason==='Результат записи не подтверждён' && j.documentId &&
+          incomplete?.documentId===j.documentId && !incomplete?.reason) {
+        render('Publish KK '+j.documentId+' не подтверждён из-за возможной'+
+          ' неопубликованной KK-зависимости. Доступна read-only сверка перед продолжением.');
+        setAction('Проверить Publish KK → продолжить',reconcileStoppedPublication);
+      } else if (j?.phase==='save-kk' && j?.method==='PUT' && j?.documentId &&
           j?.reason==='Результат записи не подтверждён' && !incomplete?.reason) {
         render('Есть незавершённый пилот '+j.documentId+
           '. Перед любым новым пилотом нужна GET-сверка после ручной публикации.');
@@ -1546,7 +1650,7 @@
         operations:[],execution:[],
         verifiedTypes:[...new Set([...(sourceReport.verifiedTypes||[]),
           ...savedProgress().flatMap(x=>x.types||[])])],
-        skipped:savedDeferred(),
+        skipped:savedDeferred(sourceReport.startedAt),
         progress:savedProgress(),safety:{recoveryVerified:false,autoRecoveryEnabled:false,
           globalKeyUniquenessVerified:false},
         writesEnabled:false};
