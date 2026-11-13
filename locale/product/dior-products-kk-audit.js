@@ -755,28 +755,34 @@
     return matches;
   }
 
-  async function globalKeyCheck(ruKey,desiredKey,documentId) {
-    if (typeof ruKey !== 'string' || !ruKey ||
-        typeof desiredKey !== 'string' || desiredKey !== ruKey) {
-      throw Error('Для всех локалей одного Product key должен совпадать с RU');
+  async function globalKeyCheck(ruKey,kkKey,documentId) {
+    if (typeof ruKey!=='string' || !ruKey ||
+        typeof kkKey!=='string' || !kkKey || !documentId)
+      throw Error('Некорректный RU/KK key: публикация без проверки запрещена');
+    // RU и KK могут иметь разные сохранённые ключи. Оба обязаны
+    // принадлежать этому Product, а не другому documentId.
+    const controls=[];
+    for (const [locale,key] of [['ru',ruKey],['kk',kkKey]]) {
+      const matches=await filteredProductKey(key,locale,'draft');
+      if (!matches.includes(documentId))
+        throw Error('Не подтверждён фильтр Product '+locale+'.key='+key);
+      controls.push({locale,key,matches});
     }
-    // Положительный контроль доказывает, что фильтр действительно применяется.
-    const control = await filteredProductKey(ruKey,'ru','draft');
-    if (!control.includes(documentId)) {
-      throw Error('Не подтверждён CM фильтр по известному RU key: '+ruKey);
-    }
-    const checked = [];
-    for (const locale of ['ru','kk']) {
-      for (const status of ['draft','published']) {
-        const ids = await filteredProductKey(desiredKey,locale,status);
-        const foreign = ids.filter(id=>id!==documentId);
-        if (foreign.length) throw Error('Конфликт уникального key '+
-          desiredKey+' у '+locale+'/'+status+': '+foreign.join(','));
-        checked.push({locale,status,matches:ids});
+    const checked=[];
+    for (const key of new Set([ruKey,kkKey])) {
+      for (const locale of ['ru','kk']) {
+        for (const status of ['draft','published']) {
+          const ids=await filteredProductKey(key,locale,status);
+          const foreign=ids.filter(id=>id!==documentId);
+          if (foreign.length) throw Error('Конфликт уникального Product.key '+
+            key+' у '+locale+'/'+status+': '+foreign.join(','));
+          checked.push({key,locale,status,matches:ids});
+        }
       }
     }
-    return {at:new Date().toISOString(),ruKey,desiredKey,positiveControl:control,
-      checked,scope:'all Product via filtered Content Manager, ru/kk draft/published'};
+    return {at:new Date().toISOString(),ruKey,kkKey,
+      differentKeysPreserved:ruKey!==kkKey,positiveControls:controls,
+      checked,scope:'other Product documentIds, RU/KK draft/published'};
   }
 
   function choosePilot() {
@@ -1178,7 +1184,7 @@
     if (planned.needsSaveKk && !stage) {
       // Даже если ключ уже совпадает, проверяем его уникальность по другим Product.
       receipt.keyCheck=await globalKeyCheck(before.ru.draft.detail.key,
-        before.ru.draft.detail.key,documentId);
+        before.kk.draft.detail.key,documentId);
       state.report.safety.globalKeyUniquenessVerified=true;
       const payload=await payloadRelations(current,planned,payloadContent(current,'kk'));
       const url='/content-manager/collection-types/'+CFG.productUid+'/'+documentId+'?locale=kk';
@@ -1217,7 +1223,7 @@
         return {skipped:'unpublished_kk_target',missing:publication.missing};
       }
       receipt.publishKeyCheck=await globalKeyCheck(pre.ru.draft.detail.key,
-        pre.ru.draft.detail.key,documentId);
+        pre.kk.draft.detail.key,documentId);
       const payload=payloadContent(pre,'kk');
       current=await writeStep(documentId,'publish-kk','POST',
         '/content-manager/collection-types/'+CFG.productUid+'/'+documentId+
