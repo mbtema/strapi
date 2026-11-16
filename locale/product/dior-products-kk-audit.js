@@ -133,7 +133,7 @@
       const data=JSON.parse(localStorage.getItem(DEFERRED_KEY)||'null');
       return data?.backupAt===backupAt && Array.isArray(data.rows) ?
         data.rows.filter(row=>row?.documentId &&
-          ['unpublished_kk_target','missing_kk_locale','target_publish_failed'].includes(row.reason)) : [];
+          ['unpublished_kk_target','missing_kk_locale','target_publish_failed','uneditable_field'].includes(row.reason)) : [];
     } catch { return []; }
   };
   function deferProduct(documentId,missing,stage='before-save',reason='unpublished_kk_target') {
@@ -1299,6 +1299,14 @@
           !versionEqual(baseline.snapshots.kk.published,before.kk.published))
         return {skipped:'target_changed'};
     }
+    // InStock может быть закрыт для редактирования в CM:
+    // подтверждённый PUT KK менял RU Draft, но не исправлял KK.
+    if (!stage && baseline.plan.actions.some(a=>a.kind==='field' && a.field==='InStock')) {
+      const missing=[{field:'InStock',uid:CFG.productUid,documentId,reason:'uneditable_field',
+        ru:before.ru.draft?.fields?.InStock,kk:before.kk.draft?.fields?.InStock}];
+      deferProduct(documentId,missing,'before-save','uneditable_field');
+      return {skipped:'uneditable_field',missing};
+    }
     const dependencies=await checkFreshDependencies(before);
     if (!dependencies.ok) {
       const missing=dependencies.missing.map(item=>({...item,reason:'missing_kk_locale'}));
@@ -1696,7 +1704,7 @@
         render('Проверяем пилот '+selected.name+' · '+selected.documentId);
         const output=await oneProduct(selected.documentId,true);
         if (output.skipped) {
-          if (!['unpublished_kk_target','missing_kk_locale','target_publish_failed'].includes(output.skipped)) {
+          if (!['unpublished_kk_target','missing_kk_locale','target_publish_failed','uneditable_field'].includes(output.skipped)) {
             state.report.skipped.push({documentId:selected.documentId,
               reason:output.skipped,missing:output.missing||null});
           }
@@ -1806,7 +1814,7 @@
             completed.add(row.documentId);
           } else {
             state.batch.skipped++;
-            if (['unpublished_kk_target','missing_kk_locale','target_publish_failed'].includes(output.skipped)) deferred.add(row.documentId);
+            if (['unpublished_kk_target','missing_kk_locale','target_publish_failed','uneditable_field'].includes(output.skipped)) deferred.add(row.documentId);
             else state.report.skipped.push({documentId:row.documentId,
               reason:output.skipped||'unverified',missing:output.missing||null});
           }
