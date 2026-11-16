@@ -704,6 +704,10 @@ async function one(id) {
     const originalBefore={ru:snapshot(ru),ruPublished:null,
       kk:snapshot(kk),published:snapshot(pub)};
     if(!ru)return report(id,'blocked_missing_ru','','RU Draft отсутствует');
+    // category — устаревшая связь: в RU она должна быть пустой. Не копируем аномалию в KK.
+    if(relationFields.includes('category') && ids(ru,'category').length)
+      return report(id,'blocked_legacy_ru_category','',
+        'RU.category должен быть пустым',ids(ru,'category').join('|'));
     if(!kk) {
       if(pub)return report(id,'blocked_inconsistent_kk','','KK Published без KK Draft');
       const dependencies=await dependencyCheck(ru);
@@ -871,7 +875,12 @@ function selfTest() {
     throw Error('incomplete/duplicate fallback');
   if(relationFromPopulate([{id:4,documentId:'abc',locale:'ru'}],{count:1},'kk')!==null)
     throw Error('wrong locale fallback');
-  log('Self-test: 15/15 OK');
+  relationFields.push('category');
+  if(ids({relations:{category:[]}},'category').length!==0 ||
+    ids({relations:{category:[{documentId:'legacy'}]}},'category').length!==1)
+    throw Error('Legacy category: RU пустой, иначе blocked');
+  relationFields.pop();
+  log('Self-test: 16/16 OK');
 }
 async function password() {
   if (!stdin.isTTY) throw Error('Передай STRAPI_JWT через переменную окружения (не в коде)');
