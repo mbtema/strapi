@@ -8,9 +8,12 @@
 cd locale/product
 node localizer.mjs --self-test
 node localizer.mjs --limit=10
-node localizer.mjs --apply --limit=1
+node localizer.mjs --id=DOCUMENT_ID
+node localizer.mjs --apply --id=DOCUMENT_ID
 node localizer.mjs --apply
 ```
+
+Для точечного пилота замени `DOCUMENT_ID` на настоящий `documentId` Product. Этот режим не выгружает весь список 20 000 товаров. После пилота для нового полного прохода используй `--new-run`, чтобы прежние обработанные ID не пропускались.
 
 При запуске вставь **Admin JWT** из текущей сессии Strapi в скрытый запрос терминала. Токен не помещается в файл, репозиторий и отчёт. Можно передать переменную окружения `STRAPI_JWT`, но не записывать её в файлы GitHub. **Запись отключена**, пока не указан `--apply`. **Реальный пилот на живом Strapi новой версии ещё не подтверждён.**
 
