@@ -387,7 +387,8 @@ async function recheckBeforeWrite(id,baseline) {
 async function postflight(id,before,expected,phase) {
   const [r,rp,k,p]=await Promise.all([
     version(id,'ru'),version(id,'ru','published'),version(id,'kk'),version(id,'kk','published')]);
-  if(!sameVersions(r,before.ru)||!sameVersions(rp,before.ruPublished)) {
+  if(!sameVersions(r,before.ru)||!sameVersions(rp,before.ruPublished)||
+    rp?.data?.key!==before.ruPublished?.data?.key) {
     const e=Error('Изменение RU после '+phase);
     e.fatal=true;throw e;
   }
@@ -395,7 +396,7 @@ async function postflight(id,before,expected,phase) {
     throw Error('Save/Publish изменил уникальный RU/KK.key');
   if(!k || !eq(k.fields,expected.fields)||!relEqual(k,expected))
     throw Error('KK Draft после '+phase+' не совпадает с ожидаемым');
-  if(phase==='save' && !sameVersions(p,before.pub))
+  if(phase==='save' && (!sameVersions(p,before.pub)||p?.data?.key!==before.pub?.data?.key))
     throw Error('KK Published изменился при Save');
   if(phase==='publish' && (!p||p.data?.key!==k.data.key||
     !eq(p.fields,expected.fields)||!relEqual(p,expected)))
@@ -469,7 +470,8 @@ async function createKk(id,ru,ruPublished,original) {
     {data:localizedFields},false,contentToken);
   const [source,ruPublishedAfter,target,publication]=await Promise.all([
     version(id,'ru'),version(id,'ru','published'),version(id,'kk'),version(id,'kk','published')]);
-  if(!sameVersions(ru,source)||!sameVersions(ruPublished,ruPublishedAfter)) {
+  if(!sameVersions(ru,source)||!sameVersions(ruPublished,ruPublishedAfter)||
+    ru.data?.key!==source?.data?.key||ruPublished?.data?.key!==ruPublishedAfter?.data?.key) {
     const e=Error('Создание KK изменило RU Draft/Published');e.fatal=true;throw e;
   }
   if(!target || publication)throw Error('Создание KK: не подтверждён новый KK Draft без Published');
@@ -512,8 +514,7 @@ async function one(id) {
         'STRAPI_API_TOKEN нужен только для создания KK через документированный REST');
       originalBefore.ruPublished=snapshot(await version(id,'ru','published'));
       file=join(backupDir,id+'.json');
-      const created=await createKk(id,ru,
-        {fields:originalBefore.ruPublished?.fields,relations:originalBefore.ruPublished?.relations},originalBefore);
+      const created=await createKk(id,ru,originalBefore.ruPublished,originalBefore);
       if(!created.ok)return report(id,'blocked_create_kk','',created.reason,
         'backup:'+id+'.json');
       kk=created.draft;
@@ -565,8 +566,7 @@ async function one(id) {
       }
     }
     const freshPub=await version(id,'kk','published');
-    const baseline={ru,ruPublished:{fields:originalBefore.ruPublished?.fields,
-      relations:originalBefore.ruPublished?.relations},kk,pub:freshPub};
+    const baseline={ru,ruPublished:originalBefore.ruPublished,kk,pub:freshPub};
     await recheckBeforeWrite(id,baseline);
     let actual=baseline;
     if(draft.changes.length) {
