@@ -256,7 +256,7 @@ function plan(ru,kd,kp) {
   if(!ru)return {changes,blockers:['missing_ru']};
   if(!kd)return {changes,blockers:['missing_kk_create_unverified']};
   for(const [f,a]of Object.entries(schema.attributes)) {
-    if(SYSTEM.has(f) || SKIP.has(f) || a.type==='relation' || (localized(a) && a.type!=='media' && f!=='name'))continue;
+    if(SYSTEM.has(f) || SKIP.has(f) || a.type==='relation' || (localized(a) && a.type!=='media' && a.type!=='boolean' && f!=='name'))continue;
     const source=ru.fields[f],target=kd.fields[f];
     if(eq(source,target))continue;
     if(a.unique || !(['media','boolean'].includes(a.type) || f==='name')) {
@@ -650,7 +650,7 @@ function selfTest() {
   if(!localized({pluginOptions:{i18n:{localized:true}}}))throw Error('locale flag');
   schema={attributes:{
     name:{type:'string'},name1:{type:'string',pluginOptions:{i18n:{localized:true}}},
-    active:{type:'boolean'},InStock:{type:'boolean'},key:{type:'uid',unique:true},
+    active:{type:'boolean',pluginOptions:{i18n:{localized:true}}},InStock:{type:'boolean'},key:{type:'uid',unique:true},
     pictures:{type:'media',pluginOptions:{i18n:{localized:true}}},
     categories:{type:'relation',target:'api::category.category'}}};
   relationFields=['categories'];
