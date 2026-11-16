@@ -583,6 +583,27 @@ async function postflight(id,before,expected,phase) {
     throw Error('KK Published не совпадает с ожидаемым KK Draft');
   return {ru:r,ruPublished:rp,kk:k,pub:p};
 }
+// Перед записью повторно читаем *изменяемые* relations через native endpoint.
+// Populated numeric id может отличаться от id, который CM ожидает при disconnect.
+async function nativeWriteRelationPreflight(documentId,before,changes) {
+  const fields=changes.filter(x=>x.kind==='relation').map(x=>x.field);
+  if(!fields.length)return before;
+  const snapshots={ru:{...before.ru,relations:{...before.ru.relations}},
+    kk:{...before.kk,relations:{...before.kk.relations}}};
+  for(const field of fields) {
+    const [source,target]=await Promise.all([
+      relations(UID,documentId,field,'ru','draft'),
+      relations(UID,documentId,field,'kk','draft')
+    ]);
+    const sorted=rows=>rows.map(x=>x.documentId).sort();
+    if(!eq(sorted(source),sorted(before.ru.relations[field])) ||
+      !eq(sorted(target),sorted(before.kk.relations[field])))
+      throw Error('Native preflight не подтвердил состав relation: '+field);
+    snapshots.ru.relations[field]=source;
+    snapshots.kk.relations[field]=target;
+  }
+  return {...before,...snapshots};
+}
 function payloadForSave(before,changes) {
   const payload={locale:'kk'};
   for(const action of changes) {
@@ -761,6 +782,7 @@ async function one(id) {
     await recheckBeforeWrite(id,baseline);
     let actual=baseline;
     if(draft.changes.length) {
+      actual=await nativeWriteRelationPreflight(id,actual,draft.changes);
       const payload=payloadForSave(actual,draft.changes);
       await safeWrite(file,JSON.stringify({documentId:id,at:new Date().toISOString(),
         before:originalBefore,plan:draft,phase:'save-kk',payload},null,2));
