@@ -782,8 +782,8 @@ async function one(id) {
     await recheckBeforeWrite(id,baseline);
     let actual=baseline;
     if(draft.changes.length) {
-      actual=await nativeWriteRelationPreflight(id,actual,draft.changes);
-      const payload=payloadForSave(actual,draft.changes);
+      const writeSnapshot=await nativeWriteRelationPreflight(id,actual,draft.changes);
+      const payload=payloadForSave(writeSnapshot,draft.changes);
       await safeWrite(file,JSON.stringify({documentId:id,at:new Date().toISOString(),
         before:originalBefore,plan:draft,phase:'save-kk',payload},null,2));
       // Не повторять PUT даже при HTTP 200, если GET postflight не подтверждён.
