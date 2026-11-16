@@ -400,8 +400,8 @@ async function dependencyCheck(ru) {
     const key=item.uid+'|'+item.id;
     if(targetCache.has(key))return {...item,...targetCache.get(key)};
     const d=await detail(item.uid,item.id,'kk','draft');
-    const p=d?await detail(item.uid,item.id,'kk','published'):null;
-    const result=d?{ok:true,requiresPublish:!p}:{ok:false,reason:'missing_kk_target'};
+    const p=await detail(item.uid,item.id,'kk','published');
+    const result=d||p?{ok:true,requiresPublish:!p}:{ok:false,reason:'missing_kk_target'};
     // Отсутствие или непубликация могут измениться за время обработки: кеш только текущего прогона.
     if(result.ok&&!result.requiresPublish)targetCache.set(key,result);
     return {...item,...result};
@@ -596,7 +596,8 @@ async function one(id) {
     for(const t of targets) {
       const key=t.uid+'|'+t.id;
       if(!targetCache.get(key)?.numericId) {
-        const d=await detail(t.uid,t.id,'kk','draft');
+        const d=await detail(t.uid,t.id,'kk','draft') ||
+          await detail(t.uid,t.id,'kk','published');
         if(!d||!Number.isSafeInteger(d.id)) {
           if(committed)throw Error('После создания KK отсутствует numeric target ID '+key);
           await unlink(file);file=null;
