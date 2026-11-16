@@ -4,7 +4,7 @@
 import { mkdir, readFile, writeFile, rename, appendFile, unlink, readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stdin, stdout, env, argv, pid } from 'node:process';
+import { env, argv, pid } from 'node:process';
 import { createHash } from 'node:crypto';
 
 const UID = 'api::product.product';
@@ -912,32 +912,44 @@ function selfTest() {
   if(typeof EXISTING_ONLY!=='boolean')throw Error('existing-only mode');
   log('Self-test: 17/17 OK');
 }
-async function password() {
-  if (!stdin.isTTY) throw Error('Передай STRAPI_JWT через переменную окружения (не в коде)');
-  stdout.write('JWT из Strapi Admin (символы скрыты): ');
-  return await new Promise((resolvePassword,reject)=>{
-    let s='';
-    const raw=stdin.isRaw;stdin.setRawMode(true);stdin.resume();
-    function cleanup(){stdin.off('data',onData);stdin.setRawMode(raw);stdin.pause();stdout.write('\n');}
-    function onData(buf) {
-      const v=buf.toString('utf8');
-      if(v==='\r'||v==='\n'){cleanup();resolvePassword(s.trim());return;}
-      if(v==='\u0003'){cleanup();reject(Error('Отменено'));return;}
-      if(v==='\u007f'||v==='\b'){s=s.slice(0,-1);return;}
-      s+=v;
+// По умолчанию ищем JWT в TXT на рабочем столе (имя файла не важно).
+// STRAPI_JWT остаётся приоритетным способом запуска для автоматизации.
+async function jwtFromDesktopTxt() {
+  const dirs=[SCRIPT_DIR];
+  for(const root of [env.USERPROFILE,env.OneDrive,env.OneDriveCommercial,env.OneDriveConsumer])
+    if(root)dirs.push(join(root,'Desktop'));
+  const seenDirs=new Set(),files=[];
+  for(const dir of dirs) {
+    const key=process.platform==='win32'?dir.toLowerCase():dir;
+    if(seenDirs.has(key))continue;
+    seenDirs.add(key);
+    const names=await readdir(dir).catch(error=>{
+      if(error.code==='ENOENT')return [];
+      throw error;
+    });
+    for(const name of names.filter(n=>/\.txt$/i.test(n))) {
+      const full=join(dir,name);
+      const raw=await readFile(full,'utf8').catch(error=>{
+        if(['ENOENT','EISDIR','EACCES'].includes(error.code))return null;
+        throw error;
+      });
+      if(raw===null)continue;
+      const value=raw.replace(/^\uFEFF/,'').trim()
+        .replace(/^(?:Bearer\s+|(?:STRAPI_JWT|JWT)\s*[:=]\s*)/i,'')
+        .replace(/^["']|["']$/g,'').trim();
+      if(/^[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+$/.test(value))
+        files.push({name,value});
     }
-    stdin.on('data',onData);
-  });
+  }
+  const tokens=[...new Set(files.map(x=>x.value))];
+  if(!tokens.length)throw Error('JWT не найден: сохрани токен в любой .txt файл на рабочем столе');
+  if(tokens.length>1)throw Error('Найдено несколько разных JWT в TXT: оставь один актуальный токен');
+  log('JWT прочитан из TXT рабочего стола (значение скрыто)');
+  return tokens[0];
 }
 async function main() {
   if(TEST){selfTest();return;}
-  // Одна команда запуска: JWT читается из jwt.txt рядом с localizer.mjs.
-  if(!token)token=(await readFile(join(SCRIPT_DIR,'jwt.txt'),'utf8').catch(error=>{
-    if(error.code==='ENOENT')return '';
-    throw error;
-  })).trim();
-  token ||= await password();
-  if(!token || token.length<20)throw Error('JWT не передан');
+  if(!token)token=await jwtFromDesktopTxt();
   if(NEW_RUN) {
     const priorLock=await readFile(lockFile,'utf8').catch(()=>null);
     if(priorLock!==null)throw Error('Предыдущий запуск может работать: есть '+lockFile);
