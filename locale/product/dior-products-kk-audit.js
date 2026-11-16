@@ -1276,7 +1276,7 @@
     if (!baseline?.plan?.eligible) return {skipped:'blocked'};
     if (journal()) throw Error('Осталась unresolved запись: '+journal().documentId);
     await schemaPreflight();
-    const before=await allVersions(documentId);
+    let before=await allVersions(documentId);
     const stage=verifiedStage();
     if (stage && (stage.reason || stage.documentId!==documentId))
       throw Error('Есть незавершённый подтверждённый этап другого товара: '+stage.documentId);
@@ -1310,8 +1310,13 @@
         return {skipped:reason,missing:published.missing};
       }
       const refreshed=await allVersions(documentId);
-      if (stateDifferences(before,refreshed).length)
+      // Публикация target может сделать relation видимой в KK Published без
+      // изменений Draft самого Product. Это нормальный эффект, не STOP.
+      if (!versionEqual(before.ru.draft,refreshed.ru.draft) ||
+          !versionEqual(before.kk.draft,refreshed.kk.draft) ||
+          !versionEqual(before.ru.published,refreshed.ru.published))
         return {skipped:'dependencies_changed_product'};
+      before=refreshed;
     }
     if (!planned.ready) return {skipped:'verified'};
     const receipt={documentId,name:baseline.name,pilot,at:new Date().toISOString(),
@@ -1349,7 +1354,7 @@
       checkStop();
     }
     if (!versionEqual(current.kk.draft,current.kk.published)) {
-      const pre=await allVersions(documentId);
+      let pre=await allVersions(documentId);
       if (stateDifferences(current,pre).length)
         throw Error('Перед Publish KK состояние изменилось');
       const publication=await ensureKkPublicationDependencies(pre);
@@ -1362,13 +1367,16 @@
         return {skipped:reason,missing:publication.missing};
       }
       const refreshed=await allVersions(documentId);
-      if (stateDifferences(pre,refreshed).length) {
+      if (!versionEqual(pre.ru.draft,refreshed.ru.draft) ||
+          !versionEqual(pre.kk.draft,refreshed.kk.draft) ||
+          !versionEqual(pre.ru.published,refreshed.ru.published)) {
         const missing=[{field:'*',uid:CFG.productUid,documentId,
           reason:'dependencies_changed_product'}];
         deferProduct(documentId,missing,'after-verified-save','target_publish_failed');
         clearStage();
         return {skipped:'target_publish_failed',missing};
       }
+      pre=refreshed;
       receipt.publishKeyCheck=await globalKeyCheck(pre.ru.draft.detail.key,
         pre.kk.draft.detail.key,documentId);
       const payload=payloadContent(pre,'kk');
