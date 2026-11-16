@@ -324,7 +324,7 @@ async function publishTarget(uid,id) {
       ruDraftBefore,ruPublishedBefore,phase:'publish-target'},null,2));
     const payload={locale:'kk'};
     for(const [f,a]of Object.entries(tSchema.attributes)) {
-      if(SYSTEM.has(f) || SKIP.has(f))continue;
+      if(SYSTEM.has(f) || f==='InStock' || f==='inStock')continue;
       if(a.type==='relation')payload[f]={connect:[],disconnect:[]};
       else if(Object.hasOwn(draft,f)) {
         if(a.required && empty(draft[f]))return {ok:false,reason:'target_required_empty:'+f,uid,id};
@@ -444,7 +444,11 @@ function expectedDraft(before,changes) {
 function publishPayload(v) {
   const payload={locale:'kk'};
   for(const [f,a]of Object.entries(schema.attributes)) {
-    if(SYSTEM.has(f)||SKIP.has(f))continue;
+    if(SYSTEM.has(f)||f==='InStock'||f==='inStock')continue;
+    if(f==='key'&&a.unique===true) {
+      if(typeof v.data.key!=='string'||!v.data.key)throw Error('Пустой KK.key');
+      payload.key=v.data.key;continue; // сохраняем KK.key, не переносим RU.key
+    }
     if(a.type==='relation') {payload[f]={connect:[],disconnect:[]};continue;}
     if(!Object.hasOwn(v.data,f)) {
       if(a.required)throw Error('Required поле отсутствует '+f);
