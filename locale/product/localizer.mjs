@@ -100,8 +100,10 @@ async function serialize(fn) {
 }
 async function report(id,status,changes='',reason='',details='') {
   return serialize(async () => {
+    // JSONL — основной checkpoint; CSV можно полностью восстановить после сбоя.
+    await appendFile(progressFile,JSON.stringify({id,status,changes,reason,details,
+      at:new Date().toISOString()})+'\n');
     await appendFile(csvFile,[id,status,changes,reason,details].map(csvCell).join(';') + '\n');
-    await appendFile(progressFile,JSON.stringify({id,status,at:new Date().toISOString()})+'\n');
     seen.add(id);
     counters.scanned++;
     if (status in counters) counters[status]++;
@@ -243,7 +245,7 @@ function plan(ru,kd,kp) {
   if(!ru)return {changes,blockers:['missing_ru']};
   if(!kd)return {changes,blockers:['missing_kk_create_unverified']};
   for(const [f,a]of Object.entries(schema.attributes)) {
-    if(SYSTEM.has(f) || SKIP.has(f) || a.type==='relation' || (localized(a) && a.type!=='media'))continue;
+    if(SYSTEM.has(f) || SKIP.has(f) || a.type==='relation' || (localized(a) && a.type!=='media' && f!=='name'))continue;
     const source=ru.fields[f],target=kd.fields[f];
     if(eq(source,target))continue;
     if(a.unique || !(['media','boolean'].includes(a.type) || f==='name')) {
@@ -475,8 +477,9 @@ async function createKk(id,ru,ruPublished,original) {
     const e=Error('Создание KK изменило RU Draft/Published');e.fatal=true;throw e;
   }
   if(!target || publication)throw Error('Создание KK: не подтверждён новый KK Draft без Published');
-  for(const f of TEXT_KK) {
-    if(!localizedFields.hasOwnProperty(f))continue;
+  for(const [f,a] of Object.entries(schema.attributes)) {
+    if(SYSTEM.has(f)||SKIP.has(f)||!localized(a)||
+      !['string','text','richtext','email','blocks'].includes(a.type))continue;
     if(!empty(target.data[f]))throw Error('Создание KK скопировало русский текст в '+f);
   }
   return {ok:true,draft:target};
@@ -626,7 +629,20 @@ function selfTest() {
     !p.changes.some(x=>x.field==='pictures') ||
     !p.changes.some(x=>x.field==='categories'))
     throw Error('plan: перевод, InStock, key, media, relations');
-  log('Self-test: 6/6 OK');
+  const sameKk={data:{name:ru.data.name,active:true,pictures:[{id:10}]},
+    fields:{...ru.fields,name1:'Қазақша',InStock:true,key:'different'},
+    relations:{categories:[{documentId:'c1',id:999}]}};
+  const published={fields:{...sameKk.fields},relations:{categories:[{documentId:'c1',id:501}]}};
+  const okPlan=plan(ru,sameKk,published);
+  if(okPlan.changes.length||okPlan.publication||okPlan.blockers.length)
+    throw Error('already_ok: RU↔KK translated text, InStock, key, relation numeric ids');
+  if(!plan(ru,null,null).blockers.includes('missing_kk_create_unverified'))
+    throw Error('missing KK plan');
+  schema.attributes.bitrix_id={type:'string'};
+  ru.fields.bitrix_id='123';kk.fields.bitrix_id='456';
+  if(!plan(ru,kk,null).blockers.includes('unmanaged_shared:bitrix_id'))
+    throw Error('unmanaged shared guard');
+  log('Self-test: 9/9 OK');
 }
 async function password() {
   if (!stdin.isTTY) throw Error('Передай STRAPI_JWT через переменную окружения (не в коде)');
@@ -674,11 +690,20 @@ async function main() {
       await unlink(lock);await writeFile(lock,String(pid),{flag:'wx'});acquired=true;
       log('Восстановлен stale lock предыдущего завершённого процесса');
     }
-    if(!await readFile(csvFile,'utf8').catch(()=>null))await writeFile(csvFile,csvHeader);
     const saved=await readFile(progressFile,'utf8').catch(()=>'');
-    for(const l of saved.split('\n').filter(Boolean)) {
-      const row=JSON.parse(l);if(row.id)seen.add(row.id);
+    if(saved&&!saved.endsWith('\n'))throw Error('Неполная последняя строка checkpoint: нужен ручной разбор');
+    const previous=saved.split('\n').filter(Boolean).map(line=>JSON.parse(line));
+    for(const row of previous) {
+      if(!row.id||seen.has(row.id))throw Error('Некорректный/повторённый documentId checkpoint');
+      seen.add(row.id);
+      counters.scanned++;
+      if(row.status in counters)counters[row.status]++;
+      else if(row.status.startsWith('blocked_'))counters.blocked++;
+      else counters.errors++;
     }
+    await safeWrite(csvFile,csvHeader+previous.map(row=>
+      [row.id,row.status,row.changes,row.reason,row.details].map(csvCell).join(';')).join('\n')+
+      (previous.length?'\n':''));
     const pending=await readdir(backupDir);
     log('Режим:',APPLY?'APPLY':'DRY-RUN', 'workers='+WORKERS,
       'maxRequests='+REQUESTS,'checkpoint='+seen.size,'pendingBackup='+pending.length);
