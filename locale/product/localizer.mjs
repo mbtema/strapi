@@ -35,6 +35,7 @@ const SKIP = new Set(['InStock','inStock','key']);
 const scalarTypes = new Set(['string','text','richtext','email','enumeration','json',
   'blocks','integer','biginteger','float','decimal','boolean','date','time','datetime','uid']);
 let token = env.STRAPI_JWT || '';
+const contentToken = env.STRAPI_API_TOKEN || ''; // Отдельный токен Content API, только для создания KK
 let schema, allSchemas, stopped = false, fatal = null, finishWrite = Promise.resolve();
 let successRequests = 0;
 const targetLocks = new Map();
@@ -83,7 +84,6 @@ const csvFile = join(OUT,'report.csv');
 const progressFile = join(OUT,'progress.jsonl');
 const backupDir = join(OUT,'pending');
 let seen = new Set();
-const jobs = [];
 async function safeWrite(file,data) {
   const temporary = file + '.' + pid + '.tmp';
   await writeFile(temporary, data,{mode:0o600});
@@ -124,7 +124,7 @@ class Gate {
   async run(fn) { await this.acquire();try{return await fn();}finally{this.release();} }
 }
 const gate = new Gate(REQUESTS);
-async function http(method,path,body=null,allow404=false) {
+async function http(method,path,body=null,allow404=false,authToken=token) {
   const url = new URL(path, URL_ROOT);
   if (url.origin !== new URL(URL_ROOT).origin) throw Error('Недопустимый URL');
   let lastError;
@@ -135,7 +135,7 @@ async function http(method,path,body=null,allow404=false) {
       response=await gate.run(async () => {
         counters.requests++;
         return await fetch(url,{method,redirect:'manual',signal:AbortSignal.timeout(35000),
-          headers:{Authorization:'Bearer '+token,Accept:'application/json',
+          headers:{Authorization:'Bearer '+authToken,Accept:'application/json',
             ...(body==null?{}:{'Content-Type':'application/json'})},
           ...(body==null?{}:{body:JSON.stringify(body)})});
       });
@@ -239,7 +239,7 @@ function plan(ru,kd,kp) {
   if(!ru)return {changes,blockers:['missing_ru']};
   if(!kd)return {changes,blockers:['missing_kk_create_unverified']};
   for(const [f,a]of Object.entries(schema.attributes)) {
-    if(SYSTEM.has(f) || SKIP.has(f) || a.type==='relation' || localized(a))continue;
+    if(SYSTEM.has(f) || SKIP.has(f) || a.type==='relation' || (localized(a) && a.type!=='media'))continue;
     const source=ru.fields[f],target=kd.fields[f];
     if(eq(source,target))continue;
     if(a.unique || !(['media','boolean'].includes(a.type) || f==='name')) {
@@ -432,6 +432,37 @@ function publishPayload(v) {
   }
   return payload;
 }
+
+async function createKk(id,ru,original) {
+  if(!contentToken)return {ok:false,reason:'no_content_api_token'};
+  const localizedFields={};
+  for(const [f,a] of Object.entries(schema.attributes)) {
+    if(SYSTEM.has(f)||SKIP.has(f)||a.type==='relation'||!localized(a))continue;
+    if(a.required)return {ok:false,reason:'required_localized_field:'+f};
+    // Намеренно НЕ копируем RU переводы, медиа и relations в REST create.
+    // Поля, не указанные здесь, остаются значениями по умолчанию Strapi.
+    if(TEXT_KK.has(f))localizedFields[f]=null;
+  }
+  const file=join(backupDir,id+'.json');
+  await safeWrite(file,JSON.stringify({documentId:id,at:new Date().toISOString(),
+    before:original,phase:'create-kk',payload:{data:localizedFields}},null,2));
+  // Документированный Strapi 5 Content API: PUT создаёт локаль существующего documentId.
+  // Только status=draft; Admin JWT к Content API НЕ приравнивается.
+  await http('PUT','/api/products/'+encodeURIComponent(id)+'?locale=kk&status=draft',
+    {data:localizedFields},false,contentToken);
+  const [source,target,publication]=await Promise.all([
+    version(id,'ru'),version(id,'kk'),version(id,'kk','published')]);
+  if(!sameVersions(ru,source)) {
+    const e=Error('Создание KK изменило RU');e.fatal=true;throw e;
+  }
+  if(!target || publication)throw Error('Создание KK: не подтверждён новый KK Draft без Published');
+  for(const f of TEXT_KK) {
+    if(!localizedFields.hasOwnProperty(f))continue;
+    if(!empty(target.data[f]))throw Error('Создание KK скопировало русский текст в '+f);
+  }
+  return {ok:true,draft:target};
+}
+
 async function one(id) {
   let file=null,committed=false;
   try {
@@ -439,15 +470,43 @@ async function one(id) {
     if(seen.has(id))return;
     const prior=await readFile(join(backupDir,id+'.json'),'utf8').catch(()=>null);
     if(prior)return report(id,'blocked_pending_backup','', 'Неопределённая предыдущая запись, повтор запрещён');
-    const [ru,kk,pub]=await Promise.all([
+    const [ru,initialKk,initialPub]=await Promise.all([
       version(id,'ru'),version(id,'kk'),version(id,'kk','published')]);
-    const before={ru,kk,pub};
-    const draft=plan(ru,kk,pub);
+    let kk=initialKk,pub=initialPub;
+    const originalBefore={ru:snapshot(ru),kk:snapshot(kk),published:snapshot(pub)};
+    if(!ru)return report(id,'blocked_missing_ru','','RU Draft отсутствует');
+    if(!kk) {
+      if(pub)return report(id,'blocked_inconsistent_kk','','KK Published без KK Draft');
+      const dependencies=await dependencyCheck(ru);
+      const missing=dependencies.filter(x=>!x.ok);
+      if(missing.length)return report(id,'blocked_missing_kk_target','',
+        'Не создаём Product без KK справочников',
+        missing.map(x=>x.field+'/'+x.uid+'/'+x.id).join('|'));
+      const required=Object.entries(schema.attributes).filter(([f,a])=>
+        localized(a)&&a.required&&!SKIP.has(f)&&!SYSTEM.has(f)&&a.type!=='relation')
+        .map(([f])=>f);
+      if(required.length)return report(id,'blocked_required_localized','',
+        'Нельзя создать пустую KK локаль',required.join('|'));
+      if(!APPLY)return report(id,'would_create_kk','','Новая KK Draft без переводов');
+      if(!contentToken)return report(id,'blocked_no_content_api_token','',
+        'STRAPI_API_TOKEN нужен только для создания KK через документированный REST');
+      file=join(backupDir,id+'.json');
+      const created=await createKk(id,ru,originalBefore);
+      if(!created.ok)return report(id,'blocked_create_kk','',created.reason,
+        'backup:'+id+'.json');
+      kk=created.draft;
+      pub=null;committed=true;
+    }
+    let draft=plan(ru,kk,pub);
     if(draft.blockers.length) {
+      if(file)throw Error('KK создана, но нормализация заблокирована: '+draft.blockers.join('|'));
       return report(id,'blocked_plan','',draft.blockers.join('|'));
     }
-    if(!draft.changes.length && !draft.publication)
-      return report(id,'already_ok');
+    if(!draft.changes.length && !draft.publication) {
+      if(!file)return report(id,'already_ok');
+      await unlink(file);file=null;
+      return report(id,'normalized','','Создана KK Draft');
+    }
     const parts=draft.changes.map(x=>x.kind==='relation'?x.field+':'+x.add.length+'+'+x.remove.length:
       x.field).join('|');
     const targets=await dependencyCheck(ru);
@@ -456,10 +515,9 @@ async function one(id) {
       'Отсутствует KK справочник',missing.map(x=>x.field+'/'+x.uid+'/'+x.id).join('|'));
     if(!APPLY)return report(id,'would_update',parts,'',
       targets.filter(x=>x.requiresPublish).map(x=>'publish-target:'+x.uid+'/'+x.id).join('|'));
-    file=join(backupDir,id+'.json');
+    file ||= join(backupDir,id+'.json');
     await safeWrite(file,JSON.stringify({documentId:id,at:new Date().toISOString(),
-      before:{ru:snapshot(ru),kk:snapshot(kk),published:snapshot(pub)},
-      plan:draft,phase:'preflight'},null,2));
+      before:originalBefore,plan:draft,phase:'preflight'},null,2));
     // Зависимые справочники публикуются только после сохранённого backup товара.
     const depIssues=[];
     for(const t of targets.filter(x=>x.requiresPublish)) {
@@ -489,8 +547,7 @@ async function one(id) {
     if(draft.changes.length) {
       const payload=payloadForSave(actual,draft.changes);
       await safeWrite(file,JSON.stringify({documentId:id,at:new Date().toISOString(),
-        before:{ru:snapshot(ru),kk:snapshot(kk),published:snapshot(pub)},
-        plan:draft,phase:'save-kk',payload},null,2));
+        before:originalBefore,plan:draft,phase:'save-kk',payload},null,2));
       // Не повторять PUT даже при HTTP 200, если GET postflight не подтверждён.
       await http('PUT','/content-manager/collection-types/'+UID+'/'+id+'?locale=kk',payload);
       actual=await postflight(id,actual,expectedDraft(actual,draft.changes),'save');
@@ -500,8 +557,7 @@ async function one(id) {
     if(!actual.pub || !eq(actual.pub.fields,actual.kk.fields)||!relEqual(actual.pub,actual.kk)) {
       const payload=publishPayload(actual.kk);
       await safeWrite(file,JSON.stringify({documentId:id,at:new Date().toISOString(),
-        before:{ru:snapshot(ru),kk:snapshot(kk),published:snapshot(pub)},
-        plan:draft,phase:'publish-kk',payload},null,2));
+        before:originalBefore,plan:draft,phase:'publish-kk',payload},null,2));
       await http('POST','/content-manager/collection-types/'+UID+'/'+id+
         '/actions/publish?locale=kk',payload);
       actual=await postflight(id,actual,actual.kk,'publish');
@@ -591,7 +647,7 @@ async function main() {
     await safeWrite(join(OUT,'summary.json'),JSON.stringify({
       completed:!stopped,at:new Date().toISOString(),mode:APPLY?'apply':'dry-run',
       counters,requestsLimit:REQUESTS,workers:WORKERS,
-      fatal:fatal?.message||null,unfinished:selected.length-counters.scanned-seen.size
+      fatal:fatal?.message||null,unfinished:Math.max(0,selected.length-seen.size)
     },null,2));
     log('Завершено. CSV:',csvFile,'summary:',join(OUT,'summary.json'));
     if(fatal)throw fatal;
