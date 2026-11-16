@@ -23,11 +23,16 @@ const num = (key, fallback, min, max) => {
 const WORKERS = num('workers', 8, 1, 32);
 const REQUESTS = num('requests', 24, 1, 80);
 const LIMIT = num('limit', 0, 0, 1000000);
+const ID_OPTIONS=args.filter(x=>x.startsWith('--id='));
+if(ID_OPTIONS.length>1)throw Error('Повторён --id');
+const ONLY_ID=ID_OPTIONS.length?ID_OPTIONS[0].slice(5):null;
+if(ONLY_ID&&!/^[a-z0-9]{16,40}$/i.test(ONLY_ID))throw Error('Некорректный --id');
 const PAGE_SIZE = num('page-size', 100, 1, 100);
 const RETRIES = num('get-retries', 3, 1, 6);
 const OUT = resolve(env.LOCALIZER_DIR || 'localizer-state', APPLY ? 'apply' : 'audit');
 if (args.some(x => !['--apply', '--self-test', '--new-run', '--allow-legacy-unresolved'].includes(x) &&
-  !/^--(workers|requests|limit|page-size|get-retries)=\d+$/.test(x))) {
+  !/^--(workers|requests|limit|page-size|get-retries)=\d+$/.test(x) &&
+  !/^--id=[a-z0-9]{16,40}$/i.test(x))) {
   throw Error('Неизвестный параметр запуска');
 }
 const SYSTEM = new Set(['id','documentId','locale','status','publishedAt','createdAt',
@@ -723,7 +728,7 @@ async function main() {
     const oldHash=await readFile(signaturePath,'utf8').catch(()=>null);
     if(oldHash && oldHash!==signature)throw Error('Схема изменилась после checkpoint; начни новый state dir');
     if(!oldHash)await safeWrite(signaturePath,signature);
-    const productIds=await allIds();
+    const productIds=ONLY_ID?[ONLY_ID]:await allIds();
     const selected=LIMIT?productIds.slice(0,LIMIT):productIds;
     counters.total=selected.length;
     log('RU Product:',productIds.length,'к обработке:',selected.length,'relations:',relationFields.length);
