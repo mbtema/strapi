@@ -22,6 +22,7 @@ const ALLOW_LEGACY = args.includes('--allow-legacy-unresolved');
 // Безопасный первый production-проход: только существующие KK Product,
 // только опубликованные KK targets. Не создаём KK и не публикуем справочники.
 const EXISTING_ONLY = args.includes('--existing-only');
+const CONTINUE_ON_ERROR = args.includes('--continue-on-error');
 const num = (key, fallback, min, max) => {
   const a = args.filter(x => x.startsWith('--' + key + '='));
   if (a.length > 1) throw Error('Повторён параметр --' + key);
@@ -49,7 +50,7 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const MODE = APPLY ? 'apply' : 'audit';
 const PREFIX = 'product-kk-' + MODE;
 if (args.some(x => !['--apply','--dry-run','--self-test','--new-run',
-  '--allow-legacy-unresolved','--existing-only'].includes(x) &&
+  '--allow-legacy-unresolved','--existing-only','--continue-on-error'].includes(x) &&
   !/^--(workers|requests|limit|page-size|get-retries)=\d+$/.test(x) &&
   !/^--(only|id|probe)=[a-z0-9]{16,40}$/i.test(x))) {
   throw Error('Неизвестный параметр запуска');
@@ -126,7 +127,17 @@ function fieldMap(data) {
 }
 function sameVersions(a,b) {
   if (!a || !b) return a === b;
-  return eq(a.fields,b.fields) && eq(a.relations,b.relations);
+  return eq(a.fields,b.fields) && eq(semanticRelations(a.relations),semanticRelations(b.relations));
+}
+function semanticRelations(relations) {
+  return Object.fromEntries(Object.entries(relations||{}).map(([field,rows])=>[
+    field,rows.map(row=>({documentId:row.documentId,locale:row.locale}))
+      .sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)))
+  ]));
+}
+async function optionalText(file) {
+  try {return await readFile(file,'utf8');}
+  catch(e) {if(e.code==='ENOENT')return null;e.fatal=true;throw e;}
 }
 function csvCell(v) { const s=String(v??''); return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; }
 const csvHeader = 'documentId;status;changes;reason;details\n';
@@ -143,8 +154,10 @@ const duration = ms => { const s=Math.max(0,Math.round(ms/1000));
     ':'+String(s%60).padStart(2,'0'); };
 async function safeWrite(file,data) {
   const temporary = file + '.' + pid + '.tmp';
-  await writeFile(temporary, data,{mode:0o600});
-  await rename(temporary,file);
+  try {
+    await writeFile(temporary, data,{mode:0o600});
+    await rename(temporary,file);
+  } catch(e) {e.fatal=true;throw e;}
 }
 async function serialize(fn) {
   const next = finishWrite.then(fn);
@@ -167,7 +180,8 @@ async function report(id,status,changes='',reason='',details='') {
     const eta=speed>0?duration((runTotal-done)/speed*1000):'—';
     log(done+'/'+runTotal, '('+(runTotal?Math.floor(done/runTotal*100):100)+'%)',
       id, status, changes?clean(changes).slice(0,80):'',
-      'скорость='+speed.toFixed(2)+'/с','прошло='+duration(elapsed),'осталось='+eta);
+      'скорость='+speed.toFixed(2)+'/с','прошло='+duration(elapsed),'осталось='+eta,
+      reason?'причина='+clean(reason):'');
   });
 }
 class Gate {
@@ -186,7 +200,39 @@ class Gate {
   async run(fn) { await this.acquire();try{return await fn();}finally{this.release();} }
 }
 const gate = new Gate(REQUESTS);
+let authRecovery=null;
+async function recoveryPause(ms=30000) {
+  for(let waited=0;waited<ms;waited+=1000) {
+    if(stopped) {const e=Error('Ожидание прервано');e.fatal=true;throw e;}
+    await sleep(Math.min(1000,ms-waited));
+  }
+}
+async function waitForNewJwt(rejectedToken) {
+  if(token!==rejectedToken)return token;
+  if(!authRecovery) {
+    authRecovery=(async()=>{
+      log('Авторизация отклонена. Пауза: обнови JWT в TXT. Запись повторяться не будет.');
+      const dirs=await jwtDirectories();
+      while(true) {
+        await recoveryPause();
+        let next;
+        try {next=await jwtFromFiles(dirs);} catch {continue;}
+        if(next!==rejectedToken) {
+          token=next;log('Новый JWT прочитан из TXT; продолжаем проверку авторизации.');
+          return token;
+        }
+      }
+    })().finally(()=>{authRecovery=null;});
+  }
+  return authRecovery;
+}
+async function retryRead(path,allow404,authToken) {
+  log('Временная ошибка чтения. Пауза 30 секунд:',new URL(path,URL_ROOT).pathname);
+  await recoveryPause();
+  return http('GET',path,null,allow404,authToken===contentToken?authToken:token);
+}
 async function http(method,path,body=null,allow404=false,authToken=token) {
+  if(CONTINUE_ON_ERROR && authRecovery && authToken!==contentToken)authToken=await authRecovery;
   const url = new URL(path, URL_ROOT);
   if (url.origin !== new URL(URL_ROOT).origin) throw Error('Недопустимый URL');
   let lastError;
@@ -203,9 +249,17 @@ async function http(method,path,body=null,allow404=false,authToken=token) {
       });
     } catch(error) {
       lastError=error;
+      if(method==='GET' && tryNo>=max && CONTINUE_ON_ERROR)
+        return retryRead(path,allow404,authToken);
       if(method!=='GET' || tryNo>=max) throw Error(method+' NETWORK '+url.pathname+': '+error.message);
     }
     if(response && (response.status===401 || response.status===403)) {
+      if(CONTINUE_ON_ERROR && authToken!==contentToken) {
+        await waitForNewJwt(authToken);
+        if(method==='GET')return http(method,path,body,allow404,token);
+        // Не повторяем даже отклонённый PUT/POST: новый проход только после сверки backup.
+        throw Error('HTTP '+response.status+': JWT обновлён; запись не повторена, нужна сверка backup');
+      }
       const error=Error('Авторизация Strapi отклонена (HTTP '+response.status+
         '). Получи свежий JWT и возобнови тот же apply checkpoint.');
       error.fatal=true;
@@ -218,6 +272,8 @@ async function http(method,path,body=null,allow404=false,authToken=token) {
       try {return raw?JSON.parse(raw):{};} catch {throw Error('Ответ не JSON: '+url.pathname);}
     }
     if(response && (method!=='GET' || tryNo>=max || ![408,429,500,502,503,504].includes(response.status))) {
+      if(method==='GET' && CONTINUE_ON_ERROR && [408,429,500,502,503,504].includes(response.status))
+        return retryRead(path,allow404,authToken);
       const msg=(await response.text().catch(()=>'' )).slice(0,220);
       throw Error(method+' HTTP '+response.status+' '+url.pathname+' '+msg);
     }
@@ -448,6 +504,7 @@ async function allIds() {
   log('Каталог RU: '+first.total+' товаров; для запуска нужно '+required+
     ' (страниц '+pagesNeeded+'), прочитано '+Math.min(idsList.length,required)+'/'+required);
   const pages=Array.from({length:Math.max(0,pagesNeeded-1)},(_,i)=>i+2);
+  let loadedRows=idsList.length,loadedPages=1;
   // При --limit не выгружаем оставшиеся 22 тыс. товаров.
   // Полный обход сохраняет проверку total/pageCount/дубликатов.
   for(let i=0;i<pages.length;i+=REQUESTS) {
@@ -456,9 +513,9 @@ async function allIds() {
         pageSize:String(size),sort:'id:ASC'});
       const data=listResult(await get('/content-manager/collection-types/'+UID+'?'+query),
         page,first);
-      const loaded=Math.min(required,(page-1)*size+data.rows.length);
-      log('Загрузка списка RU: страница '+page+'/'+pagesNeeded+
-        ' · примерно '+loaded+'/'+required+' товаров');
+      loadedRows+=data.rows.length;loadedPages++;
+      log('Загрузка списка RU: страниц '+loadedPages+'/'+pagesNeeded+
+        ' · прочитано '+Math.min(required,loadedRows)+'/'+required+' товаров');
       return {page,data};
     }));
     for(const item of chunk.sort((a,b)=>a.page-b.page))idsList.push(...item.data.rows);
@@ -489,8 +546,8 @@ async function publishTarget(uid,id) {
     if(!APPLY)return {ok:true,wouldPublish:true};
     const name=key.replace(/[^a-z0-9|:_-]/gi,'_').replace('|','--');
     const file=join(backupDir,'target--'+name+'.json');
-    const presentFile=await readFile(file,'utf8').catch(()=>null);
-    if(presentFile)return {ok:false,reason:'target_pending_backup',uid,id};
+    const presentFile=await optionalText(file);
+    if(presentFile!==null)return {ok:false,reason:'target_pending_backup',uid,id};
     const relationsNames=Object.entries(tSchema.attributes).filter(([,a])=>a.type==='relation').map(([f])=>f);
     const beforeRelations={};
     for(const f of relationsNames) beforeRelations[f]=await relations(uid,id,f,'kk');
@@ -594,7 +651,7 @@ async function postflight(id,before,expected,phase) {
   if(!sameVersions(r,before.ru)||!sameVersions(rp,before.ruPublished)||
     rp?.data?.key!==before.ruPublished?.data?.key) {
     const e=Error('Изменение RU после '+phase);
-    e.fatal=true;throw e;
+    e.fatal=true;e.integrity=true;e.after={ru:r,ruPublished:rp,kk:k,published:p};throw e;
   }
   if(r?.data?.key!==before.ru?.data?.key || k?.data?.key!==before.kk?.data?.key)
     throw Error('Save/Publish изменил уникальный RU/KK.key');
@@ -701,7 +758,8 @@ async function createKk(id,ru,ruPublished,original) {
     version(id,'ru'),version(id,'ru','published'),version(id,'kk'),version(id,'kk','published')]);
   if(!sameVersions(ru,source)||!sameVersions(ruPublished,ruPublishedAfter)||
     ru.data?.key!==source?.data?.key||ruPublished?.data?.key!==ruPublishedAfter?.data?.key) {
-    const e=Error('Создание KK изменило RU Draft/Published');e.fatal=true;throw e;
+    const e=Error('Создание KK изменило RU Draft/Published');e.fatal=true;e.integrity=true;
+    e.after={ru:source,ruPublished:ruPublishedAfter,kk:target,published:publication};throw e;
   }
   if(!target || publication)throw Error('Создание KK: не подтверждён новый KK Draft без Published');
   for(const [f,a] of Object.entries(schema.attributes)) {
@@ -720,8 +778,8 @@ async function one(id) {
     log('Начали Product '+id+': читаем RU/KK Draft/Published и relations...');
     if(LEGACY_UNRESOLVED.has(id)&&!ALLOW_LEGACY)
       return report(id,'blocked_legacy_unresolved','','Сначала завершить recovery старого DIOR pipeline');
-    const prior=await readFile(join(backupDir,id+'.json'),'utf8').catch(()=>null);
-    if(prior)return report(id,'blocked_pending_backup','', 'Неопределённая предыдущая запись, повтор запрещён');
+    const prior=await optionalText(join(backupDir,id+'.json'));
+    if(prior!==null)return report(id,'blocked_pending_backup','', 'Неопределённая предыдущая запись, повтор запрещён');
     const [ru,initialKk,initialPub]=await Promise.all([
       version(id,'ru'),version(id,'kk'),version(id,'kk','published')]);
     let kk=initialKk,pub=initialPub;
@@ -840,7 +898,16 @@ async function one(id) {
     await unlink(file);file=null;
     return report(id,committed?'normalized':'already_ok',parts);
   } catch(e) {
-    if(e.fatal) {fatal=e;stopped=true;}
+    // Явный режим продолжения: проблемный Product остаётся в карантине с backup.
+    // Ошибки файловой системы/авторизации не превращаем в успешное завершение.
+    if(e.fatal && !(CONTINUE_ON_ERROR && e.integrity && file)) {fatal=e;stopped=true;}
+    if(file && e.after) {
+      try {
+        const saved=JSON.parse(await readFile(file,'utf8'));
+        saved.failure={at:new Date().toISOString(),reason:clean(e.message),after:e.after};
+        await safeWrite(file,JSON.stringify(saved,null,2));
+      } catch(storageError) {fatal=storageError;stopped=true;throw storageError;}
+    }
     const note=clean(e.message||e);
     if(!file) {
       return report(id,'error', '',note);
@@ -1019,7 +1086,7 @@ async function main() {
     const pending=await readdir(backupDir);
     log('Режим:',APPLY?'APPLY':'DRY-RUN', 'existingOnly='+EXISTING_ONLY,
       'workers='+WORKERS,'maxRequests='+REQUESTS,
-      'checkpoint='+seen.size,'pendingBackup='+pending.length);
+      'checkpoint='+seen.size,'pendingBackup='+pending.length,'continueOnError='+CONTINUE_ON_ERROR);
     log('Strapi:',URL_ROOT);
     log('Читаем схему Content Manager...');
     const [types,components]=await Promise.all([
@@ -1053,8 +1120,11 @@ async function main() {
       }
     }));
     await finishWrite;
+    const pendingAfter=await readdir(backupDir);
+    const successful=!stopped && counters.errors===0 && pendingAfter.length===0;
     await safeWrite(summaryFile,JSON.stringify({
       completed:!stopped,at:new Date().toISOString(),mode:APPLY?'apply':'dry-run',
+      successful,pendingBackups:pendingAfter.length,continueOnError:CONTINUE_ON_ERROR,
       counters,requestsLimit:REQUESTS,workers:WORKERS,existingOnly:EXISTING_ONLY,
       interrupted:interruptRequested,
       fatal:fatal?.message||null,unfinished:Math.max(0,selected.length-seen.size)
@@ -1065,6 +1135,7 @@ async function main() {
       'interrupted='+interruptRequested);
     log('Завершено. CSV:',csvFile,'summary:',summaryFile);
     if(fatal)throw fatal;
+    if(!successful)process.exitCode=2;
   } finally {if(acquired)await unlink(lock).catch(()=>{});}
 }
 main().catch(e=>{console.error('[localizer] STOP:',e.message);process.exitCode=1;});
