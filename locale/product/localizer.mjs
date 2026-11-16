@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 // Product localizer RU → KK. Node.js 20+, без зависимостей.
 // По умолчанию только аудит; --apply разрешает запись. InStock НЕ читается как критерий.
-import { mkdir, readFile, writeFile, rename, appendFile, unlink, open, readdir } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
-import { stdin, stdout, env, argv, exitCode, pid } from 'node:process';
+import { mkdir, readFile, writeFile, rename, appendFile, unlink, readdir } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { stdin, stdout, env, argv, pid } from 'node:process';
 import { createHash } from 'node:crypto';
 
 const UID = 'api::product.product';
 const URL_ROOT = (env.STRAPI_URL || 'http://10.10.3.80:1337').replace(/\/+$/, '');
 const args = argv.slice(2);
 const APPLY = args.includes('--apply');
+const DRY_RUN = args.includes('--dry-run');
+if(APPLY && DRY_RUN)throw Error('Выбери один режим: --apply либо --dry-run');
 const TEST = args.includes('--self-test');
 const NEW_RUN = args.includes('--new-run');
 const ALLOW_LEGACY = args.includes('--allow-legacy-unresolved');
@@ -23,16 +26,20 @@ const num = (key, fallback, min, max) => {
 const WORKERS = num('workers', 8, 1, 32);
 const REQUESTS = num('requests', 24, 1, 80);
 const LIMIT = num('limit', 0, 0, 1000000);
-const ID_OPTIONS=args.filter(x=>x.startsWith('--id='));
-if(ID_OPTIONS.length>1)throw Error('Повторён --id');
-const ONLY_ID=ID_OPTIONS.length?ID_OPTIONS[0].slice(5):null;
-if(ONLY_ID&&!/^[a-z0-9]{16,40}$/i.test(ONLY_ID))throw Error('Некорректный --id');
+const ONLY_OPTIONS=args.filter(x=>x.startsWith('--only=')||x.startsWith('--id='));
+if(ONLY_OPTIONS.length>1)throw Error('Повторён --only/--id');
+const ONLY_ID=ONLY_OPTIONS.length?ONLY_OPTIONS[0].split('=')[1]:null;
+if(ONLY_ID&&!/^[a-z0-9]{16,40}$/i.test(ONLY_ID))throw Error('Некорректный --only=DOCUMENT_ID');
+if(ONLY_ID && LIMIT)throw Error('Используй только один из --only и --limit');
 const PAGE_SIZE = num('page-size', 100, 1, 100);
 const RETRIES = num('get-retries', 3, 1, 6);
-const OUT = resolve(env.LOCALIZER_DIR || 'localizer-state', APPLY ? 'apply' : 'audit');
-if (args.some(x => !['--apply', '--self-test', '--new-run', '--allow-legacy-unresolved'].includes(x) &&
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const MODE = APPLY ? 'apply' : 'audit';
+const PREFIX = 'product-kk-' + MODE;
+if (args.some(x => !['--apply','--dry-run','--self-test','--new-run',
+  '--allow-legacy-unresolved'].includes(x) &&
   !/^--(workers|requests|limit|page-size|get-retries)=\d+$/.test(x) &&
-  !/^--id=[a-z0-9]{16,40}$/i.test(x))) {
+  !/^--(only|id)=[a-z0-9]{16,40}$/i.test(x))) {
   throw Error('Неизвестный параметр запуска');
 }
 const SYSTEM = new Set(['id','documentId','locale','status','publishedAt','createdAt',
@@ -95,10 +102,17 @@ function sameVersions(a,b) {
 }
 function csvCell(v) { const s=String(v??''); return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; }
 const csvHeader = 'documentId;status;changes;reason;details\n';
-const csvFile = join(OUT,'report.csv');
-const progressFile = join(OUT,'progress.jsonl');
-const backupDir = join(OUT,'pending');
+const csvFile = join(SCRIPT_DIR,PREFIX+'-report.csv');
+const progressFile = join(SCRIPT_DIR,PREFIX+'-progress.jsonl');
+const summaryFile = join(SCRIPT_DIR,PREFIX+'-summary.json');
+const schemaFile = join(SCRIPT_DIR,PREFIX+'-schema.sha256');
+const lockFile = join(SCRIPT_DIR,PREFIX+'.lock');
+const backupDir = join(SCRIPT_DIR,'product-kk-backups');
 let seen = new Set();
+let runStartedAt=0, runProcessed=0, runKnown=0, runTotal=0;
+const duration = ms => { const s=Math.max(0,Math.round(ms/1000));
+  return Math.floor(s/3600)+':'+String(Math.floor(s%3600/60)).padStart(2,'0')+
+    ':'+String(s%60).padStart(2,'0'); };
 async function safeWrite(file,data) {
   const temporary = file + '.' + pid + '.tmp';
   await writeFile(temporary, data,{mode:0o600});
@@ -120,9 +134,14 @@ async function report(id,status,changes='',reason='',details='') {
     if (status in counters) counters[status]++;
     else if (status.startsWith('blocked_')) counters.blocked++;
     else counters.errors++;
-    if (counters.scanned % 25 === 0) log(counters.scanned + '/' + counters.total,
-      'ok=' + counters.already_ok,'updated=' + counters.normalized,
-      'would=' + counters.would_update, 'blocked=' + counters.blocked,'errors=' + counters.errors);
+    runProcessed++;
+    const elapsed=Date.now()-runStartedAt;
+    const speed=runProcessed/(Math.max(elapsed,1)/1000);
+    const done=runKnown+runProcessed;
+    const eta=speed>0?duration((runTotal-done)/speed*1000):'—';
+    log(done+'/'+runTotal, '('+(runTotal?Math.floor(done/runTotal*100):100)+'%)',
+      id, status, changes?clean(changes).slice(0,80):'',
+      'скорость='+speed.toFixed(2)+'/с','прошло='+duration(elapsed),'осталось='+eta);
   });
 }
 class Gate {
@@ -701,20 +720,30 @@ async function password() {
 }
 async function main() {
   if(TEST){selfTest();return;}
+  // Одна команда запуска: JWT читается из jwt.txt рядом с localizer.mjs.
+  if(!token)token=(await readFile(join(SCRIPT_DIR,'jwt.txt'),'utf8').catch(error=>{
+    if(error.code==='ENOENT')return '';
+    throw error;
+  })).trim();
   token ||= await password();
   if(!token || token.length<20)throw Error('JWT не передан');
   if(NEW_RUN) {
-    const priorLock=await readFile(join(OUT,'run.lock'),'utf8').catch(()=>null);
-    if(priorLock!==null)throw Error('Предыдущий запуск может работать: есть run.lock');
-    const existing=await readFile(join(OUT,'schema.sha256'),'utf8').catch(()=>null);
-    if(existing) {
-      const pending=await readdir(join(OUT,'pending')).catch(()=>[]);
-      if(pending.length)throw Error('Неразобранные pending backups: --new-run запрещён');
-      await rename(OUT,OUT+'-archive-'+Date.now());
-    } // Не удаляем backup предыдущего запуска
+    const priorLock=await readFile(lockFile,'utf8').catch(()=>null);
+    if(priorLock!==null)throw Error('Предыдущий запуск может работать: есть '+lockFile);
+    const pending=await readdir(backupDir).catch(()=>[]);
+    if(pending.length)throw Error('Неразобранные product-kk-backups: --new-run запрещён');
+    const targets=[csvFile,progressFile,summaryFile,schemaFile];
+    const existing=[];
+    for(const file of targets)if(await readFile(file,'utf8').catch(()=>null)!==null)existing.push(file);
+    if(existing.length) {
+      const archive=join(SCRIPT_DIR,PREFIX+'-archive-'+Date.now());
+      await mkdir(archive,{recursive:true});
+      for(const file of existing)await rename(file,join(archive,file.split(/[\\/]/).pop()));
+      log('Предыдущие результаты сохранены:',archive);
+    }
   }
   await mkdir(backupDir,{recursive:true});
-  const lock=join(OUT,'run.lock');
+  const lock=lockFile;
   let acquired=false;
   try {
     try {await writeFile(lock,String(pid),{flag:'wx'});acquired=true;}
@@ -753,14 +782,19 @@ async function main() {
     relationFields=Object.entries(schema.attributes).filter(([k,a])=>!SYSTEM.has(k)&&a.type==='relation')
       .map(([k])=>k);
     const signature=createHash('sha256').update(JSON.stringify(canonical(schema.attributes))).digest('hex');
-    const signaturePath=join(OUT,'schema.sha256');
+    const signaturePath=schemaFile;
     const oldHash=await readFile(signaturePath,'utf8').catch(()=>null);
     if(oldHash && oldHash!==signature)throw Error('Схема изменилась после checkpoint; начни новый state dir');
     if(!oldHash)await safeWrite(signaturePath,signature);
     const productIds=ONLY_ID?[ONLY_ID]:await allIds();
     const selected=LIMIT?productIds.slice(0,LIMIT):productIds;
     counters.total=selected.length;
+    runTotal=selected.length;
+    runKnown=selected.filter(id=>seen.has(id)).length;
+    runStartedAt=Date.now();
     log('RU Product:',productIds.length,'к обработке:',selected.length,'relations:',relationFields.length);
+    log('Результаты рядом со скриптом:',SCRIPT_DIR);
+    if(runKnown)log('Уже проверено по checkpoint:',runKnown+'/'+runTotal);
     let cursor=0;
     await Promise.all(Array.from({length:Math.min(WORKERS,selected.length)},async ()=>{
       while(!stopped) {
@@ -770,12 +804,12 @@ async function main() {
       }
     }));
     await finishWrite;
-    await safeWrite(join(OUT,'summary.json'),JSON.stringify({
+    await safeWrite(summaryFile,JSON.stringify({
       completed:!stopped,at:new Date().toISOString(),mode:APPLY?'apply':'dry-run',
       counters,requestsLimit:REQUESTS,workers:WORKERS,
       fatal:fatal?.message||null,unfinished:Math.max(0,selected.length-seen.size)
     },null,2));
-    log('Завершено. CSV:',csvFile,'summary:',join(OUT,'summary.json'));
+    log('Завершено. CSV:',csvFile,'summary:',summaryFile);
     if(fatal)throw fatal;
   } finally {if(acquired)await unlink(lock).catch(()=>{});}
 }
