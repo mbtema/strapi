@@ -1488,6 +1488,116 @@
     }
   }
 
+
+  // Разовый read-only recovery подтверждённого сбоя с недоступным InStock:
+  // Save KK мог перенести relations, изменить RU Draft InStock и оставить
+  // KK InStock прежним. Никаких повторных записей остановленного Product.
+  function inspectUneditableInStockRecovery(baseline,now) {
+    const old=baseline?.snapshots;
+    const checks=[];
+    const add=(name,ok)=>checks.push({name,ok:!!ok});
+    const actions=baseline?.plan?.actions||[];
+    add('План содержал только relation и поле InStock',
+      actions.some(a=>a.kind==='field' && a.field==='InStock') &&
+      actions.every(a=>a.kind==='relation' || (a.kind==='field' && a.field==='InStock')));
+    if (!old?.ru?.draft || !old?.ru?.published ||
+        !old?.kk?.draft || !old?.kk?.published ||
+        !now?.ru?.draft || !now?.ru?.published ||
+        !now?.kk?.draft || !now?.kk?.published) {
+      add('Есть все четыре исходных и текущих версии',false);
+      return checks;
+    }
+    const ruBefore=old.ru.draft.fields,ruAfter=now.ru.draft.fields;
+    const onlyInStockChanged=ruBefore.InStock===false && ruAfter.InStock===true &&
+      equal({...ruBefore,InStock:true},ruAfter) &&
+      equal(old.ru.draft.relations,now.ru.draft.relations);
+    add('RU Draft: только InStock false → true, relations неизменны',
+      onlyInStockChanged);
+    add('RU Published не изменена',
+      versionEqual(old.ru.published,now.ru.published));
+    add('KK Draft поля и переводы не изменены',
+      equal(old.kk.draft.fields,now.kk.draft.fields));
+    add('KK Draft relations записаны полностью как RU',
+      equal(old.ru.draft.relations,now.kk.draft.relations));
+    add('KK Published поля не изменены',
+      equal(old.kk.published.fields,now.kk.published.fields));
+    // Уже опубликованные связи сохраняются. Дополнительные могли стать
+    // видимыми из-за публикации KK target перед остановленным Save.
+    const oldPub=old.kk.published.relations;
+    const newPub=now.kk.published.relations;
+    const beforeKkDraft=old.kk.draft.relations;
+    const fields=[...new Set([...Object.keys(oldPub),...Object.keys(newPub)])];
+    const onlyVisibilityGrowth=fields.every(field=>{
+      const was=oldPub[field],is=newPub[field],draft=beforeKkDraft[field];
+      return Array.isArray(was)&&Array.isArray(is)&&Array.isArray(draft)&&
+        was.every(id=>is.includes(id)) &&
+        is.every(id=>was.includes(id)||draft.includes(id));
+    });
+    add('KK Published relations: только появление ранее скрытых KK targets',
+      onlyVisibilityGrowth);
+    return checks;
+  }
+
+  async function reconcileUneditableInStockStop() {
+    const j=journal(),baseline=baselineRow(j?.documentId);
+    if (state.running || !j || j.phase!=='save-kk' || j.method!=='PUT' ||
+        j.reason!=='Результат записи не подтверждён' ||
+        !baseline || verifiedStage()) {
+      render('Восстановление InStock невозможно: требуется ручной разбор unresolved');
+      return;
+    }
+    if (!confirm('Выполнить только GET-сверку остановленного Save KK?\\n'+j.documentId+
+      '\\nЕсли изменился только RU InStock false → true, а KK relations сохранены,'+
+      '\\nтовар останется на ручной проверке, остальные продолжим.'+
+      '\\nБез повторного PUT/POST для этого товара.')) return;
+    state.running=true;state.stopped=false;
+    setAction('Остановить',stopRunning);
+    const record={documentId:j.documentId,kind:'uneditable-InStock-partial-save',
+      at:new Date().toISOString(),verified:false,checks:[],before:baseline.snapshots};
+    state.report.reconciliations=state.report.reconciliations||[];
+    state.report.reconciliations.push(record);
+    try {
+      await schemaPreflight();
+      const now=await allVersions(j.documentId);
+      record.after=now;
+      record.checks=inspectUneditableInStockRecovery(baseline,now);
+      checkStop();
+      const failed=record.checks.filter(x=>!x.ok).map(x=>x.name);
+      if (failed.length)
+        throw Error('Save KK не подтверждён: '+failed.join('; '));
+      record.verified=true;
+      record.finishedAt=new Date().toISOString();
+      record.disposition='skip_uneditable_field_no_retry';
+      record.warning='RU Draft InStock стал true; не восстановлен и не опубликован';
+      const missing=[{field:'InStock',uid:CFG.productUid,documentId:j.documentId,
+        reason:'uneditable_field',ruBefore:false,ruAfter:true,
+        kkCurrent:now.kk.draft.fields.InStock}];
+      deferProduct(j.documentId,missing,'after-partial-save','uneditable_field');
+      clearJournal();clearStage();
+      state.report.unresolved=null;
+      state.report.executionFailure=null;
+      const priorPilot=savedProgress().find(p=>p.automatedPilot===true);
+      state.running=false;
+      if (priorPilot) {
+        state.report.pilotResult={documentId:priorPilot.id,verified:true,
+          recoveredFromCheckpoint:true,types:priorPilot.types||[]};
+        render('Save KK сверён, InStock пропущен. Продолжаем остальные товары.');
+        await runBatch();
+      } else {
+        state.report.pilotCandidate=choosePilot();
+        render('Сверка Save KK завершена. Нужен новый пилот для других Product.');
+        setAction('Запустить пилот → все товары',runPilot);
+        downloadResult();
+      }
+    } catch(error) {
+      state.running=false;
+      record.failure=String(error.message||error);
+      render('СТОП: '+record.failure+'. Unresolved сохранён, повторного PUT нет.');
+      setAction('Скачать JSON результата',downloadResult);
+      downloadResult();
+    }
+  }
+
   // После ручной публикации уже частично записанного пилота разрешён
   // ТОЛЬКО read-only контроль: никаких повторных PUT/POST и неочевидной
   // автоматической перезаписи из backup.
@@ -1873,7 +1983,14 @@
       } else if (j?.phase==='save-kk' && j?.method==='PUT' && j?.documentId &&
           j?.reason==='Результат записи не подтверждён' && !incomplete?.reason) {
         const row=baselineRow(j.documentId);
-        if (row?.plan?.keyReview?.length && !row.plan.needsSaveKk) {
+        if (!incomplete && row?.plan?.actions?.some(a=>
+          a.kind==='field' && a.field==='InStock') &&
+          row.plan.actions.every(a=>a.kind==='relation' ||
+            (a.kind==='field' && a.field==='InStock'))) {
+          render('Остановленный Save KK изменил RU InStock. Доступна read-only сверка'+
+            ' и пропуск этого Product без повторного PUT.');
+          setAction('Проверить InStock → продолжить',reconcileUneditableInStockStop);
+        } else if (row?.plan?.keyReview?.length && !row.plan.needsSaveKk) {
           render('Старый PUT KK не изменил key у '+j.documentId+
             '. Доступна read-only сверка всех четырёх версий из backup.');
           setAction('Проверить KK.key → продолжить',reconcileStoppedPreservedKey);
