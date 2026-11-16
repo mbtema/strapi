@@ -1743,7 +1743,8 @@
         reasons.push('cannot_compare_fields:'+String(error.message||error));
       }
     }
-    if (original.plan?.ready) reasons.push('pending_in_fresh_audit');
+    // План составлен ДО пилота: ready=true сам по себе не означает,
+    // что уже подтверждённый Save/Publish снова требуется.
     return {documentId,verified:reasons.length===0,stale:reasons.length>0,
       reasons,at:new Date().toISOString()};
   }
