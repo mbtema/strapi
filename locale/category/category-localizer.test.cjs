@@ -69,6 +69,7 @@ function createFixture(options={}){
         const item=data.get(k);if(!item){status=404;result={data:null};}else result={data:clone(item.row)};
       }else if(method==='PUT'){
         writes.push({method,uid,id,locale,body:clone(body)});
+        if(options.failSave){status=500;result={error:{message:'Mock write refused'}};}else{
         const old=data.get(`${uid}|${id}|kk|draft`);
         const defaults=Object.fromEntries(Object.entries(schemas[uid].attributes)
           .filter(([,a])=>a.type!=='relation').map(([f,a])=>[f,a.type==='component'?[]:a.type==='boolean'?false:null]));
@@ -84,6 +85,7 @@ function createFixture(options={}){
           }else row[field]=clone(val);
         }
         data.set(`${uid}|${id}|kk|draft`,{row,rels});result={data:clone(row)};
+        }
       }else if(method==='POST'){
         writes.push({method,uid,id,locale,body:clone(body)});
         const from=data.get(`${uid}|${id}|${locale}|draft`);
@@ -182,4 +184,26 @@ async function runFixture(o={}){
   assert.equal(repeated.logs.at(-1)[1].already_ok,1);
   assert.equal(repeated.writes.length,0);
   console.log('PASS: full rescan skips confirmed completed Category');
+
+  const g=await runFixture({failSave:true});
+  assert.equal(g.logs.at(-1)[1].unresolved,1,JSON.stringify(g.logs));
+  assert.equal(g.db.get(`${U}|cat1`).phase,'pending-save');
+  assert.equal(g.writes.filter(x=>x.method==='PUT').length,1);
+  const g2=await runFixture({shared:{data:g.data,db:g.db}});
+  assert.equal(g2.logs.at(-1)[1].unresolved,1);
+  assert.equal(g2.writes.length,0);
+  console.log('PASS: unknown Save outcome preserved, no automatic retry on rescan');
+
+  const jr=a.db.get(`${U}|cat1`),pubRu=jr.history.find(h=>h.stage==='publish-ru');
+  assert.ok(pubRu);
+  const kkBefore=pubRu.after.kk.published;
+  if(kkBefore)a.data.set(`${U}|cat1|kk|published`,{row:clone(kkBefore.row),
+    rels:Object.fromEntries(Object.entries(kkBefore.relations).map(([f,rows])=>[f,rows.map(x=>x.documentId)]))});
+  else a.data.delete(`${U}|cat1|kk|published`);
+  jr.phase='verified-publish-ru';jr.lastVerified=clone(pubRu.after);a.db.set(`${U}|cat1`,jr);
+  const resumed=await runFixture({shared:{data:a.data,db:a.db}});
+  assert.equal(resumed.logs.at(-1)[1].success,1,JSON.stringify(resumed.logs));
+  assert.equal(resumed.writes.filter(x=>x.method==='POST'&&x.locale==='ru').length,0);
+  assert.equal(resumed.writes.filter(x=>x.method==='POST'&&x.locale==='kk').length,1);
+  console.log('PASS: verified RU Publish resumes with KK only');
 })().catch(e=>{console.error(e);process.exitCode=1});
