@@ -754,6 +754,8 @@ async function one(id) {
       kk=created.draft;
       pub=null;committed=true;
     }
+    if(EXISTING_ONLY && !pub)return report(id,'blocked_unpublished_kk_product','',
+      'existing-only: KK Product должен иметь Published версию');
     let draft=plan(ru,kk,pub);
     if(draft.blockers.length) {
       if(file)throw Error('KK создана, но нормализация заблокирована: '+draft.blockers.join('|'));
@@ -1021,6 +1023,10 @@ async function main() {
       interrupted:interruptRequested,
       fatal:fatal?.message||null,unfinished:Math.max(0,selected.length-seen.size)
     },null,2));
+    log('Итог:', 'проверено='+counters.scanned+'/'+counters.total,
+      'normalized='+counters.normalized,'already_ok='+counters.already_ok,
+      'blocked='+counters.blocked,'errors='+counters.errors,
+      'interrupted='+interruptRequested);
     log('Завершено. CSV:',csvFile,'summary:',summaryFile);
     if(fatal)throw fatal;
   } finally {if(acquired)await unlink(lock).catch(()=>{});}
