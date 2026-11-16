@@ -1,2 +1,10 @@
-# Локальные результаты, журналы и backup нормализаторов (не коммитить)
+# Локальные данные localizer: не добавлять в Git
 localizer-state/
+product-kk-*.csv
+product-kk-*.json
+product-kk-*.jsonl
+product-kk-*.sha256
+product-kk-*.lock
+product-kk-backups/
+product-kk-*-archive-*/
+**/jwt.txt
