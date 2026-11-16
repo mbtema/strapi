@@ -3,7 +3,8 @@
 // Все PUT/POST только по ручному запуску, без retry. Повреждение RU: STOP, recovery отдельно.
 // Strapi Product.key unique + nonlocalized: одинаковый key у RU и KK одного documentId.
 // Один ручной пилот -> после postflight автоматическая обработка eligible Product.
-// Неопубликованные KK target => defer Product без Publish и без публикации справочников.
+// Если KK Published справочника отсутствует, публикуем его существующий KK Draft.
+// Нет KK-локализации / ошибка публикации — пропуск Product, без общего STOP.
 // Отличающийся KK.key — допустимый сохранённый идентификатор: НЕ менять и не блокировать relations.
 (async () => {
   'use strict';
@@ -90,6 +91,7 @@
     batch: null,
     getCount: 0, getRetries: 0, targetsDone: 0, targetsTotal: 0,
     started: Date.now(), schema: null, components: null, targetCache: new Map(),
+    targetSchemas: new Map(), targetPublicationFailures: new Map(),
     report: {
       tool: 'dior-products-kk-pipeline', version: 8, mode: 'dry-run',
       brandDocumentId: CFG.brandDocumentId, brandRelation: CFG.brandField,
@@ -98,7 +100,7 @@
       complete: false, failure: null, summary: null, schema: [],
       rawSchemas: null, plan: null, pilotCandidate: null,
       writesEnabled: false, backupKind: 'pre-write-complete', products: [],
-      operations: [], verifiedTypes: [], skipped: [], progress: [],
+      operations: [], targetPublications: [], verifiedTypes: [], skipped: [], progress: [],
       safety: {recoveryVerified: false, autoRecoveryEnabled: false,
         globalKeyUniquenessVerified: false}
     }
@@ -130,14 +132,15 @@
     try {
       const data=JSON.parse(localStorage.getItem(DEFERRED_KEY)||'null');
       return data?.backupAt===backupAt && Array.isArray(data.rows) ?
-        data.rows.filter(row=>row?.documentId && row.reason==='unpublished_kk_target') : [];
+        data.rows.filter(row=>row?.documentId &&
+          ['unpublished_kk_target','missing_kk_locale','target_publish_failed'].includes(row.reason)) : [];
     } catch { return []; }
   };
-  function deferProduct(documentId,missing,stage='before-save') {
+  function deferProduct(documentId,missing,stage='before-save',reason='unpublished_kk_target') {
     if (!Array.isArray(missing) || !missing.length)
-      throw Error('Нельзя отложить товар без подтверждённой KK Published-зависимости');
+      throw Error('Нельзя отложить товар без подтверждённой причины');
     const rows=savedDeferred().filter(row=>row.documentId!==documentId);
-    const entry={documentId,reason:'unpublished_kk_target',
+    const entry={documentId,reason,
       missing,stage,at:new Date().toISOString()};
     rows.push(entry);
     localStorage.setItem(DEFERRED_KEY,JSON.stringify({backupAt:state.report.startedAt,rows}));
@@ -696,7 +699,8 @@
     }
     state.targetsTotal = needs.size;
     const pairs = await eachLimited([...needs.values()], CFG.targetWorkers, async target => {
-      const found = await detail(target.uid,target.id,'kk','draft');
+      const found = await detail(target.uid,target.id,'kk','draft') ||
+        await detail(target.uid,target.id,'kk','published');
       const ok = !!found && Number.isInteger(found.id) && found.id > 0;
       state.targetsDone++;
       render('Проверяем наличие KK у связанных записей…');
@@ -708,7 +712,8 @@
         const uid = schema.attributes[field]?.target;
         for (const id of ids) {
           if (!state.targetCache.get(uid + '|' + id))
-            row.plan.missingTargets.push({field, target:uid, documentId:id});
+            row.plan.missingTargets.push({field, target:uid, documentId:id,
+              reason:'missing_kk_locale'});
         }
       }
       if (row.plan.missingTargets.length) {
@@ -919,7 +924,8 @@
     for (const [field,ids] of Object.entries(before.ru.draft.relations)) {
       const attr=state.schema.attributes[field];
       for (const id of ids) {
-        const target=await detail(attr.target,id,'kk','draft');
+        const target=await detail(attr.target,id,'kk','draft') ||
+          await detail(attr.target,id,'kk','published');
         if (!Number.isInteger(target?.id) || target.id<=0) {
           return {ok:false,missing:{field,uid:attr.target,documentId:id}};
         }
@@ -968,6 +974,128 @@
       ({field,uid,documentId}));
     return {ok:missing.length===0,missing,checked:targets.size};
   }
+
+  // Опубликованный справочник не трогаем, даже если Draft/Modified отличается.
+  // Для первого Publish без Published передаём текущее KK Draft, не меняя relations.
+  function targetPublishPayload(uid,draft) {
+    const schema=state.targetSchemas.get(uid);
+    if (!schema?.attributes || schema.pluginOptions?.i18n?.localized!==true)
+      throw Error('Не подтверждена локализуемая схема '+uid);
+    const payload={locale:'kk'};
+    for (const [field,attr] of Object.entries(schema.attributes)) {
+      if (SYSTEM.has(field)) continue;
+      if (attr.type==='relation') {
+        payload[field]={connect:[],disconnect:[]};
+        continue;
+      }
+      if (!Object.prototype.hasOwnProperty.call(draft,field)) {
+        if (attr.required) throw Error('Отсутствует обязательное KK поле '+field);
+        continue;
+      }
+      const value=draft[field];
+      if (value===undefined || (!SCALARS.has(attr.type) &&
+          !['media','uid','component','dynamiczone'].includes(attr.type)))
+        throw Error('Неподдержанное поле '+uid+'/'+field);
+      if (attr.required && !present(value))
+        throw Error('Пустое required поле '+uid+'/'+field);
+      payload[field]=value;
+    }
+    return payload;
+  }
+
+  async function publishMissingKkTarget(uid,documentId) {
+    const key=uid+'|'+documentId;
+    if (state.targetPublicationFailures.has(key))
+      return {ok:false,reason:'target_publish_failed',
+        error:state.targetPublicationFailures.get(key)};
+    const record={uid,documentId,locale:'kk',phase:'publish-missing-kk-target',
+      at:new Date().toISOString(),attempted:false,verified:false};
+    state.report.targetPublications=state.report.targetPublications||[];
+    state.report.targetPublications.push(record);
+    const fail=error=>{
+      record.error=String(error?.message||error);
+      state.targetPublicationFailures.set(key,record.error);
+      return {ok:false,reason:'target_publish_failed',error:record.error};
+    };
+    try {
+      const before=await detail(uid,documentId,'kk','draft');
+      if (!before) {
+        record.error='KK-локализация отсутствует';
+        return {ok:false,reason:'missing_kk_locale',error:record.error};
+      }
+      if (await kkPublishedDependency(uid,documentId)) {
+        record.verified=true;record.disposition='already_published';
+        return {ok:true};
+      }
+      const payload=targetPublishPayload(uid,before);
+      const schema=state.targetSchemas.get(uid);
+      const fieldsBefore=productFields(before,schema,state.components);
+      const url='/content-manager/collection-types/'+uid+'/'+
+        encodeURIComponent(documentId)+'/actions/publish?locale=kk';
+      record.url=url;record.attempted=true;record.payload=payload;
+      render('Публикуем KK справочник '+uid+' · '+documentId);
+      state.critical=true;
+      try {
+        let response;
+        try {
+          const r=await fetch(url,{
+            method:'POST',credentials:'include',cache:'no-store',
+            headers:{Authorization:'Bearer '+token,Accept:'application/json',
+              'Content-Type':'application/json'},
+            body:JSON.stringify(payload)
+          });
+          response={status:r.status,ok:r.ok};
+          if (!r.ok) response.message=(await r.text()).slice(0,250);
+        } catch(error) {
+          response={status:'NETWORK',ok:false,message:String(error.message||error)};
+        }
+        record.response=response;
+        // POST не повторяется; даже при HTTP-ошибке проверяем реальный итог через GET.
+        const afterDraft=await detail(uid,documentId,'kk','draft');
+        const afterPublished=await detail(uid,documentId,'kk','published');
+        record.postflight={
+          published:!!afterPublished,
+          draftPreserved:!!afterDraft &&
+            equal(fieldsBefore,productFields(afterDraft,schema,state.components)),
+          publishedFieldsMatchDraft:!!afterDraft&&!!afterPublished &&
+            equal(productFields(afterDraft,schema,state.components),
+              productFields(afterPublished,schema,state.components))
+        };
+        if (!record.postflight.published || !record.postflight.draftPreserved ||
+            !record.postflight.publishedFieldsMatchDraft)
+          return fail('Публикация KK справочника не подтверждена GET');
+        record.verified=true;
+        record.finishedAt=new Date().toISOString();
+        if (!response.ok) record.note='HTTP неоднозначен, результат подтверждён GET';
+        return {ok:true};
+      } finally {
+        state.critical=false;
+      }
+    } catch(error) {
+      return fail(error);
+    }
+  }
+
+  async function ensureKkPublicationDependencies(snapshot) {
+    const checked=await publicationDependencies(snapshot);
+    if (checked.ok) return checked;
+    const targets=new Map();
+    for (const item of checked.missing)
+      targets.set(item.uid+'|'+item.documentId,{uid:item.uid,documentId:item.documentId});
+    const failures=new Map();
+    // Последовательная публикация без retry и без синхронизации самих справочников.
+    for (const [key,target] of targets) {
+      checkStop();
+      const result=await publishMissingKkTarget(target.uid,target.documentId);
+      if (!result.ok) failures.set(key,result);
+    }
+    return {ok:failures.size===0,checked:checked.checked,
+      publishedTargets:targets.size-failures.size,
+      missing:checked.missing.filter(item=>
+        failures.has(item.uid+'|'+item.documentId)).map(item=>({
+          ...item,...failures.get(item.uid+'|'+item.documentId)
+        }))};
+  }
   function publishedVisibleRelations(draftRelations,missing) {
     const omit=new Set(missing.map(x=>x.field+'|'+x.documentId));
     return Object.fromEntries(Object.entries(draftRelations).map(([field,ids])=>
@@ -977,7 +1105,8 @@
     for (const action of plan.actions.filter(x=>x.kind==='relation')) {
       const connect=[],disconnect=[];
       for (const documentId of action.connect) {
-        const entity=await detail(action.target,documentId,'kk','draft');
+        const entity=await detail(action.target,documentId,'kk','draft') ||
+          await detail(action.target,documentId,'kk','published');
         if (!Number.isInteger(entity?.id) || entity.id<=0)
           throw Error('Отсутствует KK target для connect '+action.field+':'+documentId);
         connect.push({id:entity.id,documentId,locale:'kk'});
@@ -1164,15 +1293,25 @@
         return {skipped:'target_changed'};
     }
     const dependencies=await checkFreshDependencies(before);
-    if (!dependencies.ok) return {skipped:'missing_kk_target',missing:dependencies.missing};
+    if (!dependencies.ok) {
+      const missing=dependencies.missing.map(item=>({...item,reason:'missing_kk_locale'}));
+      deferProduct(documentId,missing,stage?'after-verified-save':'before-save','missing_kk_locale');
+      if (stage) clearStage();
+      return {skipped:'missing_kk_locale',missing};
+    }
     const planned=baseline.plan;
     if (planned.needPublishKk || planned.needsSaveKk) {
-      const published=await publicationDependencies(before);
+      const published=await ensureKkPublicationDependencies(before);
       if (!published.ok) {
-        deferProduct(documentId,published.missing,stage?'after-verified-save':'before-save');
-        if (stage) clearStage(); // Save уже проверен; запрет повторного PUT сохраняется через defer.
-        return {skipped:'unpublished_kk_target',missing:published.missing};
+        const reason=published.missing.some(x=>x.reason==='target_publish_failed') ?
+          'target_publish_failed':'missing_kk_locale';
+        deferProduct(documentId,published.missing,stage?'after-verified-save':'before-save',reason);
+        if (stage) clearStage();
+        return {skipped:reason,missing:published.missing};
       }
+      const refreshed=await allVersions(documentId);
+      if (stateDifferences(before,refreshed).length)
+        return {skipped:'dependencies_changed_product'};
     }
     if (!planned.ready) return {skipped:'verified'};
     const receipt={documentId,name:baseline.name,pilot,at:new Date().toISOString(),
@@ -1213,14 +1352,22 @@
       const pre=await allVersions(documentId);
       if (stateDifferences(current,pre).length)
         throw Error('Перед Publish KK состояние изменилось');
-      const publication=await publicationDependencies(pre);
+      const publication=await ensureKkPublicationDependencies(pre);
       if (!publication.ok) {
-        // Изменение target после Save. Подтверждённый Save уже в stage journal.
-        deferProduct(documentId,publication.missing,'after-verified-save');
+        const reason=publication.missing.some(x=>x.reason==='target_publish_failed') ?
+          'target_publish_failed':'missing_kk_locale';
+        deferProduct(documentId,publication.missing,'after-verified-save',reason);
         clearStage();
-        receipt.skipped='unpublished_kk_target';
-        receipt.missing=publication.missing;
-        return {skipped:'unpublished_kk_target',missing:publication.missing};
+        receipt.skipped=reason;receipt.missing=publication.missing;
+        return {skipped:reason,missing:publication.missing};
+      }
+      const refreshed=await allVersions(documentId);
+      if (stateDifferences(pre,refreshed).length) {
+        const missing=[{field:'*',uid:CFG.productUid,documentId,
+          reason:'dependencies_changed_product'}];
+        deferProduct(documentId,missing,'after-verified-save','target_publish_failed');
+        clearStage();
+        return {skipped:'target_publish_failed',missing};
       }
       receipt.publishKeyCheck=await globalKeyCheck(pre.ru.draft.detail.key,
         pre.kk.draft.detail.key,documentId);
@@ -1534,7 +1681,7 @@
         render('Проверяем пилот '+selected.name+' · '+selected.documentId);
         const output=await oneProduct(selected.documentId,true);
         if (output.skipped) {
-          if (output.skipped!=='unpublished_kk_target') {
+          if (!['unpublished_kk_target','missing_kk_locale','target_publish_failed'].includes(output.skipped)) {
             state.report.skipped.push({documentId:selected.documentId,
               reason:output.skipped,missing:output.missing||null});
           }
@@ -1589,7 +1736,8 @@
       if (stage) {
         if (stage.reason || !stage.documentId) throw Error('Некорректный checkpoint');
         const recovered=await oneProduct(stage.documentId,false);
-        if (!recovered.verified && recovered.skipped!=='unpublished_kk_target')
+        if (!recovered.verified && !['unpublished_kk_target','missing_kk_locale',
+          'target_publish_failed'].includes(recovered.skipped))
           throw Error('Не удалось продолжить подтверждённый этап '+stage.documentId);
       }
       const already=savedProgress();
@@ -1621,7 +1769,7 @@
             completed.add(row.documentId);
           } else {
             state.batch.skipped++;
-            if (output.skipped==='unpublished_kk_target') deferred.add(row.documentId);
+            if (['unpublished_kk_target','missing_kk_locale','target_publish_failed'].includes(output.skipped)) deferred.add(row.documentId);
             else state.report.skipped.push({documentId:row.documentId,
               reason:output.skipped||'unverified',missing:output.missing||null});
           }
@@ -1757,6 +1905,8 @@
     const components = Object.fromEntries(componentsList.map(x => [x.uid, x]));
     state.schema = productSchema;
     state.components = components;
+    state.targetSchemas = new Map(typesList.filter(x=>x?.uid && x?.attributes)
+      .map(x=>[x.uid,x]));
     state.report.schema = nestedSchemaLines(productSchema.attributes, components, '');
     state.report.rawSchemas = { product: productSchema, components: componentsResponse.data };
     const sourceReport=imported || (reuse?prior:null);
@@ -1771,7 +1921,7 @@
       }
       state.report={...sourceReport,version:8,mode:'dry-run',complete:true,failure:null,
         products:refreshPlansFromBackup(sourceReport.products,productSchema,components),
-        operations:[],execution:[],
+        operations:[],targetPublications:[],execution:[],
         verifiedTypes:[...new Set([...(sourceReport.verifiedTypes||[]),
           ...savedProgress().flatMap(x=>x.types||[])])],
         skipped:savedDeferred(sourceReport.startedAt),
@@ -1824,7 +1974,7 @@
     checkStop();
     state.report.pilotCandidate = choosePilot();
     state.report.plan = { phase:'dry-run-completed', records:state.total,
-      writesEnabled:false, publicationEnabled:false,
+      writesEnabled:false, publicationEnabled:true,
       blockedCount:count('blocked')+count('review')+count('missing_kk'),
       backupRequired:true, uniquenessCheck:'unique-across-products-shared-within-document',
       note:'Перед pilot необходима подтверждённая проверка PUT/POST и recovery на live.' };
