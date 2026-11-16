@@ -1513,14 +1513,22 @@
       equal(old.ru.draft.relations,now.ru.draft.relations);
     add('RU Draft: только InStock false → true, relations неизменны',
       onlyInStockChanged);
-    add('RU Published не изменена',
-      versionEqual(old.ru.published,now.ru.published));
+    // У закрытого InStock backend может обновить Published отдельно от
+    // ожидаемого Save KK. Это допустимо ТОЛЬКО для false → true;
+    // никакое другое изменение полей или relations не игнорируем.
+    const inStockOnly=(beforeFields,afterFields)=>
+      equal(beforeFields,afterFields) ||
+      (beforeFields?.InStock===false && afterFields?.InStock===true &&
+        equal({...beforeFields,InStock:true},afterFields));
+    add('RU Published: только InStock false → true или без изменений',
+      inStockOnly(old.ru.published.fields,now.ru.published.fields) &&
+      equal(old.ru.published.relations,now.ru.published.relations));
     add('KK Draft поля и переводы не изменены',
       equal(old.kk.draft.fields,now.kk.draft.fields));
     add('KK Draft relations записаны полностью как RU',
       equal(old.ru.draft.relations,now.kk.draft.relations));
-    add('KK Published поля не изменены',
-      equal(old.kk.published.fields,now.kk.published.fields));
+    add('KK Published поля: только InStock false → true или без изменений',
+      inStockOnly(old.kk.published.fields,now.kk.published.fields));
     // Уже опубликованные связи сохраняются. Дополнительные могли стать
     // видимыми из-за публикации KK target перед остановленным Save.
     const oldPub=old.kk.published.relations;
@@ -1568,10 +1576,12 @@
       record.verified=true;
       record.finishedAt=new Date().toISOString();
       record.disposition='skip_uneditable_field_no_retry';
-      record.warning='RU Draft InStock стал true; не восстановлен и не опубликован';
+      record.warning='InStock может быть true в RU/KK Published; поле не восстановлено, требуется ручная проверка';
       const missing=[{field:'InStock',uid:CFG.productUid,documentId:j.documentId,
         reason:'uneditable_field',ruBefore:false,ruAfter:true,
-        kkCurrent:now.kk.draft.fields.InStock}];
+        ruPublished:now.ru.published.fields.InStock,
+        kkDraft:now.kk.draft.fields.InStock,
+        kkPublished:now.kk.published.fields.InStock}];
       deferProduct(j.documentId,missing,'after-partial-save','uneditable_field');
       clearJournal();clearStage();
       state.report.unresolved=null;
