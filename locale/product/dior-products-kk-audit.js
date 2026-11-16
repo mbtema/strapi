@@ -54,7 +54,7 @@
   const prior = window.tmDiorProductsKkAudit;
   const reuse = prior?.complete === true && prior?.brandDocumentId === CFG.brandDocumentId &&
     prior?.products?.length > 0 && prior?.rawSchemas?.product?.attributes &&
-    [3,4,5,6,7,8].includes(prior.version) && prior?.mode === 'dry-run';
+    [3,4,5,6,7,8,9].includes(prior.version) && prior?.mode === 'dry-run';
   document.getElementById(PANEL_ID)?.remove();
   const node = (tag, value) => {
     const el = document.createElement(tag);
@@ -93,7 +93,7 @@
     started: Date.now(), schema: null, components: null, targetCache: new Map(),
     targetSchemas: new Map(), targetPublicationFailures: new Map(),
     report: {
-      tool: 'dior-products-kk-pipeline', version: 8, mode: 'dry-run',
+      tool: 'dior-products-kk-pipeline', version: 9, mode: 'dry-run',
       brandDocumentId: CFG.brandDocumentId, brandRelation: CFG.brandField,
       source: 'ru/draft', target: 'kk/draft',
       startedAt: new Date().toISOString(), finishedAt: null,
@@ -1665,7 +1665,7 @@
       '\n\nЗапустить пилот одного товара, а после полного успеха '+
       'АВТОМАТИЧЕСКИ синхронизировать ВСЕ доступные товары DIOR?\n'+description+
       '\n\nОстальные типы изменений будут проверяться для каждого товара.'+
-      '\nПри первой ошибке STOP, без автоматического восстановления RU.')) return;
+      '\nОшибка записи Product остановит запуск; сбой справочника пропустит зависимый товар.')) return;
     state.running=true;state.stopped=false;setAction('Остановить',stopRunning);
     try {
       for (;;) {
@@ -1705,20 +1705,32 @@
   }
   async function verifyCompletedFromCheckpoint(documentId) {
     const original=baselineRow(documentId);
-    if (!original?.snapshots.ru.draft) throw Error('Checkpoint без RU baseline '+documentId);
+    const reasons=[];
+    if (!original?.snapshots?.ru?.draft || !original?.snapshots?.kk?.draft)
+      return {documentId,verified:false,stale:true,reasons:['missing_baseline'],
+        at:new Date().toISOString()};
     const now=await allVersions(documentId);
     if (!versionEqual(original.snapshots.ru.draft,now.ru.draft))
-      throw Error('RU Draft обработанного товара изменён: '+documentId);
-    if (!versionEqual(now.ru.draft,now.ru.published))
-      throw Error('RU Published обработанного товара устарела: '+documentId);
-    if (!versionEqual(now.kk.draft,now.kk.published))
-      throw Error('KK Published обработанного товара устарела: '+documentId);
-    if (!equal(now.ru.draft.relations,now.kk.draft.relations))
-      throw Error('Связи обработанного товара расходятся: '+documentId);
-    const desired=expectedKkFields(now,payloadContent(now,'kk'));
-    if (!equal(now.kk.draft.fields,desired))
-      throw Error('KK поля обработанного товара расходятся: '+documentId);
-    return {documentId,verified:true,at:new Date().toISOString()};
+      reasons.push('source_changed_after_audit');
+    if (!now.ru.draft || !versionEqual(now.ru.draft,now.ru.published))
+      reasons.push('ru_needs_publish');
+    if (!now.kk.draft || !versionEqual(now.kk.draft,now.kk.published))
+      reasons.push('kk_needs_publish');
+    if (now.ru.draft && now.kk.draft &&
+        !equal(now.ru.draft.relations,now.kk.draft.relations))
+      reasons.push('relations_differ');
+    if (now.ru.draft && now.kk.draft) {
+      try {
+        const desired=expectedKkFields(now,payloadContent(now,'kk'));
+        if (!equal(now.kk.draft.fields,desired))
+          reasons.push('kk_fields_differ');
+      } catch(error) {
+        reasons.push('cannot_compare_fields:'+String(error.message||error));
+      }
+    }
+    if (original.plan?.ready) reasons.push('pending_in_fresh_audit');
+    return {documentId,verified:reasons.length===0,stale:reasons.length>0,
+      reasons,at:new Date().toISOString()};
   }
 
   async function runBatch() {
@@ -1741,19 +1753,26 @@
           throw Error('Не удалось продолжить подтверждённый этап '+stage.documentId);
       }
       const already=savedProgress();
+      const validProgress=[];
       state.report.checkpointVerifications=[];
       for (let i=0;i<already.length;i++) {
         checkStop();
         render('Повторная проверка checkpoint '+(i+1)+'/'+already.length);
         const result=await verifyCompletedFromCheckpoint(already[i].id);
         state.report.checkpointVerifications.push(result);
+        if (result.verified) validProgress.push(already[i]);
       }
-      // Только запланированные, доступные товары. Недостающие KK targets
-      // уже отмечены как blocked и не получат PUT/POST.
+      // Устаревший checkpoint: товар повторно включится в новый план,
+      // если его Draft/Published ещё расходятся. Без глобального STOP.
+      if (validProgress.length!==already.length) {
+        localStorage.setItem(PROGRESS_KEY,JSON.stringify(validProgress));
+        state.report.progress=validProgress;
+      }
+      // Только доступные товары из нового backup.
       const rows=state.report.products.filter(row=>row?.plan?.ready && row.plan.eligible &&
         row.documentId!==state.report.pilotResult.documentId);
       state.batch.total=rows.length;
-      const completed=new Set(savedProgress().map(p=>p.id));
+      const completed=new Set(validProgress.map(p=>p.id));
       const deferred=new Set(savedDeferred().map(p=>p.documentId));
       for (const row of rows) {
         checkStop();
@@ -1919,7 +1938,7 @@
           !equal(sourceReport.rawSchemas.components,componentsResponse.data)) {
         throw Error('Схема отличается от сохранённого backup. Нужен новый dry-run');
       }
-      state.report={...sourceReport,version:8,mode:'dry-run',complete:true,failure:null,
+      state.report={...sourceReport,version:9,mode:'dry-run',complete:true,failure:null,
         products:refreshPlansFromBackup(sourceReport.products,productSchema,components),
         operations:[],targetPublications:[],execution:[],
         verifiedTypes:[...new Set([...(sourceReport.verifiedTypes||[]),
@@ -1993,13 +2012,13 @@
   }
 
   function validateBackup(r) {
-    if (!r || r.complete!==true || ![3,4,5,6,7,8].includes(r.version) ||
+    if (!r || r.complete!==true || ![3,4,5,6,7,8,9].includes(r.version) ||
         r.tool!=='dior-products-kk-pipeline' ||
         r.brandDocumentId!==CFG.brandDocumentId ||
         r.mode!=='dry-run' || !r.rawSchemas?.product?.attributes ||
         !Array.isArray(r.rawSchemas.components) || !Array.isArray(r.products) ||
         !r.products.length || !Array.isArray(r.schema)) {
-      throw Error('Не полный backup pipeline DIOR версии 3/4/5/6/7/8');
+      throw Error('Не полный backup pipeline DIOR версии 3/4/5/6/7/8/9');
     }
     const ids=new Set();
     for (const row of r.products) {
