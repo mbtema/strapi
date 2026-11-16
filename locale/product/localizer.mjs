@@ -12,6 +12,7 @@ const args = argv.slice(2);
 const APPLY = args.includes('--apply');
 const TEST = args.includes('--self-test');
 const NEW_RUN = args.includes('--new-run');
+const ALLOW_LEGACY = args.includes('--allow-legacy-unresolved');
 const num = (key, fallback, min, max) => {
   const a = args.filter(x => x.startsWith('--' + key + '='));
   if (a.length > 1) throw Error('Повторён параметр --' + key);
@@ -25,7 +26,7 @@ const LIMIT = num('limit', 0, 0, 1000000);
 const PAGE_SIZE = num('page-size', 100, 1, 100);
 const RETRIES = num('get-retries', 3, 1, 6);
 const OUT = resolve(env.LOCALIZER_DIR || 'localizer-state', APPLY ? 'apply' : 'audit');
-if (args.some(x => !['--apply', '--self-test', '--new-run'].includes(x) &&
+if (args.some(x => !['--apply', '--self-test', '--new-run', '--allow-legacy-unresolved'].includes(x) &&
   !/^--(workers|requests|limit|page-size|get-retries)=\d+$/.test(x))) {
   throw Error('Неизвестный параметр запуска');
 }
@@ -33,6 +34,8 @@ const SYSTEM = new Set(['id','documentId','locale','status','publishedAt','creat
   'updatedAt','createdBy','updatedBy','localizations','__pivot']);
 const TEXT_KK = new Set(['name1','name2','detail_text','composition']);
 const SKIP = new Set(['InStock','inStock','key']);
+// Не перезаписывать товар с незавершённым журналом старого DIOR pipeline.
+const LEGACY_UNRESOLVED = new Set(['fajndt11d4br9jmuy32n9xq9']);
 const scalarTypes = new Set(['string','text','richtext','email','enumeration','json',
   'blocks','integer','biginteger','float','decimal','boolean','date','time','datetime','uid']);
 let token = env.STRAPI_JWT || '';
@@ -308,7 +311,10 @@ async function publishTarget(uid,id) {
     const relationsNames=Object.entries(tSchema.attributes).filter(([,a])=>a.type==='relation').map(([f])=>f);
     const beforeRelations={};
     for(const f of relationsNames) beforeRelations[f]=await relations(uid,id,f,'kk');
-    await safeWrite(file,JSON.stringify({uid,id,locale:'kk',before:draft,relations:beforeRelations,phase:'publish-target'},null,2));
+    const ruDraftBefore=await detail(uid,id,'ru','draft');
+    const ruPublishedBefore=await detail(uid,id,'ru','published');
+    await safeWrite(file,JSON.stringify({uid,id,locale:'kk',before:draft,relations:beforeRelations,
+      ruDraftBefore,ruPublishedBefore,phase:'publish-target'},null,2));
     const payload={locale:'kk'};
     for(const [f,a]of Object.entries(tSchema.attributes)) {
       if(SYSTEM.has(f) || SKIP.has(f))continue;
@@ -326,6 +332,12 @@ async function publishTarget(uid,id) {
       const after=await detail(uid,id,'kk','published');
       const afterDraft=await detail(uid,id,'kk','draft');
       if(!after || !afterDraft) throw Error('Справочник KK не опубликован');
+      const [ruDraftAfter,ruPublishedAfter]=await Promise.all([
+        detail(uid,id,'ru','draft'),detail(uid,id,'ru','published')]);
+      if(!eq(ruDraftBefore,ruDraftAfter)||!eq(ruPublishedBefore,ruPublishedAfter))
+        throw Error('Публикация KK справочника изменила RU');
+      if(draft.key!==afterDraft.key||draft.key!==after.key)
+        throw Error('Публикация KK справочника изменила key');
       for(const [f,a]of Object.entries(tSchema.attributes)) {
         if(SYSTEM.has(f)||SKIP.has(f)||a.type==='relation')continue;
         if(!eq(fieldValue(a,draft[f]),fieldValue(a,after[f])) ||
@@ -378,11 +390,14 @@ async function postflight(id,before,expected,phase) {
     const e=Error('Изменение RU после '+phase);
     e.fatal=true;throw e;
   }
+  if(r?.data?.key!==before.ru?.data?.key || k?.data?.key!==before.kk?.data?.key)
+    throw Error('Save/Publish изменил уникальный RU/KK.key');
   if(!k || !eq(k.fields,expected.fields)||!relEqual(k,expected))
     throw Error('KK Draft после '+phase+' не совпадает с ожидаемым');
   if(phase==='save' && !sameVersions(p,before.pub))
     throw Error('KK Published изменился при Save');
-  if(phase==='publish' && (!p||!eq(p.fields,expected.fields)||!relEqual(p,expected)))
+  if(phase==='publish' && (!p||p.data?.key!==k.data.key||
+    !eq(p.fields,expected.fields)||!relEqual(p,expected)))
     throw Error('KK Published не совпадает с ожидаемым KK Draft');
   return {ru:r,kk:k,pub:p};
 }
@@ -469,6 +484,8 @@ async function one(id) {
   try {
     if(stopped)return;
     if(seen.has(id))return;
+    if(LEGACY_UNRESOLVED.has(id)&&!ALLOW_LEGACY)
+      return report(id,'blocked_legacy_unresolved','','Сначала завершить recovery старого DIOR pipeline');
     const prior=await readFile(join(backupDir,id+'.json'),'utf8').catch(()=>null);
     if(prior)return report(id,'blocked_pending_backup','', 'Неопределённая предыдущая запись, повтор запрещён');
     const [ru,initialKk,initialPub]=await Promise.all([
