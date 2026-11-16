@@ -343,7 +343,8 @@
         return {__component:r.__component,...mergedComponent(r.__component,r,kk?.[i],path+'['+i+']')};
       });
     }
-    if(localized(attr))return hasKK?canonicalField(attr,kk,path):undefined;
+    if(path==='name'||path==='description'||localized(attr))
+      return hasKK?canonicalField(attr,kk,path):undefined;
     if(attr.type==='relation')throw new Blocked('Вложенная relation '+path);
     return canonicalField(attr,ru,path);
   }
