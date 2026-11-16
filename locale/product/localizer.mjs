@@ -77,6 +77,12 @@ function fieldValue(attr,value) {
   if (attr.type === 'component' || attr.type === 'dynamiczone') return recordSafe(value);
   return value;
 }
+function targetFields(data,targetSchema) {
+  if(!data)return null;
+  return Object.fromEntries(Object.entries(targetSchema.attributes)
+    .filter(([f,a])=>!SYSTEM.has(f)&&!SKIP.has(f)&&a.type!=='relation')
+    .map(([f,a])=>[f,fieldValue(a,data[f])]));
+}
 function fieldMap(data) {
   if (!data) return null;
   return Object.fromEntries(Object.entries(schema.attributes)
@@ -320,8 +326,13 @@ async function publishTarget(uid,id) {
     for(const f of relationsNames) beforeRelations[f]=await relations(uid,id,f,'kk');
     const ruDraftBefore=await detail(uid,id,'ru','draft');
     const ruPublishedBefore=await detail(uid,id,'ru','published');
+    const ruRelBefore={draft:{},published:{}};
+    for(const f of relationsNames) {
+      if(ruDraftBefore)ruRelBefore.draft[f]=await relations(uid,id,f,'ru','draft');
+      if(ruPublishedBefore)ruRelBefore.published[f]=await relations(uid,id,f,'ru','published');
+    }
     await safeWrite(file,JSON.stringify({uid,id,locale:'kk',before:draft,relations:beforeRelations,
-      ruDraftBefore,ruPublishedBefore,phase:'publish-target'},null,2));
+      ruDraftBefore,ruPublishedBefore,ruRelBefore,phase:'publish-target'},null,2));
     const payload={locale:'kk'};
     for(const [f,a]of Object.entries(tSchema.attributes)) {
       if(SYSTEM.has(f) || f==='InStock' || f==='inStock')continue;
@@ -341,8 +352,21 @@ async function publishTarget(uid,id) {
       if(!after || !afterDraft) throw Error('Справочник KK не опубликован');
       const [ruDraftAfter,ruPublishedAfter]=await Promise.all([
         detail(uid,id,'ru','draft'),detail(uid,id,'ru','published')]);
-      if(!eq(ruDraftBefore,ruDraftAfter)||!eq(ruPublishedBefore,ruPublishedAfter))
-        throw Error('Публикация KK справочника изменила RU');
+      if(!eq(targetFields(ruDraftBefore,tSchema),targetFields(ruDraftAfter,tSchema))||
+        !eq(targetFields(ruPublishedBefore,tSchema),targetFields(ruPublishedAfter,tSchema)))
+        throw Error('Публикация KK справочника изменила RU бизнес-поля');
+      for(const f of relationsNames) {
+        if(ruDraftBefore) {
+          const now=await relations(uid,id,f,'ru','draft');
+          if(!eq(ruRelBefore.draft[f].map(x=>x.documentId),now.map(x=>x.documentId)))
+            throw Error('Публикация KK справочника изменила RU Draft relation '+f);
+        }
+        if(ruPublishedBefore) {
+          const now=await relations(uid,id,f,'ru','published');
+          if(!eq(ruRelBefore.published[f].map(x=>x.documentId),now.map(x=>x.documentId)))
+            throw Error('Публикация KK справочника изменила RU Published relation '+f);
+        }
+      }
       if(draft.key!==afterDraft.key||draft.key!==after.key)
         throw Error('Публикация KK справочника изменила key');
       for(const [f,a]of Object.entries(tSchema.attributes)) {
