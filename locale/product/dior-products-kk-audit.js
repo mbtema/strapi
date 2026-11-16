@@ -1783,11 +1783,13 @@
         localStorage.setItem(PROGRESS_KEY,JSON.stringify(validProgress));
         state.report.progress=validProgress;
       }
-      // Только доступные товары из нового backup.
-      const rows=state.report.products.filter(row=>row?.plan?.ready && row.plan.eligible &&
-        row.documentId!==state.report.pilotResult.documentId);
-      state.batch.total=rows.length;
       const completed=new Set(validProgress.map(p=>p.id));
+      // Старый пилот с устаревшим Published тоже нужно переобработать.
+      // Пилот текущего запуска, уже подтверждённый checkpoint, не повторяем.
+      const rows=state.report.products.filter(row=>row?.plan?.ready && row.plan.eligible &&
+        (row.documentId!==state.report.pilotResult.documentId ||
+          !completed.has(row.documentId)));
+      state.batch.total=rows.length;
       const deferred=new Set(savedDeferred().map(p=>p.documentId));
       for (const row of rows) {
         checkStop();
