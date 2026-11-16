@@ -300,27 +300,41 @@ function plan(ru,kd,kp) {
   return {changes,blockers,publication};
 }
 async function allIds() {
-  const q=new URLSearchParams({locale:'ru',status:'draft',page:'1',pageSize:'100',sort:'id:ASC'});
+  const size=LIMIT ? Math.min(PAGE_SIZE,LIMIT) : PAGE_SIZE;
+  log('Читаем каталог Product RU: страница 1; режим '+(LIMIT?'первые '+LIMIT:'весь каталог'));
+  const q=new URLSearchParams({locale:'ru',status:'draft',page:'1',
+    pageSize:String(size),sort:'id:ASC'});
   const first=listResult(await get('/content-manager/collection-types/'+UID+'?'+q),1);
+  const required=Math.min(first.total,LIMIT||first.total);
+  const pagesNeeded=Math.ceil(required/size);
   const idsList=[...first.rows];
-  const pages=Array.from({length:Math.max(0,first.pageCount-1)},(_,i)=>i+2);
-  // Список только documentId, без глобального backup. Страницы GET ограничены общей Gate.
+  log('Каталог RU: '+first.total+' товаров; для запуска нужно '+required+
+    ' (страниц '+pagesNeeded+'), прочитано '+Math.min(idsList.length,required)+'/'+required);
+  const pages=Array.from({length:Math.max(0,pagesNeeded-1)},(_,i)=>i+2);
+  // При --limit не выгружаем оставшиеся 22 тыс. товаров.
+  // Полный обход сохраняет проверку total/pageCount/дубликатов.
   for(let i=0;i<pages.length;i+=REQUESTS) {
     const chunk=await Promise.all(pages.slice(i,i+REQUESTS).map(async page=>{
       const query=new URLSearchParams({locale:'ru',status:'draft',page:String(page),
-        pageSize:'100',sort:'id:ASC'});
-      return {page,data:listResult(await get('/content-manager/collection-types/'+UID+'?'+query),
-        page,first)};
+        pageSize:String(size),sort:'id:ASC'});
+      const data=listResult(await get('/content-manager/collection-types/'+UID+'?'+query),
+        page,first);
+      const loaded=Math.min(required,(page-1)*size+data.rows.length);
+      log('Загрузка списка RU: страница '+page+'/'+pagesNeeded+
+        ' · примерно '+loaded+'/'+required+' товаров');
+      return {page,data};
     }));
     for(const item of chunk.sort((a,b)=>a.page-b.page))idsList.push(...item.data.rows);
   }
-  const out=idsList.map(x=>{
+  const out=idsList.slice(0,required).map(x=>{
     const row=x?.attributes&&!x.documentId?{...x.attributes,id:x.id}:x;
-    if(!row || typeof row.documentId!=='string' || row.locale!=='ru') throw Error('Неверный RU список Product');
+    if(!row || typeof row.documentId!=='string' || row.locale!=='ru')
+      throw Error('Неверный RU список Product');
     return row.documentId;
   });
-  if(out.length!==first.total || unique(out).length!==out.length)
+  if(out.length!==required || unique(out).length!==out.length)
     throw Error('Product list: пропуски/дубли/изменение пагинации — остановка');
+  log('Список Product загружен: '+out.length+' documentId');
   return out;
 }
 function localTargetSchema(uid) {return allSchemas.find(x=>x.uid===uid);}
@@ -542,6 +556,7 @@ async function one(id) {
   try {
     if(stopped)return;
     if(seen.has(id))return;
+    log('Начали Product '+id+': читаем RU/KK Draft/Published и relations...');
     if(LEGACY_UNRESOLVED.has(id)&&!ALLOW_LEGACY)
       return report(id,'blocked_legacy_unresolved','','Сначала завершить recovery старого DIOR pipeline');
     const prior=await readFile(join(backupDir,id+'.json'),'utf8').catch(()=>null);
@@ -774,6 +789,7 @@ async function main() {
     const pending=await readdir(backupDir);
     log('Режим:',APPLY?'APPLY':'DRY-RUN', 'workers='+WORKERS,
       'maxRequests='+REQUESTS,'checkpoint='+seen.size,'pendingBackup='+pending.length);
+    log('Читаем схему Content Manager...');
     const [types,components]=await Promise.all([
       get('/content-manager/content-types'),get('/content-manager/components')]);
     allSchemas=types?.data;
