@@ -607,11 +607,18 @@
     const rel=relationPlan(state.schemas.get(UID),before.ru.draft,before.kk.draft);
     if(Object.keys(plan.payload).length||Object.keys(rel.changes).length)
       throw new Blocked('KK Draft ещё не нормализован');
-    await publishVersion(UID,item.id,'ru');
+    const job=await getJob(UID,item.id);
+    const sameAsVerified=job?.lastVerified&&
+      ['ru','kk'].every(locale=>['draft','published'].every(status=>
+        sameVersion(before[locale][status],job.lastVerified[locale][status])));
+    const ruWasPublished=sameAsVerified&&
+      ['verified-publish-ru','verified-publish-kk'].includes(job.phase);
+    const kkWasPublished=sameAsVerified&&job.phase==='verified-publish-kk';
+    if(!ruWasPublished)await publishVersion(UID,item.id,'ru');
     before=await snapshot(UID,item.id);
     // RU publish must not alter KK Draft or shared RU Draft contents.
     if(!before.kk.draft)throw new Unresolved('KK Draft исчез при Publish RU');
-    await publishVersion(UID,item.id,'kk');
+    if(!kkWasPublished)await publishVersion(UID,item.id,'kk');
     const final=await snapshot(UID,item.id);
     if(!sameVersion(final.ru.draft,final.ru.published)||
       !sameVersion(final.kk.draft,final.kk.published))
