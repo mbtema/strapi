@@ -11,6 +11,7 @@ const URL_ROOT = (env.STRAPI_URL || 'http://10.10.3.80:1337').replace(/\/+$/, ''
 const args = argv.slice(2);
 const APPLY = args.includes('--apply');
 const TEST = args.includes('--self-test');
+const NEW_RUN = args.includes('--new-run');
 const num = (key, fallback, min, max) => {
   const a = args.filter(x => x.startsWith('--' + key + '='));
   if (a.length > 1) throw Error('Повторён параметр --' + key);
@@ -24,7 +25,7 @@ const LIMIT = num('limit', 0, 0, 1000000);
 const PAGE_SIZE = num('page-size', 100, 1, 100);
 const RETRIES = num('get-retries', 3, 1, 6);
 const OUT = resolve(env.LOCALIZER_DIR || 'localizer-state', APPLY ? 'apply' : 'audit');
-if (args.some(x => !['--apply', '--self-test'].includes(x) &&
+if (args.some(x => !['--apply', '--self-test', '--new-run'].includes(x) &&
   !/^--(workers|requests|limit|page-size|get-retries)=\d+$/.test(x))) {
   throw Error('Неизвестный параметр запуска');
 }
@@ -525,7 +526,8 @@ async function one(id) {
       if(!r.ok)depIssues.push(t.field+':'+r.reason);
     }
     if(depIssues.length) {
-      await unlink(file);file=null; // Product не менялся, но target backup сохранён отдельно при ошибке.
+      if(committed)throw Error('KK создана, но публикация target не завершена: '+depIssues.join('|'));
+      await unlink(file);file=null; // Product не менялся; backup target сохранён отдельно при ошибке.
       return report(id,'blocked_target_publish',parts,depIssues.join('|'));
     }
     // Для connect нужен numeric KK id, а не RU id.
@@ -582,7 +584,26 @@ function selfTest() {
   if(!eq(fieldValue(a,false),false))throw Error('boolean');
   if(!eq(unique(['a','b','a']),['a','b']))throw Error('unique');
   if(!localized({pluginOptions:{i18n:{localized:true}}}))throw Error('locale flag');
-  log('Self-test: 5/5 OK');
+  schema={attributes:{
+    name:{type:'string'},name1:{type:'string',pluginOptions:{i18n:{localized:true}}},
+    active:{type:'boolean'},InStock:{type:'boolean'},key:{type:'uid',unique:true},
+    pictures:{type:'media',pluginOptions:{i18n:{localized:true}}},
+    categories:{type:'relation',target:'api::category.category'}}};
+  relationFields=['categories'];
+  const ru={data:{name:'Номенклатура',active:true,pictures:[{id:10}]},
+    fields:{name:'Номенклатура',name1:'Русский',active:true,
+      pictures:[10],key:'a',InStock:false},
+    relations:{categories:[{documentId:'c1',id:1}]}};
+  const kk={data:{name:'Другое',active:false,pictures:[]},
+    fields:{name:'Другое',name1:'Қазақша',active:false,
+      pictures:[],key:'b',InStock:true},relations:{categories:[]}};
+  const p=plan(ru,kk,null);
+  if(p.blockers.length || p.changes.length!==4 ||
+    p.changes.some(x=>['name1','InStock','key'].includes(x.field)) ||
+    !p.changes.some(x=>x.field==='pictures') ||
+    !p.changes.some(x=>x.field==='categories'))
+    throw Error('plan: перевод, InStock, key, media, relations');
+  log('Self-test: 6/6 OK');
 }
 async function password() {
   if (!stdin.isTTY) throw Error('Передай STRAPI_JWT через переменную окружения (не в коде)');
@@ -605,6 +626,12 @@ async function main() {
   if(TEST){selfTest();return;}
   token ||= await password();
   if(!token || token.length<20)throw Error('JWT не передан');
+  if(NEW_RUN) {
+    const priorLock=await readFile(join(OUT,'run.lock'),'utf8').catch(()=>null);
+    if(priorLock!==null)throw Error('Предыдущий запуск может работать: есть run.lock');
+    const existing=await readFile(join(OUT,'schema.sha256'),'utf8').catch(()=>null);
+    if(existing)await rename(OUT,OUT+'-archive-'+Date.now()); // Не удаляем backup предыдущего запуска
+  }
   await mkdir(backupDir,{recursive:true});
   const lock=join(OUT,'run.lock');
   let acquired=false;
