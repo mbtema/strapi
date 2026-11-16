@@ -537,8 +537,11 @@ async function one(id) {
       x.field).join('|');
     const targets=await dependencyCheck(ru);
     const missing=targets.filter(x=>!x.ok);
-    if(missing.length)return report(id,'blocked_missing_kk_target',parts,
-      'Отсутствует KK справочник',missing.map(x=>x.field+'/'+x.uid+'/'+x.id).join('|'));
+    if(missing.length) {
+      const why=missing.map(x=>x.field+'/'+x.uid+'/'+x.id).join('|');
+      if(committed)throw Error('После создания KK отсутствует target: '+why);
+      return report(id,'blocked_missing_kk_target',parts,'Отсутствует KK справочник',why);
+    }
     if(!APPLY)return report(id,'would_update',parts,'',
       targets.filter(x=>x.requiresPublish).map(x=>'publish-target:'+x.uid+'/'+x.id).join('|'));
     if(!originalBefore.ruPublished)originalBefore.ruPublished=snapshot(await version(id,'ru','published'));
@@ -562,6 +565,7 @@ async function one(id) {
       if(!targetCache.get(key)?.numericId) {
         const d=await detail(t.uid,t.id,'kk','draft');
         if(!d||!Number.isSafeInteger(d.id)) {
+          if(committed)throw Error('После создания KK отсутствует numeric target ID '+key);
           await unlink(file);file=null;
           return report(id,'blocked_missing_kk_target',parts,'Нет numeric ID '+key);
         }
