@@ -257,16 +257,63 @@ async function relations(uid,id,field,locale,status='draft') {
   return entries.sort((a,b)=>a.documentId.localeCompare(b.documentId));
 }
 let relationFields;
+const MAX_POPULATE_FIELDS = 19;
+// Нельзя слепо доверять populate: Content Manager может вернуть только часть many-relations.
+// Сверяем каждый набор documentId с числом из исходного detail.count.
+// Неоднозначные поля читаем проверенным /content-manager/relations/{uid}/{id}/{field}.
+function relationFromPopulate(value,raw,locale) {
+  const count=Number.isSafeInteger(raw?.count) && raw.count>=0 ? raw.count : null;
+  if(count===null)return null;
+  let entries;
+  if(Array.isArray(value))entries=value;
+  else if(value===null && count===0)entries=[];
+  else if(value && typeof value==='object' && typeof value.documentId==='string')entries=[value];
+  else return null;
+  if(entries.length!==count)return null;
+  const result=[];
+  for(const e of entries) {
+    if(!e || typeof e.documentId!=='string' || !e.documentId ||
+      !Number.isSafeInteger(e.id) || e.id<=0 ||
+      (e.locale!=null && e.locale!==locale))return null;
+    result.push({id:e.id,documentId:e.documentId,locale:e.locale||locale});
+  }
+  if(new Set(result.map(x=>x.documentId)).size!==result.length)return null;
+  return result.sort((a,b)=>a.documentId.localeCompare(b.documentId));
+}
+async function populatedRelations(uid,id,locale,status,raw) {
+  const out={},fields=relationFields;
+  // Один запрос для группы root relations вместо отдельного запроса на каждое поле.
+  // Если сервер ограничивает populate, пробуем обычные точные GET для сомнительных fields.
+  for(let i=0;i<fields.length;i+=MAX_POPULATE_FIELDS) {
+    const group=fields.slice(i,i+MAX_POPULATE_FIELDS);
+    const q=new URLSearchParams({locale,status});
+    for(const f of group)q.set('populate['+f+'][fields][0]','documentId');
+    let expanded=null;
+    try {
+      expanded=unpack(await get('/content-manager/collection-types/'+uid+'/'+
+        encodeURIComponent(id)+'?'+q),uid,id,locale,status);
+    } catch(e) {
+      log('Populate fallback '+locale+'/'+status+' '+id+': '+clean(e.message).slice(0,110));
+    }
+    const missing=[];
+    for(const field of group) {
+      const candidate=expanded && relationFromPopulate(expanded[field],raw[field],locale);
+      if(candidate)out[field]=candidate;
+      else missing.push(field);
+    }
+    if(missing.length) {
+      log('Native fallback '+locale+'/'+status+' '+id+': '+missing.join(', '));
+      const rows=await Promise.all(missing.map(async f=>[f,
+        await relations(uid,id,f,locale,status)]));
+      for(const [field,entries]of rows)out[field]=entries;
+    }
+  }
+  return out;
+}
 async function version(id,locale,status='draft',withRelations=true) {
   const data=await detail(UID,id,locale,status);
   if(!data)return null;
-  const rel={};
-  if(withRelations) {
-    // Параллельные GET ограничены общей Gate, поэтому память ограничена одним Product.
-    const entries=await Promise.all(relationFields.map(async f=>[f,
-      await relations(UID,id,f,locale,status)]));
-    for(const [f,rows]of entries)rel[f]=rows;
-  }
+  const rel=withRelations ? await populatedRelations(UID,id,locale,status,data) : {};
   return {data,fields:fieldMap(data),relations:rel};
 }
 function ids(v,f) {return (v?.relations[f]||[]).map(x=>x.documentId);}
@@ -790,7 +837,19 @@ function selfTest() {
     counters.blocked-beforeCounts.blocked!==1||counters.errors-beforeCounts.errors!==1)
     throw Error('Счётчики статусов normal/create/blocked/error');
   Object.assign(counters,beforeCounts);
-  log('Self-test: 10/10 OK');
+  const populatedOk=relationFromPopulate(
+    [{id:23,documentId:'abc',locale:'kk'}],{count:1},'kk');
+  if(!populatedOk || populatedOk[0].documentId!=='abc')throw Error('populate array');
+  if(relationFromPopulate(null,{count:0},'kk')?.length!==0)
+    throw Error('populate null singular');
+  if(relationFromPopulate({id:31,documentId:'cat',locale:'kk'}, {count:1},'kk')?.length!==1)
+    throw Error('populate singular');
+  if(relationFromPopulate([{id:4,documentId:'abc'}],{count:2},'kk')!==null ||
+     relationFromPopulate([{id:4,documentId:'abc'},{id:5,documentId:'abc'}],{count:2},'kk')!==null)
+    throw Error('incomplete/duplicate fallback');
+  if(relationFromPopulate([{id:4,documentId:'abc',locale:'ru'}],{count:1},'kk')!==null)
+    throw Error('wrong locale fallback');
+  log('Self-test: 15/15 OK');
 }
 async function password() {
   if (!stdin.isTTY) throw Error('Передай STRAPI_JWT через переменную окружения (не в коде)');
