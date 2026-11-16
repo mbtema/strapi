@@ -378,15 +378,16 @@ async function dependencyCheck(ru) {
   return rows;
 }
 async function recheckBeforeWrite(id,baseline) {
-  const [r,k,p]=await Promise.all([
-    version(id,'ru'),version(id,'kk'),version(id,'kk','published')]);
-  if(!sameVersions(r,baseline.ru)||!sameVersions(k,baseline.kk)||
-    !sameVersions(p,baseline.pub))throw Error('Данные Product изменились между GET и записью');
+  const [r,rp,k,p]=await Promise.all([
+    version(id,'ru'),version(id,'ru','published'),version(id,'kk'),version(id,'kk','published')]);
+  if(!sameVersions(r,baseline.ru)||!sameVersions(rp,baseline.ruPublished)||
+    !sameVersions(k,baseline.kk)||!sameVersions(p,baseline.pub))
+    throw Error('Данные Product изменились между GET и записью');
 }
 async function postflight(id,before,expected,phase) {
-  const [r,k,p]=await Promise.all([
-    version(id,'ru'),version(id,'kk'),version(id,'kk','published')]);
-  if(!sameVersions(r,before.ru)) {
+  const [r,rp,k,p]=await Promise.all([
+    version(id,'ru'),version(id,'ru','published'),version(id,'kk'),version(id,'kk','published')]);
+  if(!sameVersions(r,before.ru)||!sameVersions(rp,before.ruPublished)) {
     const e=Error('Изменение RU после '+phase);
     e.fatal=true;throw e;
   }
@@ -399,7 +400,7 @@ async function postflight(id,before,expected,phase) {
   if(phase==='publish' && (!p||p.data?.key!==k.data.key||
     !eq(p.fields,expected.fields)||!relEqual(p,expected)))
     throw Error('KK Published не совпадает с ожидаемым KK Draft');
-  return {ru:r,kk:k,pub:p};
+  return {ru:r,ruPublished:rp,kk:k,pub:p};
 }
 function payloadForSave(before,changes) {
   const payload={locale:'kk'};
@@ -449,7 +450,7 @@ function publishPayload(v) {
   return payload;
 }
 
-async function createKk(id,ru,original) {
+async function createKk(id,ru,ruPublished,original) {
   if(!contentToken)return {ok:false,reason:'no_content_api_token'};
   const localizedFields={};
   for(const [f,a] of Object.entries(schema.attributes)) {
@@ -466,10 +467,10 @@ async function createKk(id,ru,original) {
   // Только status=draft; Admin JWT к Content API НЕ приравнивается.
   await http('PUT','/api/products/'+encodeURIComponent(id)+'?locale=kk&status=draft',
     {data:localizedFields},false,contentToken);
-  const [source,target,publication]=await Promise.all([
-    version(id,'ru'),version(id,'kk'),version(id,'kk','published')]);
-  if(!sameVersions(ru,source)) {
-    const e=Error('Создание KK изменило RU');e.fatal=true;throw e;
+  const [source,ruPublishedAfter,target,publication]=await Promise.all([
+    version(id,'ru'),version(id,'ru','published'),version(id,'kk'),version(id,'kk','published')]);
+  if(!sameVersions(ru,source)||!sameVersions(ruPublished,ruPublishedAfter)) {
+    const e=Error('Создание KK изменило RU Draft/Published');e.fatal=true;throw e;
   }
   if(!target || publication)throw Error('Создание KK: не подтверждён новый KK Draft без Published');
   for(const f of TEXT_KK) {
@@ -491,7 +492,8 @@ async function one(id) {
     const [ru,initialKk,initialPub]=await Promise.all([
       version(id,'ru'),version(id,'kk'),version(id,'kk','published')]);
     let kk=initialKk,pub=initialPub;
-    const originalBefore={ru:snapshot(ru),kk:snapshot(kk),published:snapshot(pub)};
+    const originalBefore={ru:snapshot(ru),ruPublished:null,
+      kk:snapshot(kk),published:snapshot(pub)};
     if(!ru)return report(id,'blocked_missing_ru','','RU Draft отсутствует');
     if(!kk) {
       if(pub)return report(id,'blocked_inconsistent_kk','','KK Published без KK Draft');
@@ -508,8 +510,10 @@ async function one(id) {
       if(!APPLY)return report(id,'would_create_kk','','Новая KK Draft без переводов');
       if(!contentToken)return report(id,'blocked_no_content_api_token','',
         'STRAPI_API_TOKEN нужен только для создания KK через документированный REST');
+      originalBefore.ruPublished=snapshot(await version(id,'ru','published'));
       file=join(backupDir,id+'.json');
-      const created=await createKk(id,ru,originalBefore);
+      const created=await createKk(id,ru,
+        {fields:originalBefore.ruPublished?.fields,relations:originalBefore.ruPublished?.relations},originalBefore);
       if(!created.ok)return report(id,'blocked_create_kk','',created.reason,
         'backup:'+id+'.json');
       kk=created.draft;
@@ -533,6 +537,7 @@ async function one(id) {
       'Отсутствует KK справочник',missing.map(x=>x.field+'/'+x.uid+'/'+x.id).join('|'));
     if(!APPLY)return report(id,'would_update',parts,'',
       targets.filter(x=>x.requiresPublish).map(x=>'publish-target:'+x.uid+'/'+x.id).join('|'));
+    if(!originalBefore.ruPublished)originalBefore.ruPublished=snapshot(await version(id,'ru','published'));
     file ||= join(backupDir,id+'.json');
     await safeWrite(file,JSON.stringify({documentId:id,at:new Date().toISOString(),
       before:originalBefore,plan:draft,phase:'preflight'},null,2));
@@ -560,7 +565,8 @@ async function one(id) {
       }
     }
     const freshPub=await version(id,'kk','published');
-    const baseline={ru,kk,pub:freshPub};
+    const baseline={ru,ruPublished:{fields:originalBefore.ruPublished?.fields,
+      relations:originalBefore.ruPublished?.relations},kk,pub:freshPub};
     await recheckBeforeWrite(id,baseline);
     let actual=baseline;
     if(draft.changes.length) {
@@ -647,14 +653,27 @@ async function main() {
     const priorLock=await readFile(join(OUT,'run.lock'),'utf8').catch(()=>null);
     if(priorLock!==null)throw Error('Предыдущий запуск может работать: есть run.lock');
     const existing=await readFile(join(OUT,'schema.sha256'),'utf8').catch(()=>null);
-    if(existing)await rename(OUT,OUT+'-archive-'+Date.now()); // Не удаляем backup предыдущего запуска
+    if(existing) {
+      const pending=await readdir(join(OUT,'pending')).catch(()=>[]);
+      if(pending.length)throw Error('Неразобранные pending backups: --new-run запрещён');
+      await rename(OUT,OUT+'-archive-'+Date.now());
+    } // Не удаляем backup предыдущего запуска
   }
   await mkdir(backupDir,{recursive:true});
   const lock=join(OUT,'run.lock');
   let acquired=false;
   try {
     try {await writeFile(lock,String(pid),{flag:'wx'});acquired=true;}
-    catch {throw Error('Есть run.lock: проверь, что предыдущий процесс остановлен. Без проверки не удаляй lock.');}
+    catch (error) {
+      if(error.code!=='EEXIST')throw error;
+      const previous=Number(await readFile(lock,'utf8'));
+      if(!Number.isSafeInteger(previous)||previous<1)throw Error('Неверный run.lock');
+      let alive=true;
+      try {process.kill(previous,0);}catch(e){if(e.code==='ESRCH')alive=false;else throw e;}
+      if(alive)throw Error('Другой экземпляр localizer уже запущен (PID '+previous+')');
+      await unlink(lock);await writeFile(lock,String(pid),{flag:'wx'});acquired=true;
+      log('Восстановлен stale lock предыдущего завершённого процесса');
+    }
     if(!await readFile(csvFile,'utf8').catch(()=>null))await writeFile(csvFile,csvHeader);
     const saved=await readFile(progressFile,'utf8').catch(()=>'');
     for(const l of saved.split('\n').filter(Boolean)) {
