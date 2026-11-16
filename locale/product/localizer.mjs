@@ -56,8 +56,16 @@ let schema, allSchemas, stopped = false, fatal = null, finishWrite = Promise.res
 let successRequests = 0;
 const targetLocks = new Map();
 const targetCache = new Map();
-const counters = { total:0, scanned:0, already_ok:0, would_update:0, normalized:0,
-  published:0, errors:0, blocked:0, created:0, requests:0, retries:0 };
+const counters = { total:0, scanned:0, already_ok:0, would_update:0,
+  would_create_kk:0, normalized:0, published:0, errors:0, blocked:0,
+  created:0, requests:0, retries:0 };
+function countStatus(status) {
+  if (status==='would_create_kk')counters.would_create_kk++;
+  else if (status==='already_ok'||status==='would_update'||status==='normalized'||
+    status==='published'||status==='created')counters[status]++;
+  else if (status.startsWith('blocked_'))counters.blocked++;
+  else counters.errors++;
+}
 const log = (...parts) => console.log('[localizer]', ...parts);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const canonical = x => Array.isArray(x) ? x.map(canonical) :
@@ -131,9 +139,7 @@ async function report(id,status,changes='',reason='',details='') {
     await appendFile(csvFile,[id,status,changes,reason,details].map(csvCell).join(';') + '\n');
     seen.add(id);
     counters.scanned++;
-    if (status in counters) counters[status]++;
-    else if (status.startsWith('blocked_')) counters.blocked++;
-    else counters.errors++;
+    countStatus(status);
     runProcessed++;
     const elapsed=Date.now()-runStartedAt;
     const speed=runProcessed/(Math.max(elapsed,1)/1000);
@@ -714,7 +720,14 @@ function selfTest() {
   ru.fields.bitrix_id='123';kk.fields.bitrix_id='456';
   if(!plan(ru,kk,null).blockers.includes('unmanaged_shared:bitrix_id'))
     throw Error('unmanaged shared guard');
-  log('Self-test: 9/9 OK');
+  const beforeCounts={...counters};
+  countStatus('would_create_kk');countStatus('would_update');countStatus('blocked_missing_kk_target');countStatus('error');
+  if(counters.would_create_kk-beforeCounts.would_create_kk!==1||
+    counters.would_update-beforeCounts.would_update!==1||
+    counters.blocked-beforeCounts.blocked!==1||counters.errors-beforeCounts.errors!==1)
+    throw Error('Счётчики статусов normal/create/blocked/error');
+  Object.assign(counters,beforeCounts);
+  log('Self-test: 10/10 OK');
 }
 async function password() {
   if (!stdin.isTTY) throw Error('Передай STRAPI_JWT через переменную окружения (не в коде)');
@@ -779,9 +792,7 @@ async function main() {
       if(!row.id||seen.has(row.id))throw Error('Некорректный/повторённый documentId checkpoint');
       seen.add(row.id);
       counters.scanned++;
-      if(row.status in counters)counters[row.status]++;
-      else if(row.status.startsWith('blocked_'))counters.blocked++;
-      else counters.errors++;
+      countStatus(row.status);
     }
     await safeWrite(csvFile,csvHeader+previous.map(row=>
       [row.id,row.status,row.changes,row.reason,row.details].map(csvCell).join(';')).join('\n')+
