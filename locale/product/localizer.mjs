@@ -16,6 +16,9 @@ if(APPLY && DRY_RUN)throw Error('Выбери один режим: --apply ли�
 const TEST = args.includes('--self-test');
 const NEW_RUN = args.includes('--new-run');
 const ALLOW_LEGACY = args.includes('--allow-legacy-unresolved');
+// Безопасный первый production-проход: только существующие KK Product,
+// только опубликованные KK targets. Не создаём KK и не публикуем справочники.
+const EXISTING_ONLY = args.includes('--existing-only');
 const num = (key, fallback, min, max) => {
   const a = args.filter(x => x.startsWith('--' + key + '='));
   if (a.length > 1) throw Error('Повторён параметр --' + key);
@@ -43,7 +46,7 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const MODE = APPLY ? 'apply' : 'audit';
 const PREFIX = 'product-kk-' + MODE;
 if (args.some(x => !['--apply','--dry-run','--self-test','--new-run',
-  '--allow-legacy-unresolved'].includes(x) &&
+  '--allow-legacy-unresolved','--existing-only'].includes(x) &&
   !/^--(workers|requests|limit|page-size|get-retries)=\d+$/.test(x) &&
   !/^--(only|id|probe)=[a-z0-9]{16,40}$/i.test(x))) {
   throw Error('Неизвестный параметр запуска');
@@ -59,6 +62,14 @@ const scalarTypes = new Set(['string','text','richtext','email','enumeration','j
 let token = env.STRAPI_JWT || '';
 const contentToken = env.STRAPI_API_TOKEN || ''; // Отдельный токен Content API, только для создания KK
 let schema, allSchemas, stopped = false, fatal = null, finishWrite = Promise.resolve();
+let interruptRequested=false;
+if(!TEST)process.on('SIGINT',()=>{
+  if(!interruptRequested) {
+    interruptRequested=true;
+    stopped=true;
+    log('Ctrl+C: прекращаем назначать новые Product; текущие операции и checkpoint завершим.');
+  } else log('Остановка уже запрошена. Дождись окончания текущих запросов и записи checkpoint.');
+});
 let successRequests = 0;
 const targetLocks = new Map();
 const targetCache = new Map();
@@ -191,6 +202,12 @@ async function http(method,path,body=null,allow404=false,authToken=token) {
       lastError=error;
       if(method!=='GET' || tryNo>=max) throw Error(method+' NETWORK '+url.pathname+': '+error.message);
     }
+    if(response && (response.status===401 || response.status===403)) {
+      const error=Error('Авторизация Strapi отклонена (HTTP '+response.status+
+        '). Получи свежий JWT и возобнови тот же apply checkpoint.');
+      error.fatal=true;
+      throw error;
+    }
     if(response?.status===404 && allow404) return null;
     if(response?.ok) {
       if (successRequests++ % 75===0 && gate.limit<REQUESTS) gate.limit++;
@@ -293,6 +310,7 @@ async function populatedRelations(uid,id,locale,status,raw) {
       expanded=unpack(await get('/content-manager/collection-types/'+uid+'/'+
         encodeURIComponent(id)+'?'+q),uid,id,locale,status);
     } catch(e) {
+      if(e.fatal)throw e;
       log('Populate fallback '+locale+'/'+status+' '+id+': '+clean(e.message).slice(0,110));
     }
     const missing=[];
@@ -531,7 +549,10 @@ async function publishTarget(uid,id) {
       }
       await unlink(file);
       return {ok:true};
-    } catch(e) {return {ok:false,reason:'target_publish_failed:'+e.message,uid,id};}
+    } catch(e) {
+      if(e.fatal)throw e;
+      return {ok:false,reason:'target_publish_failed:'+e.message,uid,id};
+    }
   })();
   targetLocks.set(key,promise);
   const output=await promise;
@@ -710,6 +731,8 @@ async function one(id) {
         'RU.category должен быть пустым',ids(ru,'category').join('|'));
     if(!kk) {
       if(pub)return report(id,'blocked_inconsistent_kk','','KK Published без KK Draft');
+      if(EXISTING_ONLY)return report(id,'blocked_missing_kk_product','',
+        'existing-only: создание отсутствующей KK отключено');
       const dependencies=await dependencyCheck(ru);
       const missing=dependencies.filter(x=>!x.ok);
       if(missing.length)return report(id,'blocked_missing_kk_target','',
@@ -750,6 +773,10 @@ async function one(id) {
       if(committed)throw Error('После создания KK отсутствует target: '+why);
       return report(id,'blocked_missing_kk_target',parts,'Отсутствует KK справочник',why);
     }
+    if(EXISTING_ONLY && targets.some(x=>x.requiresPublish))
+      return report(id,'blocked_unpublished_kk_target',parts,
+        'existing-only: публикация KK справочников отключена',
+        targets.filter(x=>x.requiresPublish).map(x=>x.uid+'/'+x.id).join('|'));
     if(!APPLY)return report(id,'would_update',parts,'',
       targets.filter(x=>x.requiresPublish).map(x=>'publish-target:'+x.uid+'/'+x.id).join('|'));
     if(!originalBefore.ruPublished)originalBefore.ruPublished=snapshot(await version(id,'ru','published'));
@@ -880,7 +907,8 @@ function selfTest() {
     ids({relations:{category:[{documentId:'legacy'}]}},'category').length!==1)
     throw Error('Legacy category: RU пустой, иначе blocked');
   relationFields.pop();
-  log('Self-test: 16/16 OK');
+  if(typeof EXISTING_ONLY!=='boolean')throw Error('existing-only mode');
+  log('Self-test: 17/17 OK');
 }
 async function password() {
   if (!stdin.isTTY) throw Error('Передай STRAPI_JWT через переменную окружения (не в коде)');
@@ -951,8 +979,10 @@ async function main() {
       [row.id,row.status,row.changes,row.reason,row.details].map(csvCell).join(';')).join('\n')+
       (previous.length?'\n':''));
     const pending=await readdir(backupDir);
-    log('Режим:',APPLY?'APPLY':'DRY-RUN', 'workers='+WORKERS,
-      'maxRequests='+REQUESTS,'checkpoint='+seen.size,'pendingBackup='+pending.length);
+    log('Режим:',APPLY?'APPLY':'DRY-RUN', 'existingOnly='+EXISTING_ONLY,
+      'workers='+WORKERS,'maxRequests='+REQUESTS,
+      'checkpoint='+seen.size,'pendingBackup='+pending.length);
+    log('Strapi:',URL_ROOT);
     log('Читаем схему Content Manager...');
     const [types,components]=await Promise.all([
       get('/content-manager/content-types'),get('/content-manager/components')]);
@@ -987,7 +1017,8 @@ async function main() {
     await finishWrite;
     await safeWrite(summaryFile,JSON.stringify({
       completed:!stopped,at:new Date().toISOString(),mode:APPLY?'apply':'dry-run',
-      counters,requestsLimit:REQUESTS,workers:WORKERS,
+      counters,requestsLimit:REQUESTS,workers:WORKERS,existingOnly:EXISTING_ONLY,
+      interrupted:interruptRequested,
       fatal:fatal?.message||null,unfinished:Math.max(0,selected.length-seen.size)
     },null,2));
     log('Завершено. CSV:',csvFile,'summary:',summaryFile);
