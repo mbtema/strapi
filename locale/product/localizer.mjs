@@ -725,7 +725,7 @@ async function main() {
     allSchemas=types?.data;
     schema=allSchemas?.find(x=>x.uid===UID);
     if(!schema?.attributes || !Array.isArray(components?.data)) throw Error('Схема Strapi недоступна');
-    relationFields=Object.entries(schema.attributes).filter(([,a])=>a.type==='relation')
+    relationFields=Object.entries(schema.attributes).filter(([k,a])=>!SYSTEM.has(k)&&a.type==='relation')
       .map(([k])=>k);
     const signature=createHash('sha256').update(JSON.stringify(canonical(schema.attributes))).digest('hex');
     const signaturePath=join(OUT,'schema.sha256');
