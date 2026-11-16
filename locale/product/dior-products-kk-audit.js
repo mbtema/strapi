@@ -1186,10 +1186,17 @@
     };
   }
   function downloadResult() {
+    const productWrites=state.report.operations||[];
+    const targetWrites=(state.report.targetPublications||[]).filter(x=>x.attempted);
     state.report.runtimeSummary={
       getRequests:state.getCount,getRetries:state.getRetries,
-      writesAttempted:state.report.operations?.length||0,
-      writesVerified:state.report.operations?.filter(x=>x.verified).length||0,
+      writesAttempted:productWrites.length+targetWrites.length,
+      writesVerified:productWrites.filter(x=>x.verified).length+
+        targetWrites.filter(x=>x.verified).length,
+      productWritesAttempted:productWrites.length,
+      productWritesVerified:productWrites.filter(x=>x.verified).length,
+      targetWritesAttempted:targetWrites.length,
+      targetWritesVerified:targetWrites.filter(x=>x.verified).length,
       productsVerified:savedProgress().length,
       productsSkipped:state.report.skipped?.length||0
     };
