@@ -31,6 +31,12 @@ if(ONLY_OPTIONS.length>1)throw Error('Повторён --only/--id');
 const ONLY_ID=ONLY_OPTIONS.length?ONLY_OPTIONS[0].split('=')[1]:null;
 if(ONLY_ID&&!/^[a-z0-9]{16,40}$/i.test(ONLY_ID))throw Error('Некорректный --only=DOCUMENT_ID');
 if(ONLY_ID && LIMIT)throw Error('Используй только один из --only и --limit');
+const PROBE_OPTIONS=args.filter(x=>x.startsWith('--probe='));
+if(PROBE_OPTIONS.length>1)throw Error('Повторён --probe');
+const PROBE_ID=PROBE_OPTIONS.length?PROBE_OPTIONS[0].slice(8):null;
+if(PROBE_ID&&!/^[a-z0-9]{16,40}$/i.test(PROBE_ID))throw Error('Некорректный --probe=DOCUMENT_ID');
+if(PROBE_ID&&(APPLY||ONLY_ID||LIMIT||NEW_RUN))
+  throw Error('--probe только для чтения, без --apply, --only, --limit, --new-run');
 const PAGE_SIZE = num('page-size', 100, 1, 100);
 const RETRIES = num('get-retries', 3, 1, 6);
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -39,7 +45,7 @@ const PREFIX = 'product-kk-' + MODE;
 if (args.some(x => !['--apply','--dry-run','--self-test','--new-run',
   '--allow-legacy-unresolved'].includes(x) &&
   !/^--(workers|requests|limit|page-size|get-retries)=\d+$/.test(x) &&
-  !/^--(only|id)=[a-z0-9]{16,40}$/i.test(x))) {
+  !/^--(only|id|probe)=[a-z0-9]{16,40}$/i.test(x))) {
   throw Error('Неизвестный параметр запуска');
 }
 const SYSTEM = new Set(['id','documentId','locale','status','publishedAt','createdAt',
@@ -305,6 +311,63 @@ function plan(ru,kd,kp) {
   const publication = !kp || !eq(kd.fields,kp.fields) || !relEqual(kd,kp);
   return {changes,blockers,publication};
 }
+
+// Диагностика способа чтения root relations без изменений Content Manager.
+// Не сохраняем полные карточки и токены: только структуру ответа и сравнительные counts.
+function relationShape(value,present) {
+  if(!present)return {kind:'absent'};
+  if(value===null)return {kind:'null'};
+  if(Array.isArray(value))return {kind:'array',length:value.length,
+    itemKeys:value[0]&&typeof value[0]==='object'?Object.keys(value[0]).slice(0,12):[],
+    documentIds:value.map(x=>x?.documentId||x?.attributes?.documentId).filter(Boolean)};
+  if(value&&typeof value==='object')return {kind:'object',
+    keys:Object.keys(value).slice(0,18),
+    count:typeof value.count==='number'?value.count:null,
+    dataKind:Array.isArray(value.data)?'array':typeof value.data,
+    dataLength:Array.isArray(value.data)?value.data.length:null,
+    documentIds:Array.isArray(value.data)?value.data.map(x=>
+      x?.documentId||x?.attributes?.documentId).filter(Boolean):[]};
+  return {kind:typeof value,value:String(value).slice(0,60)};
+}
+async function probeRelations(documentId) {
+  const fields=['categories','category','shade_groups'].filter(f=>relationFields.includes(f));
+  if(!fields.length)throw Error('В схеме Product нет проверяемых relation fields');
+  const result={at:new Date().toISOString(),documentId,
+    inspectedFields:fields,versions:[],purpose:'probe-detail-populate-versus-native-relations'};
+  log('Диагностика отношений '+documentId+', полей: '+fields.join(', '));
+  for(const [locale,status] of [['ru','draft'],['kk','draft'],['kk','published']]) {
+    const raw=await detail(UID,documentId,locale,status);
+    const row={locale,status,exists:!!raw,fields:[]};
+    result.versions.push(row);
+    if(!raw){log('Проба '+locale+'/'+status+': версия отсутствует');continue;}
+    const q=new URLSearchParams({locale,status});
+    for(const field of fields)q.set('populate['+field+'][fields][0]','documentId');
+    let populated=null;
+    try {
+      const json=await get('/content-manager/collection-types/'+UID+'/'+
+        encodeURIComponent(documentId)+'?'+q);
+      populated=unpack(json,UID,documentId,locale,status);
+    } catch(error) {row.populateError=clean(error.message||error);}
+    for(const field of fields) {
+      const plain=relationShape(raw[field],Object.hasOwn(raw,field));
+      const expanded=populated?relationShape(populated[field],Object.hasOwn(populated,field)):null;
+      const exact=await relations(UID,documentId,field,locale,status);
+      const exactIds=exact.map(x=>x.documentId).sort();
+      const candidate=expanded?.documentIds?.slice().sort()||[];
+      const match=(expanded?.kind==='array' || expanded?.dataKind==='array')?
+        eq(candidate,exactIds):null;
+      row.fields.push({field,raw:plain,populated:expanded,
+        nativeCount:exact.length,populateMatchesNative:match});
+      log('Проба '+locale+'/'+status+' '+field+': исходный='+plain.kind+
+        ', populate='+String(expanded?.kind||row.populateError||'none')+
+        ', точный count='+exact.length+', совпадение='+String(match));
+    }
+  }
+  const file=join(SCRIPT_DIR,'product-kk-relation-probe.json');
+  await safeWrite(file,JSON.stringify(result,null,2));
+  log('Диагностика завершена. Файл:',file);
+}
+
 async function allIds() {
   const size=LIMIT ? Math.min(PAGE_SIZE,LIMIT) : PAGE_SIZE;
   log('Читаем каталог Product RU: страница 1; режим '+(LIMIT?'первые '+LIMIT:'весь каталог'));
@@ -808,6 +871,7 @@ async function main() {
     if(!schema?.attributes || !Array.isArray(components?.data)) throw Error('Схема Strapi недоступна');
     relationFields=Object.entries(schema.attributes).filter(([k,a])=>!SYSTEM.has(k)&&a.type==='relation')
       .map(([k])=>k);
+    if(PROBE_ID){await probeRelations(PROBE_ID);return;}
     const signature=createHash('sha256').update(JSON.stringify(canonical(schema.attributes))).digest('hex');
     const signaturePath=schemaFile;
     const oldHash=await readFile(signaturePath,'utf8').catch(()=>null);
