@@ -244,8 +244,8 @@
     if(attr.type==='relation'){
       // Read snapshots even when nested component relations are populated.
       // Empty nested relations normalize to null, never to a {count:0} payload.
-      const count=Array.isArray(value)?value.length:
-        Number.isSafeInteger(value?.count)?value.count:
+      if(Array.isArray(value))return canonical(value);
+      const count=Number.isSafeInteger(value?.count)?value.count:
         value?.documentId||value?.id?1:0;
       return count?canonical(value):null;
     }
@@ -310,7 +310,28 @@
     if(!s?.attributes)throw new Blocked('Нет схемы зависимости '+uid);
     const entries=await Promise.all(relFields(s).map(async ([f])=>
       [f,await relations(uid,id,f,locale,status)]));
-    return {row,fields:recordFields(s,row),relations:Object.fromEntries(entries)};
+    const fields=recordFields(s,row),nested={};
+    if(uid===UID&&Array.isArray(row.brandZoneBanners)&&row.brandZoneBanners.length){
+      const componentUid='sections.brand-zone-banners';
+      nested.brandZoneBanners=await Promise.all(row.brandZoneBanners.map(async (part,i)=>{
+        if(!Number.isSafeInteger(part?.id)||part.id<=0)
+          throw new Blocked('Нет numeric ID brandZoneBanners['+i+']');
+        // Strapi Content Manager's component relation API uses component UID
+        // and component instance numeric ID, not Category documentId.
+        const links=await relations(componentUid,part.id,'products',locale,status);
+        const count=part.products?.count;
+        if(Number.isSafeInteger(count)&&links.length!==count)
+          throw new Blocked('Неполные вложенные relations brandZoneBanners['+i+
+            ']: получено '+links.length+' из '+count);
+        return links;
+      }));
+      if(!Array.isArray(fields.brandZoneBanners)||
+        fields.brandZoneBanners.length!==nested.brandZoneBanners.length)
+        throw new Blocked('Неверный компонент brandZoneBanners в detail');
+      for(let i=0;i<nested.brandZoneBanners.length;i++)
+        fields.brandZoneBanners[i].products=asIds(nested.brandZoneBanners[i]);
+    }
+    return {row,fields,relations:Object.fromEntries(entries),nested};
   }
   async function draftPair(uid,id){
     const [ru,kk]=await Promise.all([
@@ -382,13 +403,15 @@
     if(attr.type==='media')return hasKK?canonicalField(attr,kk,path):undefined;
     if(attr.type==='component'||attr.type==='dynamiczone'){
       // Localized containers may contain both local and shared nested fields.
-      if(!localized(attr))validateNestedRelations(attr,ru,path);
+      if(!localized(attr)&&field!=='brandZoneBanners')
+        validateNestedRelations(attr,ru,path);
       if(ru==null)return localized(attr)&&hasKK?canonicalField(attr,kk,path):ru;
       if(attr.type==='component'){
         const one=(r,k,p)=>mergedComponent(attr.component,r,k,p);
         if(attr.repeatable){
           if(!Array.isArray(ru))throw new Blocked('Неверный RU компонент '+path);
-          if(hasKK&&kk!=null&&(!Array.isArray(kk)||kk.length!==ru.length))
+          if(hasKK&&kk!=null&&(!Array.isArray(kk)||
+            (field!=='brandZoneBanners'&&kk.length!==ru.length)))
             throw new Blocked('Структура KK component отличается: '+path);
           return ru.map((r,i)=>one(r,hasKK?kk?.[i]:null,path+'['+i+']'));
         }
@@ -406,6 +429,8 @@
     }
     if(path==='name'||path==='description'||localized(attr))
       return hasKK?canonicalField(attr,kk,path):undefined;
+    if(attr.type==='relation'&&/^brandZoneBanners\\[\\d+\\]\\.products$/.test(path))
+      return canonicalField(attr,ru,path);
     if(attr.type==='relation')throw new Blocked('Вложенная relation '+path);
     return canonicalField(attr,ru,path);
   }
@@ -414,7 +439,9 @@
     for(const [f,a]of fieldsOf(s)){
       if(a.type==='relation')continue;
       let v;
-      try{v=desiredField(f,a,ru.row[f],kk?.row?.[f],!!kk,f);}
+      try{v=desiredField(f,a,
+        f==='brandZoneBanners'?ru.fields[f]:ru.row[f],
+        f==='brandZoneBanners'?kk?.fields?.[f]:kk?.row?.[f],!!kk,f);}
       catch(e){
         if(!allowPartial||!(e instanceof Blocked)||(!kk&&a.required))throw e;
         skippedFields.push({field:f,reason:clean(e.message)});
@@ -746,7 +773,8 @@
       const row=snap[locale].draft?.row;
       if(!row)continue;
       for(const [field,attr]of fieldsOf(schema)){
-        if(attr.type==='component'||attr.type==='dynamiczone')
+        if((attr.type==='component'||attr.type==='dynamiczone')&&
+          !(uid===UID&&field==='brandZoneBanners'))
           validateNestedRelations(attr,row[field],field);
       }
     }
