@@ -105,9 +105,7 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 
 Все файлы инструмента храните в `Desktop/Product-Localizer/`. Скрипт использует свою папку независимо от текущего каталога PowerShell. TXT с JWT можно оставить на Desktop: автоматический поиск продолжает работать.
 
-Однократный перенос: скачайте [organize-desktop.mjs](./locale/product/organize-desktop.mjs) во временную папку и выполните `node organize-desktop.mjs "ПОЛНЫЙ_ПУТЬ_DESKTOP"`. Он перемещает только `localizer.mjs` и элементы `product-kk-*` с Desktop. Активные backup/checkpoint остаются рядом со скриптом; старые recovery-отчёты и evidence попадают в `runs/previous/`. Содержимое не удаляется; конфликты имён проверяются до переноса, папки не объединяются, lock останавливает перенос. Повтор после прерванного переноса допустим: уже перемещённое сохраняется. JWT и посторонние файлы не перемещаются. Перенос выполняется при завершённом localizer.
-
-Новые recovery-результаты: одна папка на запуск внутри `runs/`; для передачи диагностики архивируйте целиком нужную папку запуска, включая `evidence/`. Исходные apply-checkpoint и `product-kk-backups/` не удалять. Запуск после переноса: `node "ПОЛНЫЙ_ПУТЬ_DESKTOP/Product-Localizer/localizer.mjs" --recover-pending --dry-run`.
+Новые recovery-результаты: одна папка на запуск внутри `runs/`; для передачи диагностики архивируйте целиком нужную папку запуска, включая `evidence/`. Исходные apply-checkpoint и `product-kk-backups/` не удалять. Запуск восстановления: `node "ПОЛНЫЙ_ПУТЬ_DESKTOP/Product-Localizer/localizer.mjs" --recover-pending --dry-run`.
 
 ### Повторная обработка незавершённых Product
 
@@ -117,7 +115,7 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 
 После read-only сверки пилот: `node localizer.mjs --recover-pending --apply --only=DOCUMENT_ID` для конкретного `would_update` из recovery CSV. Затем `node localizer.mjs --recover-pending --apply --continue-on-error --requests=8`. Каждый товар повторно проверяется перед записью; обработка recovery последовательная, `--workers` её не распараллеливает. PUT/POST выполняются максимум по одному на фазу за этот проход, без автоматического повтора HTTP 500. После подтверждения всех четырёх версий исходный backup переносится в `product-kk-recovered/<run>/`; при ошибке остаётся pending. Полный ответ HTTP (до 16 KB, без заголовков авторизации) сохраняется в evidence; в обычном apply — в `failure.http` backup.
 
-Каждый следующий recovery заново сверяет оставшиеся pending, даже если их ID есть в прежнем apply-checkpoint. Нельзя сочетать с `--new-run` или `--probe`. Recovery использует тот же process lock, что обычный apply. Не удалять backup или checkpoint для повтора. Код 2 означает оставшиеся ошибки/блокировки/pending; 1 — аварийную остановку. В dry-run pending остаются намеренно; `successful` относится к выполнению сверки, а не к завершённому восстановлению. Тесты без Strapi: `node locale/product/localizer-recovery.test.cjs`.
+Каждый следующий recovery заново сверяет оставшиеся pending, даже если их ID есть в прежнем apply-checkpoint. Нельзя сочетать с `--new-run` или `--probe`. Recovery использует тот же process lock, что обычный apply. Не удалять backup или checkpoint для повтора. Код 2 означает оставшиеся ошибки/блокировки/pending; 1 — аварийную остановку. В dry-run pending остаются намеренно; `successful` относится к выполнению сверки, а не к завершённому восстановлению.
 
 
 ## Migrator
@@ -233,8 +231,7 @@ README обновляется, когда меняются структура, �
 │   │   ├── category-localizer.js
 │   │   └── category-localizer.test.cjs
 │   └── product/
-│       ├── localizer.mjs
-│       └── localizer-recovery.test.cjs
+│       └── localizer.mjs
 ├── helpdesk/
 │   ├── workflow.json
 │   └── notifications.json
