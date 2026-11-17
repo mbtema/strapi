@@ -983,10 +983,19 @@
     let rel=relationPlan(s,pair.ru.draft,pair.kk.draft);
     const requested=Object.keys(fields.payload).length+
       Object.keys(rel.changes).length+Number(createKK);
+    let before=null;
+    let needsPublication=false;
+    // Draft can already match RU while KK Published is missing or outdated.
+    // Do not call this already_ok without checking BOTH Published versions.
     if(!requested&&!needsResume(previous)){
-      return {status:fields.skippedFields.length?'partial':'already_ok',
-        stage:'checked',changes:[],pendingLinks:[],pendingFields:fields.skippedFields,
-        reason:fields.skippedFields.length?'Есть неподдержанные вложенные поля':''};
+      before=await withPublished(uid,id,pair);
+      needsPublication=!sameVersion(before.ru.draft,before.ru.published)||
+        !sameVersion(before.kk.draft,before.kk.published);
+      if(!needsPublication){
+        return {status:fields.skippedFields.length?'partial':'already_ok',
+          stage:'checked',changes:[],pendingLinks:[],pendingFields:fields.skippedFields,
+          reason:fields.skippedFields.length?'Есть неподдержанные вложенные поля':''};
+      }
     }
     // Fast path: no mutable operation exists while every missing connect
     // still lacks KK Draft. Avoid loading both Published versions for this case.
@@ -1000,12 +1009,17 @@
           deferred.push({field,targetUid:delta.targetUid,documentId:targetId,
             reason:target.reason||'Нет KK Draft'});
         }
-      if(!available)return {status:'partial',stage:'checked',changes:[],
-        pendingLinks:deferred,pendingFields:fields.skippedFields,
-        reason:'Связи ожидают создания KK Draft в следующих проходах'};
+      if(!available){
+        before=await withPublished(uid,id,pair);
+        needsPublication=!sameVersion(before.ru.draft,before.ru.published)||
+          !sameVersion(before.kk.draft,before.kk.published);
+        if(!needsPublication)return {status:'partial',stage:'checked',changes:[],
+          pendingLinks:deferred,pendingFields:fields.skippedFields,
+          reason:'Связи ожидают создания KK Draft в следующих проходах'};
+      }
     }
     // Full prewrite backup includes all four versions and exact native relations.
-    let before=await withPublished(uid,id,pair);
+    before ||= await withPublished(uid,id,pair);
     let didSeed=false,didSave=false;
     // Check ALL populated unique values (including localized KK bitrix_id)
     // before the first write, not only fields changed in this pass.
@@ -1106,7 +1120,7 @@
     }
     const incomplete=!!(pendingLinks.length||pendingFields.length||
       pendingPublications.length);
-    if(!didSeed&&!didSave&&!needsResume(previous)){
+    if(!didSeed&&!didSave&&!needsResume(previous)&&!needsPublication){
       return {status:incomplete?'partial':'already_ok',stage:'checked',
         changes,pendingLinks,pendingFields,pendingPublications,
         addedCount,removedCount,
@@ -1117,14 +1131,21 @@
     const ruAlready=alreadyVerified&&
       ['verified-publish-ru','verified-publish-kk'].includes(previous.phase);
     const kkAlready=alreadyVerified&&previous.phase==='verified-publish-kk';
-    if(!ruAlready)before=await publishFrom(uid,id,'ru',before);
-    if(!kkAlready)before=await publishFrom(uid,id,'kk',before);
+    // Publishing unchanged RU is an unnecessary write and a Strapi data-loss risk.
+    // Publish only a locale whose Draft differs from Published.
+    let publishedRU=false,publishedKK=false;
+    if(!ruAlready&&!sameVersion(before.ru.draft,before.ru.published)){
+      before=await publishFrom(uid,id,'ru',before);publishedRU=true;
+    }
+    if(!kkAlready&&!sameVersion(before.kk.draft,before.kk.published)){
+      before=await publishFrom(uid,id,'kk',before);publishedKK=true;
+    }
     if(!sameVersion(before.ru.draft,before.ru.published)||
       !sameVersion(before.kk.draft,before.kk.published))
       throw new Unresolved('Published не совпадают с Draft после публикации');
     await completeJob(uid,id,before);
     return {status:incomplete?'partial_published':'success',stage:'published',
-      changes,pendingLinks,pendingFields,pendingPublications,
+      changes,pendingLinks,pendingFields,pendingPublications,publishedRU,publishedKK,
       addedCount,removedCount,
       reason:incomplete?'Частичная нормализация; повторить проход':''};
   }
@@ -1164,7 +1185,7 @@
               !x.startsWith('relation:')),
             relationsConnect:outcome.addedCount||0,
             relationsDisconnect:outcome.removedCount||0,
-            publishRU:outcome.stage==='published',publishKK:outcome.stage==='published'};
+            publishRU:!!outcome.publishedRU,publishKK:!!outcome.publishedKK};
         }catch(e){
           const status=safeStatus(e);
           if(e.fatal||e.integrity||e.unresolved){
