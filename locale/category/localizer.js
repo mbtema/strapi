@@ -151,8 +151,14 @@
     tx.onabort=()=>reject(tx.error||Error('IndexedDB transaction aborted'));
   });}
   const keyOf=(uid,id)=>uid+'|'+id;
-  const getJob=(uid,id)=>dbOp('get',keyOf(uid,id));
-  const putJob=job=>dbOp('put',job);
+  const getJob=async(uid,id)=>{
+    try{return await dbOp('get',keyOf(uid,id));}
+    catch(e){e.fatal=true;throw e;}
+  };
+  const putJob=async job=>{
+    try{return await dbOp('put',job);}
+    catch(e){e.fatal=true;throw e;}
+  };
   async function writeJournal(uid,id,stage,before,expected,extra={}){
     const prior=await getJob(uid,id); const job={key:keyOf(uid,id),uid,id,
       history:prior?.history||[],phase:'pending-'+stage,at:now(),before,expected,
@@ -165,6 +171,15 @@
     await putJob(job);state.touched.add(job.key);
     state.report.operations.push({key:job.key,stage:job.phase,verified:false,
       at:now(),integrity:error.integrity===true,reason:clean(error.message||error)});
+  }
+  async function stopWithEvidence(job,after,failure){
+    try{await failedJournal(job,after,failure);}
+    catch(storageError){
+      // Never lose the fatal stop even when IndexedDB is full/unavailable.
+      console.error('[Category Localizer] СБОЙ ЗАПИСИ BACKUP',storageError);
+      failure.message+='; backup update error: '+clean(storageError);
+    }
+    throw failure;
   }
   async function verifiedJournal(job,after){
     job.history.push({stage:job.phase.slice(8),at:now(),before:job.before,
@@ -203,6 +218,7 @@
         state.retries++;await sleep(800*(attempt+1));continue;}
       const error=Error(method+' HTTP '+response.status+' '+path+': '+clean(parsed?.error?.message||raw));
       error.httpStatus=response.status;
+      if(response.status===401||response.status===403)error.fatal=true;
       throw error;
     }
   }
@@ -692,16 +708,15 @@
   async function reconcile(uid,id){
     const job=await getJob(uid,id);
     if(!job?.phase?.startsWith('pending-'))return job;
-    const after=await snapshot(uid,id);
-    if(!intact(job.before,after)){
-      const e=new IntegrityViolation('При recovery обнаружено изменение RU '+uid+'/'+id,after);
-      await failedJournal(job,after,e);throw e;
-    }
-    if(!matchPending(job,after)){
-      const e=new Unresolved('Незавершённая '+job.phase+
-        ': GET-сверка не подтвердила результат');
-      await failedJournal(job,after,e);throw e;
-    }
+    let after;
+    try{after=await snapshot(uid,id);}
+    catch(e){throw new Unresolved('Recovery snapshot недоступен '+uid+'/'+id+': '+clean(e));}
+    if(!intact(job.before,after))
+      await stopWithEvidence(job,after,new IntegrityViolation(
+        'При recovery обнаружено изменение RU '+uid+'/'+id,after));
+    if(!matchPending(job,after))
+      await stopWithEvidence(job,after,new Unresolved('Незавершённая '+job.phase+
+        ': GET-сверка не подтвердила результат'));
     await verifiedJournal(job,after);
     return job;
   }
@@ -727,14 +742,12 @@
     if(after&&!intact(fresh,after)){
       const failure=new IntegrityViolation(stage+
         ': нарушение целостности RU Draft/Published после записи',after);
-      await failedJournal(pending,after,failure);
-      throw failure;
+      await stopWithEvidence(pending,after,failure);
     }
     if(!after||!verify(fresh,after,expected)){
       const failure=new Unresolved(stage+': '+
         clean(error||'проверка после записи не пройдена'));
-      await failedJournal(pending,after,failure);
-      throw failure;
+      await stopWithEvidence(pending,after,failure);
     }
     // A failed HTTP response is ambiguous. Confirmed postflight is authoritative.
     await verifiedJournal(pending,after);
