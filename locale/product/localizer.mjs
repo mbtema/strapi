@@ -144,10 +144,12 @@ async function optionalText(file) {
 }
 function csvCell(v) { const s=String(v??''); return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; }
 const csvHeader = 'documentId;status;changes;reason;details\n';
-const csvFile = join(SCRIPT_DIR,PREFIX+'-report.csv');
-const progressFile = join(SCRIPT_DIR,PREFIX+'-progress.jsonl');
-const summaryFile = join(SCRIPT_DIR,PREFIX+'-summary.json');
-const schemaFile = join(SCRIPT_DIR,PREFIX+'-schema.sha256');
+const outputDir = RECOVER ? join(SCRIPT_DIR,'runs',
+  new Date().toISOString().replace(/[:.]/g,'-')+'-recovery-'+MODE+'-'+pid) : SCRIPT_DIR;
+const csvFile = join(outputDir,RECOVER?'report.csv':PREFIX+'-report.csv');
+const progressFile = join(outputDir,RECOVER?'progress.jsonl':PREFIX+'-progress.jsonl');
+const summaryFile = join(outputDir,RECOVER?'summary.json':PREFIX+'-summary.json');
+const schemaFile = join(outputDir,RECOVER?'schema.sha256':PREFIX+'-schema.sha256');
 // Recovery и обычный apply используют один замок.
 const lockFile = join(SCRIPT_DIR,(RECOVER?'product-kk-apply':PREFIX)+'.lock');
 const backupDir = join(SCRIPT_DIR,'product-kk-backups');
@@ -974,7 +976,7 @@ async function recoverPending(signature) {
   let selected=ONLY_ID?[ONLY_ID]:[...backups.keys()];
   if(LIMIT)selected=selected.slice(0,LIMIT);
   runTotal=counters.total=selected.length;runStartedAt=Date.now();
-  const evidenceDir=join(SCRIPT_DIR,PREFIX+'-evidence');
+  const evidenceDir=join(outputDir,'evidence');
   await mkdir(evidenceDir,{recursive:true});
   const archiveDir=join(SCRIPT_DIR,'product-kk-recovered',PREFIX);
   // Последовательно: recovery ограничен небольшим списком ошибок, без гонок справочников.
@@ -1230,6 +1232,7 @@ async function main() {
       await unlink(lock);await writeFile(lock,String(pid),{flag:'wx'});acquired=true;
       log('Восстановлен stale lock предыдущего завершённого процесса');
     }
+    await mkdir(outputDir,{recursive:true});
     const saved=await readFile(progressFile,'utf8').catch(()=>'');
     if(saved&&!saved.endsWith('\n'))throw Error('Неполная последняя строка checkpoint: нужен ручной разбор');
     const previous=saved.split('\n').filter(Boolean).map(line=>JSON.parse(line));
