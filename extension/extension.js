@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.3.6
+// @version      1.3.7
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifests
 // @match        http://10.10.3.80:1337/admin/*
+// @match        https://strapi.monamie.kz/admin/*
 // @updateURL    https://raw.githubusercontent.com/mbtema/strapi/main/extension/extension.js
 // @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/extension/extension.js
 // @run-at       document-start
