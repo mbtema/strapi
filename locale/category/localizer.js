@@ -16,10 +16,16 @@
   let activeGets=0;
   const queuedGets=[];
   async function limitedGet(fn){
-    if(activeGets>=MAX_PARALLEL_GET)await new Promise(resolve=>queuedGets.push(resolve));
-    activeGets++;
+    // A released permit is transferred to the first waiter, never counted twice.
+    if(activeGets>=MAX_PARALLEL_GET)
+      await new Promise(resolve=>queuedGets.push(resolve));
+    else activeGets++;
     try{return await fn();}
-    finally{activeGets--;queuedGets.shift()?.();}
+    finally{
+      const next=queuedGets.shift();
+      if(next)next();
+      else activeGets--;
+    }
   }
   // One-time opt-in for writes: window.tmCategoryLocalizerApplyOnce = true;
   // The flag is consumed before any CMS requests. Default is ALWAYS dry-run.
