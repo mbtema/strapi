@@ -239,9 +239,12 @@
     if(attr.type==='media')return media(value);
     if(SCALAR.has(attr.type))return canonical(value);
     if(attr.type==='relation'){
-      // Read snapshots even when nested component relations are nonempty;
-      // never send them to a write payload without a separately proven contract.
-      return canonical(value);
+      // Read snapshots even when nested component relations are populated.
+      // Empty nested relations normalize to null, never to a {count:0} payload.
+      const count=Array.isArray(value)?value.length:
+        Number.isSafeInteger(value?.count)?value.count:
+        value?.documentId||value?.id?1:0;
+      return count?canonical(value):null;
     }
     if(attr.type==='component'){
       const one=x=>componentField(attr.component,x,path);
@@ -509,186 +512,36 @@
     }
     return payload;
   }
-  async function publishVersion(uid,id,locale){
-    let before=await snapshot(uid,id);
-    const draft=before[locale].draft;
-    if(!draft)throw new Blocked('Нет '+locale+' Draft для Publish '+uid+'/'+id);
-    const expected={fields:draft.fields,relations:relIDs(draft)};
-    const path='/content-manager/collection-types/'+uid+'/'+encodeURIComponent(id)+
-      '/actions/publish?locale='+locale;
-    const stage=uid===UID?'publish-'+locale:'publish-dependency';
-    return checkedWrite(uid,id,stage,before,expected,'POST',path,
-      publishPayload(uid,locale,draft),(b,a,e)=>matchPublish(b,a,e,locale));
-  }
-  const depCache=new Map();
-  async function ensureDependency(uid,id,stack=new Set()){
-    if(uid===UID){
-      // Two-phase processing: all KK Category drafts are seeded before relation writes.
-      const kk=await detail(uid,id,'kk','draft');
-      if(!kk)throw new Blocked('Нет KK Category '+id);
-      return kk.id;
-    }
-    const key=keyOf(uid,id);
-    if(depCache.has(key))return depCache.get(key);
-    if(stack.has(key))throw new Blocked('Цикл зависимостей: '+key);
-    const fresh=new Set(stack);fresh.add(key);
-    await reconcile(uid,id);
-    const s=state.schemas.get(uid);
-    if(!s?.attributes)throw new Blocked('Нет schema зависимости '+uid);
-    if(s.pluginOptions?.i18n?.localized!==true){
-      const any=await detail(uid,id,'ru','draft');
-      if(!any)throw new Blocked('Отсутствует общая зависимость '+key);
-      depCache.set(key,any.id);return any.id;
-    }
-    let before=await snapshot(uid,id);
-    if(!before.kk.draft)throw new Blocked('Нет KK Draft '+key);
-    if(before.kk.published){depCache.set(key,before.kk.draft.row.id);return before.kk.draft.row.id;}
-    if(!before.ru.published)throw new Blocked('Нет RU Published '+key);
-    for(const [f,a]of relFields(s))for(const target of before.kk.draft.relations[f]||[])
-      await ensureDependency(a.target,target.documentId,fresh);
-    before=await snapshot(uid,id);
-    if(!before.kk.published)await publishVersion(uid,id,'kk');
-    depCache.set(key,before.kk.draft.row.id);
-    return before.kk.draft.row.id;
-  }
-  async function uniquePreflight(id,s,targetFields){
-    for(const [field,a]of fieldsOf(s)){
-      if(a.unique!==true||!nonEmpty(targetFields[field]))continue;
-      const query=new URLSearchParams({locale:'kk',status:'draft',page:'1',
-        pageSize:String(PAGE_SIZE)});
-      query.set('filters['+field+'][$eq]',String(targetFields[field]));
-      const data=parseList(await get('/content-manager/collection-types/'+UID+'?'+query),1);
-      if(data.total>PAGE_SIZE)throw new Blocked('Слишком много совпадений unique '+field);
-      for(const item of data.rows){
-        const row=item?.attributes&&!item.documentId?{...item.attributes,id:item.id}:item;
-        if(row?.documentId!==id)throw new Blocked('Конфликт unique '+field+' с '+row?.documentId);
+  async function uniquePreflight(id,s,targetFields,ruRow,kkRow,onlyFields){
+    // Apply only to unique values actually being written. A positive control
+    // prevents silent ignoring of Content Manager's filter query.
+    for(const field of onlyFields){
+      const a=s.attributes[field];
+      if(a?.unique!==true||!nonEmpty(targetFields[field]))continue;
+      const val=String(targetFields[field]);
+      const source=String(ruRow?.[field]??'');
+      const current=String(kkRow?.[field]??'');
+      const control=source===val?'ru':current===val?'kk':null;
+      if(!control)throw new Blocked('Нет positive control unique '+field);
+      async function matches(locale){
+        const query=new URLSearchParams({locale,status:'draft',page:'1',
+          pageSize:String(PAGE_SIZE)});
+        query.set('filters['+field+'][$eq]',val);
+        const data=parseList(await get('/content-manager/collection-types/'+UID+'?'+query),1);
+        if(data.total>PAGE_SIZE)throw new Blocked('Неполный unique поиск '+field);
+        return data.rows.map(item=>item?.attributes&&!item.documentId?
+          {...item.attributes,id:item.id}:item);
       }
+      const [controlRows,otherRows]=await Promise.all([
+        matches(control),matches(control==='ru'?'kk':'ru')]);
+      if(!controlRows.some(row=>row?.documentId===id))
+        throw new Blocked('Unique filter не прошёл контроль '+field);
+      for(const row of [...controlRows,...otherRows])
+        if(row?.documentId!==id)
+          throw new Blocked('Конфликт unique '+field+' с '+row?.documentId);
     }
   }
   const safeStatus=e=>e instanceof Blocked?'blocked':e instanceof Unresolved?'unresolved':'error';
-  function result(id,name,status,stage,reason='',changes=[],attempts=0){
-    state.report.results.push({documentId:id,name,status,stage,reason:clean(reason),changes,attempts});
-    state.done++;state.current=name||id;render(stage+': '+status);
-  }
-  function snapshotIsComplete(before,job){
-    return job?.phase==='complete'&&job.lastVerified&&
-      sameVersion(before.ru.draft,job.lastVerified.ru.draft)&&
-      sameVersion(before.ru.published,job.lastVerified.ru.published)&&
-      sameVersion(before.kk.draft,job.lastVerified.kk.draft)&&
-      sameVersion(before.kk.published,job.lastVerified.kk.published);
-  }
-  async function seed(item){
-    const id=item.id;
-    await reconcile(UID,id);
-    const before=await snapshot(UID,id),s=state.schemas.get(UID);
-    if(!before.ru.draft)throw new Blocked('RU Draft отсутствует');
-    if(asIds(before.ru.draft.relations.products||[]).length)
-      throw new Blocked('RU legacy products содержит связи');
-    if(before.kk.draft)return;
-    if(before.kk.published)throw new Blocked('KK Published существует без KK Draft');
-    // Do not create a Category when an external relation target lacks KK.
-    // Category-to-Category targets are seeded in this same first pass.
-    for(const [f,a]of relFields(s))if(a.target!==UID)
-      for(const row of before.ru.draft.relations[f]){
-        const targetSchema=state.schemas.get(a.target);
-        if(!targetSchema?.attributes)throw new Blocked('Нет схемы '+a.target);
-        const locale=targetSchema.pluginOptions?.i18n?.localized===true?'kk':'ru';
-        const d=await detail(a.target,row.documentId,locale,'draft');
-        if(!d)throw new Blocked('Отсутствует '+locale+' зависимость '+f+'/'+row.documentId);
-      }
-    const fields=planFields(s,before.ru.draft,null);
-    await uniquePreflight(id,s,fields.expected);
-    const expected={fields:fields.expected,relations:Object.fromEntries(relFields(s).map(([f])=>[f,[]]))};
-    const path='/content-manager/collection-types/'+UID+'/'+encodeURIComponent(id)+'?locale=kk';
-    await checkedWrite(UID,id,'seed',before,expected,'PUT',path,
-      {locale:'kk',...fields.payload},matchSeed);
-  }
-  async function normalize(item){
-    const id=item.id,s=state.schemas.get(UID);
-    await reconcile(UID,id);
-    let before=await snapshot(UID,id);
-    if(!before.ru.draft||!before.kk.draft)throw new Blocked('Отсутствует RU/KK Draft');
-    const {payload,expected}=planFields(s,before.ru.draft,before.kk.draft);
-    const rel=relationPlan(s,before.ru.draft,before.kk.draft);
-    // Resolve every target, not only missing connects, to catch unavailable KK relations.
-    const targets=new Map();
-    for(const [f,a]of relFields(s)){
-      for(const row of before.ru.draft.relations[f])targets.set(keyOf(a.target,row.documentId),
-        {uid:a.target,id:row.documentId});
-    }
-    for(const dep of targets.values())await ensureDependency(dep.uid,dep.id);
-    const changes=[...Object.keys(payload),...Object.keys(rel.changes).map(f=>'relation:'+f)];
-    if(!changes.length)return {before,changes};
-    await uniquePreflight(id,s,expected);
-    // Re-read changed relations through the native endpoint immediately before write.
-    for(const [f]of Object.entries(rel.changes)){
-      const [source,target]=await Promise.all([
-        relations(UID,id,f,'ru','draft'),relations(UID,id,f,'kk','draft')]);
-      if(!eq(asIds(source),asIds(before.ru.draft.relations[f]))||
-        !eq(asIds(target),asIds(before.kk.draft.relations[f])))
-        throw new Blocked('Relation изменена во время preflight '+f);
-    }
-    // Dependency publication must not change Category fields or source relations.
-    const current=await snapshot(UID,id);
-    if(!sameVersion(before.ru.draft,current.ru.draft)||
-      !sameVersion(before.ru.published,current.ru.published)||
-      !sameVersion(before.kk.draft,current.kk.draft))
-      throw new Blocked('Категория изменена во время preflight');
-    before=current;
-    const write={locale:'kk',...payload};
-    for(const [f,delta]of Object.entries(rel.changes)){
-      const connects=[];
-      for(const targetId of delta.add){
-        const numeric=await ensureDependency(delta.targetUid,targetId);
-        if(!Number.isSafeInteger(numeric)||numeric<=0)
-          throw new Blocked('Нет numeric KK ID '+delta.targetUid+'/'+targetId);
-        const targetSchema=state.schemas.get(delta.targetUid);
-        const targetLocale=targetSchema?.pluginOptions?.i18n?.localized===true?'kk':'ru';
-        connects.push({id:numeric,documentId:targetId,locale:targetLocale});
-      }
-      const disconnects=delta.remove.map(targetId=>{
-        const existing=delta.old.find(x=>x.documentId===targetId);
-        if(!existing?.id)throw new Blocked('Нет numeric KK ID для disconnect '+f+'/'+targetId);
-        return {id:existing.id,documentId:targetId,locale:'kk'};
-      });
-      write[f]={connect:connects,disconnect:disconnects};
-    }
-    const expectedSave={fields:expected,relations:rel.expected};
-    const path='/content-manager/collection-types/'+UID+'/'+encodeURIComponent(id)+'?locale=kk';
-    const after=await checkedWrite(UID,id,'save',before,expectedSave,'PUT',path,write,matchSave);
-    return {before:after,changes};
-  }
-  async function publishCategory(item){
-    await reconcile(UID,item.id);
-    // Another Category may have changed an inverse KK relation since phase 2.
-    // Re-evaluate before publication, never publish stale normalized content.
-    await normalize(item);
-    let before=await snapshot(UID,item.id);
-    if(!before.ru.draft||!before.kk.draft)throw new Blocked('Нет RU/KK Draft');
-    const plan=planFields(state.schemas.get(UID),before.ru.draft,before.kk.draft);
-    const rel=relationPlan(state.schemas.get(UID),before.ru.draft,before.kk.draft);
-    if(Object.keys(plan.payload).length||Object.keys(rel.changes).length)
-      throw new Blocked('KK Draft ещё не нормализован');
-    const job=await getJob(UID,item.id);
-    const sameAsVerified=job?.lastVerified&&
-      ['ru','kk'].every(locale=>['draft','published'].every(status=>
-        sameVersion(before[locale][status],job.lastVerified[locale][status])));
-    const ruWasPublished=sameAsVerified&&
-      ['verified-publish-ru','verified-publish-kk'].includes(job.phase);
-    const kkWasPublished=sameAsVerified&&job.phase==='verified-publish-kk';
-    if(!ruWasPublished)await publishVersion(UID,item.id,'ru');
-    before=await snapshot(UID,item.id);
-    // RU publish must not alter KK Draft or shared RU Draft contents.
-    if(!before.kk.draft)throw new Unresolved('KK Draft исчез при Publish RU');
-    if(!kkWasPublished)await publishVersion(UID,item.id,'kk');
-    const final=await snapshot(UID,item.id);
-    if(!sameVersion(final.ru.draft,final.ru.published)||
-      !sameVersion(final.kk.draft,final.kk.published))
-      throw new Unresolved('Published отличаются от Draft после Publish');
-    await completeJob(UID,item.id,final);
-    return final;
-  }
-
   // Read-only preflight: no IndexedDB, PUT or POST. Capture all four versions
   // and their exact native root relations before proposing any action.
   async function dryRun(){
@@ -929,7 +782,8 @@
     // For potentially published data, ensure every non-root relation is understood.
     confirmPublishable(uid,before);
     if(createKK){
-      await uniquePreflight(id,s,fields.expected);
+      await uniquePreflight(id,s,fields.expected,before.ru.draft.row,null,
+        Object.keys(fields.payload).filter(f=>s.attributes[f]?.unique===true));
       const expectedSeed={fields:fields.expected,relations:
         Object.fromEntries(relFields(s).map(([field])=>[field,[]]))};
       const path='/content-manager/collection-types/'+uid+'/'+encodeURIComponent(id)+'?locale=kk';
@@ -971,8 +825,9 @@
     }
     const writeChanges=Object.keys(write).filter(x=>x!=='locale');
     if(writeChanges.length){
-      if(writeChanges.some(f=>s.attributes[f]?.unique))
-        await uniquePreflight(id,s,fields.expected);
+      const uniqueChanged=writeChanges.filter(f=>s.attributes[f]?.unique===true);
+      if(uniqueChanged.length)await uniquePreflight(id,s,fields.expected,
+        before.ru.draft.row,before.kk.draft.row,uniqueChanged);
       // Verify the exact two relation sets immediately before each mutable PUT.
       const checks=await Promise.all(touchedRelations.map(async field=>{
         const [source,target]=await Promise.all([
