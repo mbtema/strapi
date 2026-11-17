@@ -112,7 +112,7 @@
   const csvFields=['documentId','name','status','stage','changes','reason','attempts',
     'createKK','fieldsChanged','relationsConnect','relationsDisconnect',
     'dependenciesToPublish','publishRU','publishKK','pendingLinks',
-    'pendingFields','pendingPublications'];
+    'pendingFields','pendingPublications','publicationWarnings'];
   const q=x=>{let s=Array.isArray(x)?x.join(' | '):String(x??'');
     if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
   function download(name,content,type){
@@ -508,8 +508,7 @@
   const intact=(before,after)=>sameVersion(before.ru.draft,after.ru.draft)&&
     sameVersion(before.ru.published,after.ru.published);
   function immutableIntact(before,after,stage){
-    if(stage==='publish-ru')return
-      sameVersion(before.ru.draft,after.ru.draft)&&
+    if(stage==='publish-ru')return sameVersion(before.ru.draft,after.ru.draft)&&
       sameVersion(before.kk.draft,after.kk.draft)&&
       sameVersion(before.kk.published,after.kk.published);
     return intact(before,after);
@@ -739,8 +738,7 @@
     const phase=job.phase.slice(8);
     if(phase==='seed')return matchSeed(job.before,after,job.expected);
     if(phase==='save')return matchSave(job.before,after,job.expected);
-    if(phase==='publish-ru')return
-      matchPublish(job.before,after,job.expected,'ru',job.uid);
+    if(phase==='publish-ru')return matchPublish(job.before,after,job.expected,'ru',job.uid);
     if(phase==='publish-kk'||phase==='publish-dependency')
       return matchPublish(job.before,after,job.expected,'kk',job.uid);
     return false;
@@ -1143,12 +1141,18 @@
     // Do not call this already_ok without checking BOTH Published versions.
     if(!requested&&!needsResume(previous)){
       before=await withPublished(uid,id,pair);
-      needsPublication=!sameVersion(before.ru.draft,before.ru.published)||
-        !sameVersion(before.kk.draft,before.kk.published);
+      // This tool never changes RU business values. Existing RU Published drift
+      // is not a reason to Publish RU or overwrite a colleague's historical data.
+      needsPublication=!publicationAligned(before.kk.draft,before.kk.published);
       if(!needsPublication){
-        return {status:fields.skippedFields.length?'partial':'already_ok',
-          stage:'checked',changes:[],pendingLinks:[],pendingFields:fields.skippedFields,
-          reason:fields.skippedFields.length?'Есть неподдержанные вложенные поля':''};
+        const ruDrift=!publicationAligned(before.ru.draft,before.ru.published);
+        const pendingFields=[...fields.skippedFields,
+          ...(ruDrift?[{field:'ru.published',reason:
+            'RU Draft и Published различались до запуска; RU не перезаписывается'}]:[])];
+        return {status:pendingFields.length?'partial':'already_ok',
+          stage:'checked',changes:[],pendingLinks:[],pendingFields,
+          publicationWarnings:publicationWarnings(before),
+          reason:pendingFields.length?'Отложены неподдержанные поля или RU Published':''};
       }
     }
     // Fast path: no mutable operation exists while every missing connect
@@ -1165,8 +1169,7 @@
         }
       if(!available){
         before=await withPublished(uid,id,pair);
-        needsPublication=!sameVersion(before.ru.draft,before.ru.published)||
-          !sameVersion(before.kk.draft,before.kk.published);
+        needsPublication=!publicationAligned(before.kk.draft,before.kk.published);
         if(!needsPublication)return {status:'partial',stage:'checked',changes:[],
           pendingLinks:deferred,pendingFields:fields.skippedFields,
           reason:'Связи ожидают создания KK Draft в следующих проходах'};
@@ -1210,7 +1213,10 @@
     const write={locale:'kk',...fields.payload};
     const wanted=Object.fromEntries(Object.entries(relIDs(before.kk.draft))
       .map(([field,ids])=>[field,[...ids]]));
-    const pendingLinks=[...nestedPlan.pending],pendingFields=fields.skippedFields;
+    const pendingLinks=[...nestedPlan.pending],pendingFields=[...fields.skippedFields];
+    if(!publicationAligned(before.ru.draft,before.ru.published))
+      pendingFields.push({field:'ru.published',reason:
+        'RU Draft и Published различались до запуска; RU не перезаписывается'});
     const publishTargets=new Map(nestedPlan.newTargets.map(x=>[keyOf(x.uid,x.id),x]));
     const touchedRelations=[];
     let addedCount=nestedPlan.connected,removedCount=nestedPlan.disconnected;
@@ -1280,26 +1286,20 @@
         addedCount,removedCount,
         reason:incomplete?'Остались недоступные поля/связи/публикации':''};
     }
-    // A verified publish stage is resumable without repeating already confirmed POST.
+    // Do not publish RU: the normalizer never edits RU business values.
+    // A past RU publish can still be reconciled from journal, without a retry.
     const alreadyVerified=verifiedPhaseStillCurrent(previous,before);
-    const ruAlready=alreadyVerified&&
-      ['verified-publish-ru','verified-publish-kk'].includes(previous.phase);
     const kkAlready=alreadyVerified&&previous.phase==='verified-publish-kk';
-    // Publishing unchanged RU is an unnecessary write and a Strapi data-loss risk.
-    // Publish only a locale whose Draft differs from Published.
-    let publishedRU=false,publishedKK=false;
-    if(!ruAlready&&!sameVersion(before.ru.draft,before.ru.published)){
-      before=await publishFrom(uid,id,'ru',before);publishedRU=true;
-    }
-    if(!kkAlready&&!sameVersion(before.kk.draft,before.kk.published)){
+    let publishedKK=false;
+    if(!kkAlready&&!publicationAligned(before.kk.draft,before.kk.published)){
       before=await publishFrom(uid,id,'kk',before);publishedKK=true;
     }
-    if(!sameVersion(before.ru.draft,before.ru.published)||
-      !sameVersion(before.kk.draft,before.kk.published))
-      throw new Unresolved('Published не совпадают с Draft после публикации');
+    if(!publicationAligned(before.kk.draft,before.kk.published))
+      throw new Unresolved('KK Published не совпадает с KK Draft после публикации');
     await completeJob(uid,id,before);
     return {status:incomplete?'partial_published':'success',stage:'published',
-      changes,pendingLinks,pendingFields,pendingPublications,publishedRU,publishedKK,
+      changes,pendingLinks,pendingFields,pendingPublications,
+      publicationWarnings:publicationWarnings(before),publishedRU:false,publishedKK,
       addedCount,removedCount,
       reason:incomplete?'Частичная нормализация; повторить проход':''};
   }
@@ -1341,6 +1341,7 @@
             pendingPublications:(outcome.pendingPublications||[]).map(x=>
               x.uid+'/'+x.id+' ('+x.reason+')'),
             pendingPublicationDetails:outcome.pendingPublications||[],
+            publicationWarnings:outcome.publicationWarnings||[],
             createKK:(outcome.changes||[]).includes('createKK'),
             fieldsChanged:(outcome.changes||[]).filter(x=>x!=='createKK'&&
               !x.startsWith('relation:')),
