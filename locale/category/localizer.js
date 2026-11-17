@@ -795,11 +795,15 @@
     // Full prewrite backup includes all four versions and exact native relations.
     let before=await withPublished(uid,id,pair);
     let didSeed=false,didSave=false;
+    // Check ALL populated unique values (including localized KK bitrix_id)
+    // before the first write, not only fields changed in this pass.
+    const uniqueFields=fieldsOf(s).filter(([field,a])=>
+      a.unique===true&&nonEmpty(fields.expected[field])).map(([field])=>field);
+    if(uniqueFields.length)await uniquePreflight(id,s,fields.expected,
+      before.ru.draft.row,before.kk.draft?.row,uniqueFields);
     // For potentially published data, ensure every non-root relation is understood.
     confirmPublishable(uid,before);
     if(createKK){
-      await uniquePreflight(id,s,fields.expected,before.ru.draft.row,null,
-        Object.keys(fields.payload).filter(f=>s.attributes[f]?.unique===true));
       const expectedSeed={fields:fields.expected,relations:
         Object.fromEntries(relFields(s).map(([field])=>[field,[]]))};
       const path='/content-manager/collection-types/'+uid+'/'+encodeURIComponent(id)+'?locale=kk';
@@ -844,9 +848,7 @@
     }
     const writeChanges=Object.keys(write).filter(x=>x!=='locale');
     if(writeChanges.length){
-      const uniqueChanged=writeChanges.filter(f=>s.attributes[f]?.unique===true);
-      if(uniqueChanged.length)await uniquePreflight(id,s,fields.expected,
-        before.ru.draft.row,before.kk.draft.row,uniqueChanged);
+      // Unique values were checked before the seed/save; avoid duplicate queries.
       // Verify the exact two relation sets immediately before each mutable PUT.
       const checks=await Promise.all(touchedRelations.map(async field=>{
         const [source,target]=await Promise.all([
