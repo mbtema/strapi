@@ -490,8 +490,30 @@
   }
   const sameVersion=(a,b)=>a===null&&b===null||!!a&&!!b&&
     sameFields(a.fields,b.fields)&&eq(relIDs(a),relIDs(b));
+  // Live 2026-11-17: Category Draft.key=null, while the existing
+  // Published.key is non-null. Strapi preserved the old value on RU publish.
+  // Treat ONLY this unchanged legacy discrepancy as aligned; never overwrite
+  // or silently accept a different key, or ignore any other field/relation.
+  function preservedPublishedKey(draft,published){
+    if(!draft||!published||draft.fields?.key!==null||
+      !nonEmpty(published.fields?.key))return false;
+    return sameFields(draft.fields,{...published.fields,key:null})&&
+      eq(relIDs(draft),relIDs(published));
+  }
+  const publicationAligned=(draft,published)=>
+    sameVersion(draft,published)||preservedPublishedKey(draft,published);
+  const publicationWarnings=snap=>['ru','kk'].filter(locale=>
+    preservedPublishedKey(snap[locale].draft,snap[locale].published)).map(locale=>
+    locale+'.published.key: сохранено историческое значение; Draft.key=null');
   const intact=(before,after)=>sameVersion(before.ru.draft,after.ru.draft)&&
     sameVersion(before.ru.published,after.ru.published);
+  function immutableIntact(before,after,stage){
+    if(stage==='publish-ru')return
+      sameVersion(before.ru.draft,after.ru.draft)&&
+      sameVersion(before.kk.draft,after.kk.draft)&&
+      sameVersion(before.kk.published,after.kk.published);
+    return intact(before,after);
+  }
   function identicalDraftTarget(actual,expected){
     if(!actual||!expected)return false;
     return eq(actual.fields,expected.fields)&&eq(relIDs(actual),relIDs(expected));
@@ -691,23 +713,36 @@
       eq(after.kk.draft.fields,expected.fields)&&eq(relIDs(after.kk.draft),expected.relations)&&
       sameVersion(before.kk.published,after.kk.published);
   }
-  function matchPublish(before,after,expected,locale){
+  function matchPublish(before,after,expected,locale,uid){
     if(!after[locale].draft||!after[locale].published)return false;
+    const oldPublished=before[locale].published;
+    const newPublished=after[locale].published;
+    // A new Published version, not merely a successful HTTP response.
+    if(!newPublished.row?.publishedAt||
+      newPublished.row.publishedAt===oldPublished?.row?.publishedAt)return false;
+    const previousKey=oldPublished?.fields?.key;
+    let actualFields=newPublished.fields;
+    if(uid===UID&&expected.fields?.key===null&&nonEmpty(previousKey)){
+      // Preserve the exact previously published key; clearing it is data loss.
+      if(!eq(actualFields.key,previousKey))return false;
+      actualFields={...actualFields,key:null};
+    }
     const other=locale==='ru'?'kk':'ru';
     return sameVersion(before[other].draft,after[other].draft)&&
       sameVersion(before[other].published,after[other].published)&&
       sameVersion(before[locale].draft,after[locale].draft)&&
-      sameFields(after[locale].published.fields,expected.fields)&&
-      eq(relIDs(after[locale].published),expected.relations);
+      sameFields(actualFields,expected.fields)&&
+      eq(relIDs(newPublished),expected.relations);
   }
   function matchPending(job,after){
     if(!job?.phase?.startsWith('pending-')||!job.before||!job.expected)return false;
     const phase=job.phase.slice(8);
     if(phase==='seed')return matchSeed(job.before,after,job.expected);
     if(phase==='save')return matchSave(job.before,after,job.expected);
-    if(phase==='publish-ru')return matchPublish(job.before,after,job.expected,'ru');
+    if(phase==='publish-ru')return
+      matchPublish(job.before,after,job.expected,'ru',job.uid);
     if(phase==='publish-kk'||phase==='publish-dependency')
-      return matchPublish(job.before,after,job.expected,'kk');
+      return matchPublish(job.before,after,job.expected,'kk',job.uid);
     return false;
   }
   async function reconcile(uid,id){
@@ -720,7 +755,7 @@
     let after;
     try{after=await snapshot(uid,id);}
     catch(e){throw new Unresolved('Recovery snapshot недоступен '+uid+'/'+id+': '+clean(e));}
-    if(!intact(job.before,after))
+    if(!immutableIntact(job.before,after,job.phase.slice(8)))
       await stopWithEvidence(job,after,new IntegrityViolation(
         'При recovery обнаружено изменение RU '+uid+'/'+id,after));
     if(!matchPending(job,after))
@@ -759,7 +794,7 @@
     try{after=await snapshot(uid,id);}catch(e){error ||= e;}
     // Strapi can mutate RU during a KK save/publish. Stop the WHOLE batch immediately,
     // preserve before + after snapshots in IndexedDB; do not blindly overwrite RU.
-    if(after&&!intact(fresh,after)){
+    if(after&&!immutableIntact(fresh,after,stage)){
       const failure=new IntegrityViolation(stage+
         ': нарушение целостности RU Draft/Published после записи',after);
       await stopWithEvidence(pending,after,failure);
@@ -1086,7 +1121,7 @@
     const path='/content-manager/collection-types/'+uid+'/'+encodeURIComponent(id)+
       '/actions/publish?locale='+locale;
     return checkedWrite(uid,id,'publish-'+locale,before,expected,'POST',path,
-      publishPayload(uid,locale,draft),(a,b,e)=>matchPublish(a,b,e,locale));
+      publishPayload(uid,locale,draft),(a,b,e)=>matchPublish(a,b,e,locale,uid));
   }
   async function applyOne(item){
     const uid=UID,id=item.id,s=state.schemas.get(uid);
