@@ -32,13 +32,23 @@
   const APPLY = window.tmCategoryLocalizerApplyOnce === true;
   const ONLY = typeof window.tmCategoryLocalizerOnlyOnce === 'string'?
     window.tmCategoryLocalizerOnlyOnce.trim():null;
-  // Safe ramp-up of production writes, e.g. first 10, then all.
-  const LIMIT = Number.isSafeInteger(window.tmCategoryLocalizerLimitOnce)&&
-    window.tmCategoryLocalizerLimitOnce>0?window.tmCategoryLocalizerLimitOnce:null;
+  // Explicit scope is mandatory for writes: one Category, N first Category,
+  // OR an intentional full-production flag. Invalid limits can never mean ALL.
+  const RAW_LIMIT = window.tmCategoryLocalizerLimitOnce;
+  const LIMIT = Number.isSafeInteger(RAW_LIMIT)&&RAW_LIMIT>0?RAW_LIMIT:null;
+  const FULL = window.tmCategoryLocalizerFullOnce === true;
   delete window.tmCategoryLocalizerApplyOnce;
   delete window.tmCategoryLocalizerOnlyOnce;
   delete window.tmCategoryLocalizerLimitOnce;
+  delete window.tmCategoryLocalizerFullOnce;
   const DRY_RUN = !APPLY;
+  const invalidLimit=RAW_LIMIT!==undefined&&LIMIT===null;
+  if(invalidLimit||(APPLY&&Number(!!ONLY)+Number(!!LIMIT)+Number(FULL)!==1)){
+    console.error('[Category Localizer] Запуск запрещён: укажи ровно один режим'+
+      ' Apply — OnlyOnce (documentId), LimitOnce (целое число > 0),'+
+      ' либо FullOnce = true. Некорректный LimitOnce не означает FULL.');
+    return;
+  }
   if (!location.pathname.startsWith('/admin/content-manager')) {
     console.error('[Category Localizer] Открой Content Manager Strapi.'); return;
   }
@@ -1295,7 +1305,13 @@
         }
       }
       state.report.finishedAt=now();
-      state.report.summary={...state.report.summary,total:state.total,...rowsStatus(),get:state.get,
+      const statuses=rowsStatus();
+      state.report.summary={...state.report.summary,total:state.total,...statuses,
+        successful:state.phase==='completed'&&
+          !['blocked','unresolved','error','partial','partial_published']
+            .some(k=>statuses[k]>0),
+        scope:ONLY?'single':LIMIT?'first-'+LIMIT:FULL?'full':'dry-run',
+        get:state.get,
         put:state.put,post:state.post,retries:state.retries,phase:state.phase,
         populateGET:state.populateGET,populateHits:state.populateHits,
         nativeFallbacks:state.nativeFallbacks,
