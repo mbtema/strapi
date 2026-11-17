@@ -1,6 +1,6 @@
 // Category Localizer RU -> KK — Strapi Console, Content Manager API.
 // Run from authenticated /admin/content-manager, no dependencies.
-// Default: read-only dry-run. Apply requires explicit one-time console opt-in.
+// Default: read-only dry-run. Apply: one Category at a time; never full-scan details.
 (async () => {
   'use strict';
   const UID = 'api::category.category';
@@ -11,6 +11,15 @@
   const SCALAR = new Set(['string','text','richtext','email','enumeration','json','blocks',
     'integer','biginteger','float','decimal','boolean','date','time','datetime','uid']);
   const PAGE_SIZE = 100;
+  const MAX_PARALLEL_GET = 12; // reads only; all writes remain strictly sequential
+  let activeGets=0;
+  const queuedGets=[];
+  async function limitedGet(fn){
+    if(activeGets>=MAX_PARALLEL_GET)await new Promise(resolve=>queuedGets.push(resolve));
+    activeGets++;
+    try{return await fn();}
+    finally{activeGets--;queuedGets.shift()?.();}
+  }
   // One-time opt-in for writes: window.tmCategoryLocalizerApplyOnce = true;
   // The flag is consumed before any CMS requests. Default is ALWAYS dry-run.
   const APPLY = window.tmCategoryLocalizerApplyOnce === true;
@@ -30,7 +39,7 @@
   }
   const state = {stop:false,done:0,total:0,phase:'init',current:'',get:0,put:0,post:0,
     retries:0,schemas:new Map(),components:new Map(),list:[],db:null,touched:new Set(),report:{
-      tool:'category-localizer',version:2,mode:DRY_RUN?'dry-run':'apply',
+      tool:'category-localizer',version:3,mode:DRY_RUN?'dry-run':'apply',
       startedAt:new Date().toISOString(),finishedAt:null,
       results:[],operations:[],journals:[],errors:[],snapshots:[],plans:[],summary:null}};
   const $ = (tag, text) => { const e=document.createElement(tag); if(text!==undefined)e.textContent=text; return e; };
@@ -59,20 +68,21 @@
   const fieldsOf=s=>Object.entries(s.attributes).filter(([f])=>!SYSTEM.has(f));
   const relFields=s=>fieldsOf(s).filter(([,a])=>a.type==='relation');
   const asIds=x=>x?x.map(v=>v.documentId).sort():[];
-  const rowsStatus=()=>Object.fromEntries(['planned','success','already_ok','blocked','unresolved','error'].map(k=>
+  const rowsStatus=()=>Object.fromEntries(['planned','success','partial_published','partial','already_ok','blocked','unresolved','error'].map(k=>
     [k,state.report.results.filter(v=>v.status===k).length]));
   function render(line='') {
     const c=rowsStatus();
     message.textContent=(line||state.phase)+'\n'+state.done+'/'+(state.total||'?')+
       ' Category · '+state.current+'\n'+
       (DRY_RUN?'Планируется '+c.planned+' · уже нормализовано '+c.already_ok:
-        'Успешно '+c.success+' · без изменений '+c.already_ok)+
+        'Успешно '+c.success+' · частично '+(c.partial+c.partial_published)+
+        ' · без изменений '+c.already_ok)+
       ' · blocked '+c.blocked+' · unresolved '+c.unresolved+' · errors '+c.error+'\n'+
       'GET '+state.get+' · PUT '+state.put+' · POST '+state.post+' · retries '+state.retries;
   }
   const csvFields=['documentId','name','status','stage','changes','reason','attempts',
     'createKK','fieldsChanged','relationsConnect','relationsDisconnect',
-    'dependenciesToPublish','publishRU','publishKK'];
+    'dependenciesToPublish','publishRU','publishKK','pendingLinks','pendingFields'];
   const q=x=>{let s=Array.isArray(x)?x.join(' | '):String(x??'');
     if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
   function download(name,content,type){
@@ -158,7 +168,7 @@
       throw error;
     }
   }
-  const get=(path,allow404=false)=>request('GET',path,undefined,allow404);
+  const get=(path,allow404=false)=>limitedGet(()=>request('GET',path,undefined,allow404));
   const detailPath=(uid,id,locale,status)=>'/content-manager/collection-types/'+uid+'/'+
     encodeURIComponent(id)+'?locale='+locale+'&status='+status;
   async function detail(uid,id,locale,status){
@@ -229,11 +239,9 @@
     if(attr.type==='media')return media(value);
     if(SCALAR.has(attr.type))return canonical(value);
     if(attr.type==='relation'){
-      // Native root relations handled separately. Nested nonempty relations need a validated contract.
-      const populated=Array.isArray(value)?value.length:
-        Number.isSafeInteger(value?.count)?value.count:value?.documentId||value?.id?1:0;
-      if(populated)throw new Blocked('Неподдержанная вложенная relation '+path);
-      return null;
+      // Read snapshots even when nested component relations are nonempty;
+      // never send them to a write payload without a separately proven contract.
+      return canonical(value);
     }
     if(attr.type==='component'){
       const one=x=>componentField(attr.component,x,path);
@@ -294,15 +302,23 @@
     const row=await detail(uid,id,locale,status);if(!row)return null;
     const s=state.schemas.get(uid);
     if(!s?.attributes)throw new Blocked('Нет схемы зависимости '+uid);
-    const rel={};
-    for(const [f]of relFields(s))rel[f]=await relations(uid,id,f,locale,status);
-    return {row,fields:recordFields(s,row),relations:rel};
+    const entries=await Promise.all(relFields(s).map(async ([f])=>
+      [f,await relations(uid,id,f,locale,status)]));
+    return {row,fields:recordFields(s,row),relations:Object.fromEntries(entries)};
+  }
+  async function draftPair(uid,id){
+    const [ru,kk]=await Promise.all([
+      version(uid,id,'ru','draft'),version(uid,id,'kk','draft')]);
+    return {ru:{draft:ru,published:null},kk:{draft:kk,published:null}};
+  }
+  async function withPublished(uid,id,pair){
+    const [ru,kk]=await Promise.all([
+      version(uid,id,'ru','published'),version(uid,id,'kk','published')]);
+    return {ru:{draft:pair.ru.draft,published:ru},
+      kk:{draft:pair.kk.draft,published:kk}};
   }
   async function snapshot(uid,id){
-    const values=await Promise.all([
-      version(uid,id,'ru','draft'),version(uid,id,'ru','published'),
-      version(uid,id,'kk','draft'),version(uid,id,'kk','published')]);
-    return {ru:{draft:values[0],published:values[1]},kk:{draft:values[2],published:values[3]}};
+    return withPublished(uid,id,await draftPair(uid,id));
   }
   const relIDs=v=>Object.fromEntries(Object.entries(v?.relations||{}).map(([f,r])=>[f,asIds(r)]));
   const sameVersion=(a,b)=>a===null&&b===null||!!a&&!!b&&
@@ -314,6 +330,30 @@
     return eq(actual.fields,expected.fields)&&eq(relIDs(actual),relIDs(expected));
   }
   const emptyRel=()=>({});
+  function validateNestedRelations(attr,value,path){
+    if(value==null)return;
+    if(attr.type==='relation'){
+      const count=Array.isArray(value)?value.length:
+        Number.isSafeInteger(value?.count)?value.count:
+        value?.documentId||value?.id?1:0;
+      if(count)throw new Blocked('Неподдержанная вложенная relation '+path);
+      return;
+    }
+    const component=(uid,row,p)=>{
+      const schema=state.components.get(uid);
+      if(!schema?.attributes)throw new Blocked('Нет schema компонента '+uid);
+      for(const [field,a]of fieldsOf(schema))if(Object.hasOwn(row||{},field))
+        validateNestedRelations(a,row[field],p+'.'+field);
+    };
+    if(attr.type==='component'){
+      for(const [i,row] of (attr.repeatable?(Array.isArray(value)?value:[]):[value]).entries())
+        if(row!=null)component(attr.component,row,path+'['+i+']');
+    }
+    if(attr.type==='dynamiczone'&&Array.isArray(value)){
+      for(const [i,row]of value.entries())
+        if(row?.__component)component(row.__component,row,path+'['+i+']');
+    }
+  }
   function mergedComponent(uid,ru,kk,path){
     const s=state.components.get(uid);
     if(!s?.attributes)throw new Blocked('Нет схемы '+uid);
@@ -328,11 +368,15 @@
   }
   function desiredField(field,attr,ru,kk,hasKK,path){
     if(ru===undefined)throw new Blocked('Отсутствует RU '+path);
-    if(field==='filters_app')return canonicalField(attr,ru,path); // full sync, explicit exception
+    if(field==='filters_app'){
+      validateNestedRelations(attr,ru,path);
+      return canonicalField(attr,ru,path);
+    } // full sync, explicit exception
     if(field==='title'||attr.type==='boolean')return canonicalField(attr,ru,path);
     if(attr.type==='media')return hasKK?canonicalField(attr,kk,path):undefined;
     if(attr.type==='component'||attr.type==='dynamiczone'){
       // Localized containers may contain both local and shared nested fields.
+      if(!localized(attr))validateNestedRelations(attr,ru,path);
       if(ru==null)return localized(attr)&&hasKK?canonicalField(attr,kk,path):ru;
       if(attr.type==='component'){
         const one=(r,k,p)=>mergedComponent(attr.component,r,k,p);
@@ -359,17 +403,23 @@
     if(attr.type==='relation')throw new Blocked('Вложенная relation '+path);
     return canonicalField(attr,ru,path);
   }
-  function planFields(s,ru,kk){
-    const payload={},expected=kk?{...kk.fields}:{};
+  function planFields(s,ru,kk,allowPartial=false){
+    const payload={},expected=kk?{...kk.fields}:{},skippedFields=[];
     for(const [f,a]of fieldsOf(s)){
       if(a.type==='relation')continue;
-      const v=desiredField(f,a,ru.row[f],kk?.row?.[f],!!kk,f);
+      let v;
+      try{v=desiredField(f,a,ru.row[f],kk?.row?.[f],!!kk,f);}
+      catch(e){
+        if(!allowPartial||!(e instanceof Blocked)||(!kk&&a.required))throw e;
+        skippedFields.push({field:f,reason:clean(e.message)});
+        continue;
+      }
       if(v===undefined){if(a.required===true)throw new Blocked('Обязательный перевод отсутствует: '+f);
         continue;}
       if(!kk||!eq(v,kk.fields[f]))payload[f]=v;
       expected[f]=v;
     }
-    return {payload,expected};
+    return {payload,expected,skippedFields};
   }
   function relationPlan(s,ru,kk){
     const changes={},expected={};
