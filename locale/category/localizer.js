@@ -457,6 +457,11 @@
   // Mirror nested banner relations by documentId, preserving KK component IDs.
   // Native relation GET identifies actual links; a count alone is never treated as a link list.
   async function bannerPlan(ru,kk,expected){
+    if(ru?.fields?.brandZoneBanners==null){
+      const old=kk?.fields?.brandZoneBanners??null;
+      return {changed:old!==null,wanted:null,parts:null,pending:[],
+        newTargets:[],connected:0,disconnected:0};
+    }
     const src=ru?.fields?.brandZoneBanners||[];
     const dst=kk?.fields?.brandZoneBanners||[];
     const dstRows=kk?.row?.brandZoneBanners||[];
@@ -813,6 +818,7 @@
   // Apply uses the list of RU IDs only. All data is read just-in-time per Category.
   // Missing KK targets are postponed for the next MANUAL run, never recursively seeded.
   const targetIdCache=new Map();
+  const dependencyPublicationCache=new Map();
   async function targetDraftId(uid,id){
     const s=state.schemas.get(uid);
     if(!s?.attributes)throw new Blocked('Неизвестная схема target '+uid);
@@ -825,6 +831,37 @@
       throw new Blocked('Неверный numeric target ID '+key);
     targetIdCache.set(key,row.id);
     return {id:row.id,locale};
+  }
+  async function publishDependencyOnce(uid,id){
+    const key=keyOf(uid,id);
+    if(dependencyPublicationCache.has(key))return dependencyPublicationCache.get(key);
+    const schema=state.schemas.get(uid);
+    if(!schema?.attributes)return {uid,id,reason:'Нет schema зависимости'};
+    // Category locales are created/published by the stream, not recursively.
+    if(uid===UID||schema.pluginOptions?.i18n?.localized!==true)return null;
+    try{
+      await reconcile(uid,id);
+      if(await detail(uid,id,'kk','published')){
+        dependencyPublicationCache.set(key,null);
+        return null;
+      }
+      if(!await detail(uid,id,'ru','published'))
+        return {uid,id,reason:'RU Published отсутствует'};
+      const before=await snapshot(uid,id);
+      if(!before.kk.draft)return {uid,id,reason:'Нет KK Draft'};
+      if(before.kk.published){
+        dependencyPublicationCache.set(key,null);
+        return null;
+      }
+      confirmPublishable(uid,before);
+      await publishFrom(uid,id,'kk',before);
+      dependencyPublicationCache.set(key,null);
+      state.report.operations.push({key,stage:'dependency-published',verified:true,at:now()});
+      return null;
+    }catch(e){
+      // An ambiguous write remains in IndexedDB. Never silently retry it.
+      return {uid,id,reason:clean(e.message),status:safeStatus(e)};
+    }
   }
   function needsResume(job){
     return !!job&&['verified-seed','verified-save','verified-publish-ru',
@@ -929,6 +966,7 @@
     const wanted=Object.fromEntries(Object.entries(relIDs(before.kk.draft))
       .map(([field,ids])=>[field,[...ids]]));
     const pendingLinks=[...nestedPlan.pending],pendingFields=fields.skippedFields;
+    const publishTargets=new Map(nestedPlan.newTargets.map(x=>[keyOf(x.uid,x.id),x]));
     const touchedRelations=[];
     let addedCount=nestedPlan.connected,removedCount=nestedPlan.disconnected;
     for(const [field,delta]of Object.entries(rel.changes)){
@@ -941,6 +979,8 @@
           continue;
         }
         connects.push({id:target.id,documentId:targetId,locale:target.locale});
+        publishTargets.set(keyOf(delta.targetUid,targetId),
+          {uid:delta.targetUid,id:targetId});
         addedCount++;
         set.add(targetId);
       }
@@ -980,11 +1020,20 @@
     }
     const changes=[...(didSeed?['createKK']:[]),...writeChanges.map(f=>
       s.attributes[f]?.type==='relation'?'relation:'+f:f)];
-    const incomplete=!!(pendingLinks.length||pendingFields.length);
+    // Publish only the dependencies of links added during this Category write.
+    // No recursive walk, no global dependency scan, no retries of ambiguous writes.
+    const pendingPublications=[];
+    for(const dependency of publishTargets.values()){
+      const issue=await publishDependencyOnce(dependency.uid,dependency.id);
+      if(issue)pendingPublications.push(issue);
+    }
+    const incomplete=!!(pendingLinks.length||pendingFields.length||
+      pendingPublications.length);
     if(!didSeed&&!didSave&&!needsResume(previous)){
       return {status:incomplete?'partial':'already_ok',stage:'checked',
-        changes,pendingLinks,pendingFields,addedCount,removedCount,
-        reason:incomplete?'Остались недоступные поля/связи':''};
+        changes,pendingLinks,pendingFields,pendingPublications,
+        addedCount,removedCount,
+        reason:incomplete?'Остались недоступные поля/связи/публикации':''};
     }
     // A verified publish stage is resumable without repeating already confirmed POST.
     const alreadyVerified=verifiedPhaseStillCurrent(previous,before);
@@ -998,7 +1047,8 @@
       throw new Unresolved('Published не совпадают с Draft после публикации');
     await completeJob(uid,id,before);
     return {status:incomplete?'partial_published':'success',stage:'published',
-      changes,pendingLinks,pendingFields,addedCount,removedCount,
+      changes,pendingLinks,pendingFields,pendingPublications,
+      addedCount,removedCount,
       reason:incomplete?'Частичная нормализация; повторить проход':''};
   }
   async function run(){
@@ -1029,6 +1079,7 @@
             pendingDetails:pendingLinks,
             pendingFields:pendingFields.map(x=>x.field+' ('+x.reason+')'),
             pendingFieldDetails:pendingFields,
+            pendingPublications:outcome.pendingPublications||[],
             createKK:(outcome.changes||[]).includes('createKK'),
             fieldsChanged:(outcome.changes||[]).filter(x=>x!=='createKK'&&
               !x.startsWith('relation:')),
