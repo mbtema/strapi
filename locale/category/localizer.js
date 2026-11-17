@@ -26,8 +26,12 @@
   const APPLY = window.tmCategoryLocalizerApplyOnce === true;
   const ONLY = typeof window.tmCategoryLocalizerOnlyOnce === 'string'?
     window.tmCategoryLocalizerOnlyOnce.trim():null;
+  // Safe ramp-up of production writes, e.g. first 10, then all.
+  const LIMIT = Number.isSafeInteger(window.tmCategoryLocalizerLimitOnce)&&
+    window.tmCategoryLocalizerLimitOnce>0?window.tmCategoryLocalizerLimitOnce:null;
   delete window.tmCategoryLocalizerApplyOnce;
   delete window.tmCategoryLocalizerOnlyOnce;
+  delete window.tmCategoryLocalizerLimitOnce;
   const DRY_RUN = !APPLY;
   if (!location.pathname.startsWith('/admin/content-manager')) {
     console.error('[Category Localizer] Открой Content Manager Strapi.'); return;
@@ -673,8 +677,15 @@
     const job=await getJob(uid,id);
     if(!job?.phase?.startsWith('pending-'))return job;
     const after=await snapshot(uid,id);
-    if(!matchPending(job,after))throw new Unresolved('Незавершённая '+job.phase+
-      ': автоматическая GET-сверка не подтвердила результат');
+    if(!intact(job.before,after)){
+      const e=new IntegrityViolation('При recovery обнаружено изменение RU '+uid+'/'+id,after);
+      await failedJournal(job,after,e);throw e;
+    }
+    if(!matchPending(job,after)){
+      const e=new Unresolved('Незавершённая '+job.phase+
+        ': GET-сверка не подтвердила результат');
+      await failedJournal(job,after,e);throw e;
+    }
     await verifiedJournal(job,after);
     return job;
   }
@@ -774,7 +785,7 @@
     if(ONLY){
       state.list=state.list.filter(item=>item.id===ONLY);
       if(!state.list.length)throw Error('Category documentId не найден: '+ONLY);
-    }
+    }else if(LIMIT)state.list=state.list.slice(0,LIMIT);
     state.total=state.list.length;
     const source=state.schemas.get(UID);
     const snapshots=new Map(),analyses=new Map(),failures=new Map();
@@ -1217,7 +1228,7 @@
       if(ONLY){
         state.list=state.list.filter(item=>item.id===ONLY);
         if(!state.list.length)throw Error('Пилот: Category documentId не найден: '+ONLY);
-      }
+      }else if(LIMIT)state.list=state.list.slice(0,LIMIT);
       state.total=state.list.length;
       state.phase='Последовательная нормализация Category';render();
       for(const item of state.list){
