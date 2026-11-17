@@ -41,7 +41,8 @@
     console.error('[Category Localizer] Не найден jwtToken'); return;
   }
   const state = {stop:false,done:0,total:0,phase:'init',current:'',get:0,put:0,post:0,
-    retries:0,schemas:new Map(),components:new Map(),list:[],db:null,touched:new Set(),report:{
+    retries:0,schemas:new Map(),components:new Map(),list:[],db:null,touched:new Set(),
+    publishedNestedCountOnly:new Set(),report:{
       tool:'category-localizer',version:3,mode:DRY_RUN?'dry-run':'apply',
       startedAt:new Date().toISOString(),finishedAt:null,
       results:[],operations:[],journals:[],errors:[],snapshots:[],plans:[],summary:null}};
@@ -314,23 +315,35 @@
     const fields=recordFields(s,row),nested={};
     if(uid===UID&&Array.isArray(row.brandZoneBanners)&&row.brandZoneBanners.length){
       const componentUid='sections.brand-zone-banners';
-      nested.brandZoneBanners=await Promise.all(row.brandZoneBanners.map(async (part,i)=>{
-        if(!Number.isSafeInteger(part?.id)||part.id<=0)
-          throw new Blocked('Нет numeric ID brandZoneBanners['+i+']');
-        // Strapi Content Manager's component relation API uses component UID
-        // and component instance numeric ID, not Category documentId.
-        const links=await relations(componentUid,part.id,'products',locale,status);
-        const count=part.products?.count;
-        if(Number.isSafeInteger(count)&&links.length!==count)
-          throw new Blocked('Неполные вложенные relations brandZoneBanners['+i+
-            ']: получено '+links.length+' из '+count);
-        return links;
-      }));
-      if(!Array.isArray(fields.brandZoneBanners)||
-        fields.brandZoneBanners.length!==nested.brandZoneBanners.length)
-        throw new Blocked('Неверный компонент brandZoneBanners в detail');
-      for(let i=0;i<nested.brandZoneBanners.length;i++)
-        fields.brandZoneBanners[i].products=asIds(nested.brandZoneBanners[i]);
+      if(status==='draft'){
+        nested.brandZoneBanners=await Promise.all(row.brandZoneBanners.map(async (part,i)=>{
+          if(!Number.isSafeInteger(part?.id)||part.id<=0)
+            throw new Blocked('Нет numeric ID brandZoneBanners['+i+']');
+          const links=await relations(componentUid,part.id,'products',locale,status);
+          const count=part.products?.count;
+          if(!Number.isSafeInteger(count)||count<0||links.length!==count)
+            throw new Blocked('Неполные вложенные relations brandZoneBanners['+i+
+              ']: получено '+links.length+' из '+count);
+          return links;
+        }));
+        if(!Array.isArray(fields.brandZoneBanners)||
+          fields.brandZoneBanners.length!==nested.brandZoneBanners.length)
+          throw new Blocked('Неверный компонент brandZoneBanners в detail');
+        for(let i=0;i<nested.brandZoneBanners.length;i++)
+          fields.brandZoneBanners[i].products=asIds(nested.brandZoneBanners[i]);
+      }else{
+        // Confirmed live on 2026-11-17: Published component numeric IDs
+        // return 0 from native relations GET even with detail count:3.
+        // Never treat this 0 as a true empty relation; expose count-only proof.
+        for(const [i,part] of row.brandZoneBanners.entries()){
+          const count=part.products?.count;
+          if(!Number.isSafeInteger(part?.id)||part.id<=0||
+            !Number.isSafeInteger(count)||count<0)
+            throw new Blocked('Нет достоверного Published count brandZoneBanners['+i+']');
+          fields.brandZoneBanners[i].products={count};
+        }
+        state.publishedNestedCountOnly.add(keyOf(uid,id));
+      }
     }
     return {row,fields,relations:Object.fromEntries(entries),nested};
   }
@@ -349,8 +362,23 @@
     return withPublished(uid,id,await draftPair(uid,id));
   }
   const relIDs=v=>Object.fromEntries(Object.entries(v?.relations||{}).map(([f,r])=>[f,asIds(r)]));
+  function sameFields(a,b){
+    if(eq(a,b))return true;
+    if(!a||!b||!Array.isArray(a.brandZoneBanners)||
+      !Array.isArray(b.brandZoneBanners))return false;
+    // Only array(documentIds) vs Published {count} uses count comparison.
+    // Two Draft arrays ALWAYS compare their exact documentIds.
+    const normalize=(source,other)=>({...source,
+      brandZoneBanners:source.brandZoneBanners.map((part,i)=>{
+        const p=part?.products,op=other.brandZoneBanners[i]?.products;
+        return Array.isArray(p)&&Number.isSafeInteger(op?.count)?
+          {...part,products:{count:p.length}}:part;
+      })
+    });
+    return eq(normalize(a,b),normalize(b,a));
+  }
   const sameVersion=(a,b)=>a===null&&b===null||!!a&&!!b&&
-    eq(a.fields,b.fields)&&eq(relIDs(a),relIDs(b));
+    sameFields(a.fields,b.fields)&&eq(relIDs(a),relIDs(b));
   const intact=(before,after)=>sameVersion(before.ru.draft,after.ru.draft)&&
     sameVersion(before.ru.published,after.ru.published);
   function identicalDraftTarget(actual,expected){
@@ -558,7 +586,7 @@
     return sameVersion(before[other].draft,after[other].draft)&&
       sameVersion(before[other].published,after[other].published)&&
       sameVersion(before[locale].draft,after[locale].draft)&&
-      eq(after[locale].published.fields,expected.fields)&&
+      sameFields(after[locale].published.fields,expected.fields)&&
       eq(relIDs(after[locale].published),expected.relations);
   }
   function matchPending(job,after){
@@ -1135,7 +1163,9 @@
       state.report.summary={...state.report.summary,total:state.total,...rowsStatus(),get:state.get,
         put:state.put,post:state.post,retries:state.retries,phase:state.phase,
         dependenciesPublished:state.report.operations.filter(x=>
-          x.stage==='dependency-published').length};
+          x.stage==='dependency-published').length,
+        publishedNestedCountOnly:state.publishedNestedCountOnly.size,
+        publishedNestedVerification:'count-only (composition not proven)' };
       stop.disabled=true;
       try{csv.onclick();json.onclick();}catch(e){console.error('[Category Localizer] export',e);}
       state.db?.close();window[RUN_KEY]=false;
