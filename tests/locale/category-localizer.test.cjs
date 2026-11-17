@@ -124,7 +124,9 @@ function createFixture(options={}){
     queueMicrotask(()=>{request.onupgradeneeded?.();queueMicrotask(()=>request.onsuccess?.());});
     return request;
   }};
-  const sandbox={window:{indexedDB},indexedDB,document,
+  const sandbox={window:{indexedDB:options.mode==='dry-run'?undefined:indexedDB,
+    tmCategoryLocalizerApplyOnce:options.mode!=='dry-run'},
+    indexedDB:options.mode==='dry-run'?undefined:indexedDB,document,
     localStorage:{getItem:()=>JSON.stringify('jwt')},location:{pathname:'/admin/content-manager',search:''},
     fetch:async(path,opts={})=>req(opts.method||'GET',path,opts.body?JSON.parse(opts.body):undefined),
     URL:{createObjectURL:blob=>{urls.push(blob);return 'blob:fake';},revokeObjectURL:()=>{}},
@@ -139,6 +141,39 @@ async function runFixture(o={}){
   return f;
 }
 (async()=>{
+  const dry=await runFixture({mode:'dry-run'});
+  assert.equal(dry.counts.PUT,0);
+  assert.equal(dry.counts.POST,0);
+  assert.equal(dry.writes.length,0);
+  assert.equal(dry.db.size,0);
+  assert.equal(dry.logs.at(-1)[1].planned,1,JSON.stringify(dry.logs));
+  assert.equal(dry.logs.at(-1)[1].phase,'completed');
+  assert.equal(dry.urls.length,2);
+  assert.equal(dry.data.get(`${U}|cat1|kk|draft`).row.title,'old');
+  console.log('PASS: default dry-run computes changes with GET only, no IndexedDB writes');
+
+  const dryMissing=await runFixture({mode:'dry-run',missingKK:true});
+  assert.equal(dryMissing.logs.at(-1)[1].createKK,1);
+  assert.equal(dryMissing.writes.length,0);
+  assert.equal(dryMissing.data.has(`${U}|cat1|kk|draft`),false);
+  console.log('PASS: dry-run plans KK creation without creating it');
+
+  const dryLegacy=await runFixture({mode:'dry-run',legacy:true});
+  assert.equal(dryLegacy.logs.at(-1)[1].blocked,1);
+  assert.equal(dryLegacy.writes.length,0);
+  console.log('PASS: dry-run reports legacy relation anomalies');
+
+  const dryBlocked=await runFixture({mode:'dry-run',missingDependency:true,missingKK:true});
+  assert.equal(dryBlocked.logs.at(-1)[1].blocked,1);
+  assert.equal(dryBlocked.writes.length,0);
+  console.log('PASS: dry-run reports unavailable KK dependencies');
+
+  const dryDep=await runFixture({mode:'dry-run',depUnpublished:true});
+  assert.equal(dryDep.logs.at(-1)[1].planned,1);
+  assert.equal(dryDep.logs.at(-1)[1].dependenciesToPublish,1);
+  assert.equal(dryDep.writes.length,0);
+  console.log('PASS: dry-run plans dependency Publish without POST');
+
   const a=await runFixture();
   assert.deepEqual(a.logs.filter(x=>x[0]==='[Category Localizer] Итог').map(x=>JSON.stringify(x[1])).length,1);
   assert.equal(a.logs.at(-1)[1].success,1,JSON.stringify(a.logs.at(-1)));
