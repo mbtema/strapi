@@ -85,7 +85,8 @@
   }
   const csvFields=['documentId','name','status','stage','changes','reason','attempts',
     'createKK','fieldsChanged','relationsConnect','relationsDisconnect',
-    'dependenciesToPublish','publishRU','publishKK','pendingLinks','pendingFields'];
+    'dependenciesToPublish','publishRU','publishKK','pendingLinks',
+    'pendingFields','pendingPublications'];
   const q=x=>{let s=Array.isArray(x)?x.join(' | '):String(x??'');
     if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
   function download(name,content,type){
@@ -849,10 +850,17 @@
         dependencyPublicationCache.set(key,null);
         return null;
       }
-      if(!await detail(uid,id,'ru','published'))
-        return {uid,id,reason:'RU Published отсутствует'};
+      if(!await detail(uid,id,'ru','published')){
+        const issue={uid,id,reason:'RU Published отсутствует'};
+        dependencyPublicationCache.set(key,issue);
+        return issue;
+      }
       const before=await snapshot(uid,id);
-      if(!before.kk.draft)return {uid,id,reason:'Нет KK Draft'};
+      if(!before.kk.draft){
+        const issue={uid,id,reason:'Нет KK Draft'};
+        dependencyPublicationCache.set(key,issue);
+        return issue;
+      }
       if(before.kk.published){
         dependencyPublicationCache.set(key,null);
         return null;
@@ -864,7 +872,9 @@
       return null;
     }catch(e){
       // An ambiguous write remains in IndexedDB. Never silently retry it.
-      return {uid,id,reason:clean(e.message),status:safeStatus(e)};
+      const issue={uid,id,reason:clean(e.message),status:safeStatus(e)};
+      dependencyPublicationCache.set(key,issue);
+      return issue;
     }
   }
   function needsResume(job){
@@ -1086,7 +1096,9 @@
             pendingDetails:pendingLinks,
             pendingFields:pendingFields.map(x=>x.field+' ('+x.reason+')'),
             pendingFieldDetails:pendingFields,
-            pendingPublications:outcome.pendingPublications||[],
+            pendingPublications:(outcome.pendingPublications||[]).map(x=>
+              x.uid+'/'+x.id+' ('+x.reason+')'),
+            pendingPublicationDetails:outcome.pendingPublications||[],
             createKK:(outcome.changes||[]).includes('createKK'),
             fieldsChanged:(outcome.changes||[]).filter(x=>x!=='createKK'&&
               !x.startsWith('relation:')),
@@ -1097,7 +1109,7 @@
           const status=safeStatus(e);
           resultRow={documentId:item.id,name:item.name,status,stage:'apply',
             reason:clean(e.message),changes:[],attempts:1,
-            pendingLinks:[],pendingFields:[]};
+            pendingLinks:[],pendingFields:[],pendingPublications:[]};
           state.report.errors.push({documentId:item.id,status,reason:clean(e.message)});
           console.warn('[Category Localizer] '+item.id+' '+status+': '+clean(e.message));
         }
@@ -1121,7 +1133,9 @@
       }
       state.report.finishedAt=now();
       state.report.summary={...state.report.summary,total:state.total,...rowsStatus(),get:state.get,
-        put:state.put,post:state.post,retries:state.retries,phase:state.phase};
+        put:state.put,post:state.post,retries:state.retries,phase:state.phase,
+        dependenciesPublished:state.report.operations.filter(x=>
+          x.stage==='dependency-published').length};
       stop.disabled=true;
       try{csv.onclick();json.onclick();}catch(e){console.error('[Category Localizer] export',e);}
       state.db?.close();window[RUN_KEY]=false;
