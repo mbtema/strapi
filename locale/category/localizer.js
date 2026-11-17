@@ -776,6 +776,22 @@
         stage:'checked',changes:[],pendingLinks:[],pendingFields:fields.skippedFields,
         reason:fields.skippedFields.length?'Есть неподдержанные вложенные поля':''};
     }
+    // Fast path: no mutable operation exists while every missing connect
+    // still lacks KK Draft. Avoid loading both Published versions for this case.
+    if(!createKK&&!needsResume(previous)&&!Object.keys(fields.payload).length&&
+      Object.values(rel.changes).every(x=>!x.remove.length)){
+      const deferred=[];let available=false;
+      for(const [field,delta]of Object.entries(rel.changes))
+        for(const targetId of delta.add){
+          const target=await targetDraftId(delta.targetUid,targetId);
+          if(target.id){available=true;break;}
+          deferred.push({field,targetUid:delta.targetUid,documentId:targetId,
+            reason:target.reason||'Нет KK Draft'});
+        }
+      if(!available)return {status:'partial',stage:'checked',changes:[],
+        pendingLinks:deferred,pendingFields:fields.skippedFields,
+        reason:'Связи ожидают создания KK Draft в следующих проходах'};
+    }
     // Full prewrite backup includes all four versions and exact native relations.
     let before=await withPublished(uid,id,pair);
     let didSeed=false,didSave=false;
@@ -798,6 +814,7 @@
       .map(([field,ids])=>[field,[...ids]]));
     const pendingLinks=[],pendingFields=fields.skippedFields;
     const touchedRelations=[];
+    let addedCount=0,removedCount=0;
     for(const [field,delta]of Object.entries(rel.changes)){
       const connects=[],disconnects=[],set=new Set(wanted[field]||[]);
       for(const targetId of delta.add){
@@ -808,6 +825,7 @@
           continue;
         }
         connects.push({id:target.id,documentId:targetId,locale:target.locale});
+        addedCount++;
         set.add(targetId);
       }
       for(const targetId of delta.remove){
@@ -815,6 +833,7 @@
         if(!Number.isSafeInteger(old?.id)||old.id<=0)
           throw new Blocked('Нельзя безопасно disconnect '+field+'/'+targetId);
         disconnects.push({id:old.id,documentId:targetId,locale:old.locale||'kk'});
+        removedCount++;
         set.delete(targetId);
       }
       wanted[field]=[...set].sort();
@@ -850,7 +869,8 @@
     const incomplete=!!(pendingLinks.length||pendingFields.length);
     if(!didSeed&&!didSave&&!needsResume(previous)){
       return {status:incomplete?'partial':'already_ok',stage:'checked',
-        changes,pendingLinks,pendingFields,reason:incomplete?'Остались недоступные поля/связи':''};
+        changes,pendingLinks,pendingFields,addedCount,removedCount,
+        reason:incomplete?'Остались недоступные поля/связи':''};
     }
     // A verified publish stage is resumable without repeating already confirmed POST.
     const alreadyVerified=verifiedPhaseStillCurrent(previous,before);
@@ -864,7 +884,8 @@
       throw new Unresolved('Published не совпадают с Draft после публикации');
     await completeJob(uid,id,before);
     return {status:incomplete?'partial_published':'success',stage:'published',
-      changes,pendingLinks,pendingFields,reason:incomplete?'Частичная нормализация; повторить проход':''};
+      changes,pendingLinks,pendingFields,addedCount,removedCount,
+      reason:incomplete?'Частичная нормализация; повторить проход':''};
   }
   async function run(){
     try{
@@ -887,10 +908,14 @@
             changes:outcome.changes||[],attempts:1,
             pendingLinks:pendingLinks.map(x=>
               x.field+':'+x.targetUid+'/'+x.documentId+' ('+x.reason+')'),
-            pendingDetails:pendingLinks,pendingFields,
+            pendingDetails:pendingLinks,
+            pendingFields:pendingFields.map(x=>x.field+' ('+x.reason+')'),
+            pendingFieldDetails:pendingFields,
             createKK:(outcome.changes||[]).includes('createKK'),
-            fieldsChanged:(outcome.changes||[]).filter(x=>!x.startsWith('relation:')),
-            relationsConnect:null,relationsDisconnect:null,
+            fieldsChanged:(outcome.changes||[]).filter(x=>x!=='createKK'&&
+              !x.startsWith('relation:')),
+            relationsConnect:outcome.addedCount||0,
+            relationsDisconnect:outcome.removedCount||0,
             publishRU:outcome.stage==='published',publishKK:outcome.stage==='published'};
         }catch(e){
           const status=safeStatus(e);
