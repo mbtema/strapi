@@ -11,6 +11,7 @@
   const SCALAR = new Set(['string','text','richtext','email','enumeration','json','blocks',
     'integer','biginteger','float','decimal','boolean','date','time','datetime','uid']);
   const PAGE_SIZE = 100;
+  const MAX_POPULATE_FIELDS = 19;
   const MAX_PARALLEL_GET = 12; // reads only; all writes remain strictly sequential
   let activeGets=0;
   const queuedGets=[];
@@ -41,7 +42,8 @@
     console.error('[Category Localizer] Не найден jwtToken'); return;
   }
   const state = {stop:false,done:0,total:0,phase:'init',current:'',get:0,put:0,post:0,
-    retries:0,schemas:new Map(),components:new Map(),list:[],db:null,touched:new Set(),
+    retries:0,populateGET:0,populateHits:0,nativeFallbacks:0,
+    schemas:new Map(),components:new Map(),list:[],db:null,touched:new Set(),
     publishedNestedCountOnly:new Set(),report:{
       tool:'category-localizer',version:3,mode:DRY_RUN?'dry-run':'apply',
       startedAt:new Date().toISOString(),finishedAt:null,
@@ -317,12 +319,69 @@
       throw Error('Потеря/дубли relation '+field+'/'+locale+'/'+status);
     return out.sort((a,b)=>a.documentId.localeCompare(b.documentId));
   }
+  function populatedRelation(value,original,locale){
+    const count=Number.isSafeInteger(original?.count)&&original.count>=0?
+      original.count:null;
+    if(count===null)return null;
+    let candidates;
+    if(Array.isArray(value))candidates=value;
+    else if(value===null&&count===0)candidates=[];
+    else if(value&&typeof value==='object'&&value.documentId)candidates=[value];
+    else return null;
+    if(candidates.length!==count)return null;
+    const result=[];
+    for(const row of candidates){
+      if(typeof row?.documentId!=='string'||!row.documentId||
+        !Number.isSafeInteger(row.id)||row.id<=0||
+        (row.locale!=null&&row.locale!==locale))return null;
+      result.push({id:row.id,documentId:row.documentId,locale:row.locale||locale});
+    }
+    if(uniq(result.map(x=>x.documentId)).length!==result.length)return null;
+    return result.sort((a,b)=>a.documentId.localeCompare(b.documentId));
+  }
+  // Product Localizer's proven scalable approach: one populated GET per 19 fields,
+  // then exact native GET for every incomplete/unsupported field.
+  async function populatedRelations(uid,id,locale,status,row,schema){
+    const output={},names=relFields(schema).map(([f])=>f);
+    for(let i=0;i<names.length;i+=MAX_POPULATE_FIELDS){
+      const group=names.slice(i,i+MAX_POPULATE_FIELDS);
+      const q=new URLSearchParams({locale,status});
+      for(const f of group)q.set('populate['+f+'][fields][0]','documentId');
+      let expanded=null;
+      try{
+        state.populateGET++;
+        const data=await get('/content-manager/collection-types/'+uid+'/'+
+          encodeURIComponent(id)+'?'+q);
+        const v=data?.data;
+        if(v?.documentId!==id||v.locale!==locale||
+          (status==='published'&&!v.publishedAt))
+          throw new Error('Неоднозначный populated detail '+uid+'/'+id+'/'+locale);
+        expanded=v;
+      }catch(e){
+        if(e.httpStatus===401||e.httpStatus===403)throw e;
+        // Do not infer from a failed populate: every field uses the native API.
+        console.warn('[Category Localizer] Populate fallback '+uid+'/'+id+' '+clean(e.message));
+      }
+      const missing=[];
+      for(const field of group){
+        const candidate=expanded&&populatedRelation(expanded[field],row[field],locale);
+        if(candidate!==null){output[field]=candidate;state.populateHits++;}
+        else missing.push(field);
+      }
+      if(missing.length){
+        state.nativeFallbacks+=missing.length;
+        const rows=await Promise.all(missing.map(async f=>
+          [f,await relations(uid,id,f,locale,status)]));
+        for(const [f,r]of rows)output[f]=r;
+      }
+    }
+    return output;
+  }
   async function version(uid,id,locale,status){
     const row=await detail(uid,id,locale,status);if(!row)return null;
     const s=state.schemas.get(uid);
     if(!s?.attributes)throw new Blocked('Нет схемы зависимости '+uid);
-    const entries=await Promise.all(relFields(s).map(async ([f])=>
-      [f,await relations(uid,id,f,locale,status)]));
+    const root=await populatedRelations(uid,id,locale,status,row,s);
     const fields=recordFields(s,row),nested={};
     if(uid===UID&&Array.isArray(row.brandZoneBanners)&&row.brandZoneBanners.length){
       const componentUid='sections.brand-zone-banners';
@@ -356,7 +415,7 @@
         state.publishedNestedCountOnly.add(keyOf(uid,id));
       }
     }
-    return {row,fields,relations:Object.fromEntries(entries),nested};
+    return {row,fields,relations:root,nested};
   }
   async function draftPair(uid,id){
     const [ru,kk]=await Promise.all([
@@ -1221,6 +1280,8 @@
       state.report.finishedAt=now();
       state.report.summary={...state.report.summary,total:state.total,...rowsStatus(),get:state.get,
         put:state.put,post:state.post,retries:state.retries,phase:state.phase,
+        populateGET:state.populateGET,populateHits:state.populateHits,
+        nativeFallbacks:state.nativeFallbacks,
         dependenciesPublished:state.report.operations.filter(x=>
           x.stage==='dependency-published').length,
         publishedNestedCountOnly:state.publishedNestedCountOnly.size,
