@@ -18,10 +18,13 @@ const DRY_RUN = args.includes('--dry-run');
 if(APPLY && DRY_RUN)throw Error('Выбери один режим: --apply либо --dry-run');
 const TEST = args.includes('--self-test');
 const NEW_RUN = args.includes('--new-run');
+const RECOVER = args.includes('--recover-pending');
+if(RECOVER && (NEW_RUN || args.some(x=>x.startsWith('--probe='))))
+  throw Error('--recover-pending несовместим с --new-run/--probe');
 const ALLOW_LEGACY = args.includes('--allow-legacy-unresolved');
 // Безопасный первый production-проход: только существующие KK Product,
 // только опубликованные KK targets. Не создаём KK и не публикуем справочники.
-const EXISTING_ONLY = args.includes('--existing-only');
+const EXISTING_ONLY = RECOVER || args.includes('--existing-only');
 const CONTINUE_ON_ERROR = args.includes('--continue-on-error');
 const num = (key, fallback, min, max) => {
   const a = args.filter(x => x.startsWith('--' + key + '='));
@@ -48,9 +51,9 @@ const PAGE_SIZE = num('page-size', 100, 1, 100);
 const RETRIES = num('get-retries', 3, 1, 6);
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const MODE = APPLY ? 'apply' : 'audit';
-const PREFIX = 'product-kk-' + MODE;
+const PREFIX = 'product-kk-' + (RECOVER?'recovery-'+MODE+'-'+Date.now()+'-'+pid:MODE);
 if (args.some(x => !['--apply','--dry-run','--self-test','--new-run',
-  '--allow-legacy-unresolved','--existing-only','--continue-on-error'].includes(x) &&
+  '--allow-legacy-unresolved','--existing-only','--continue-on-error','--recover-pending'].includes(x) &&
   !/^--(workers|requests|limit|page-size|get-retries)=\d+$/.test(x) &&
   !/^--(only|id|probe)=[a-z0-9]{16,40}$/i.test(x))) {
   throw Error('Неизвестный параметр запуска');
@@ -145,7 +148,8 @@ const csvFile = join(SCRIPT_DIR,PREFIX+'-report.csv');
 const progressFile = join(SCRIPT_DIR,PREFIX+'-progress.jsonl');
 const summaryFile = join(SCRIPT_DIR,PREFIX+'-summary.json');
 const schemaFile = join(SCRIPT_DIR,PREFIX+'-schema.sha256');
-const lockFile = join(SCRIPT_DIR,PREFIX+'.lock');
+// Recovery и обычный apply используют один замок.
+const lockFile = join(SCRIPT_DIR,(RECOVER?'product-kk-apply':PREFIX)+'.lock');
 const backupDir = join(SCRIPT_DIR,'product-kk-backups');
 let seen = new Set();
 let runStartedAt=0, runProcessed=0, runKnown=0, runTotal=0;
@@ -274,8 +278,10 @@ async function http(method,path,body=null,allow404=false,authToken=token) {
     if(response && (method!=='GET' || tryNo>=max || ![408,429,500,502,503,504].includes(response.status))) {
       if(method==='GET' && CONTINUE_ON_ERROR && [408,429,500,502,503,504].includes(response.status))
         return retryRead(path,allow404,authToken);
-      const msg=(await response.text().catch(()=>'' )).slice(0,220);
-      throw Error(method+' HTTP '+response.status+' '+url.pathname+' '+msg);
+      const msg=(await response.text().catch(()=>'' )).slice(0,16000);
+      const error=Error(method+' HTTP '+response.status+' '+url.pathname+' '+msg.slice(0,220));
+      error.http={method,status:response.status,path:url.pathname,body:msg};
+      throw error;
     }
     counters.retries++;
     if (response?.status===429 || response?.status===503) gate.limit=Math.max(2,Math.floor(gate.limit*0.75));
@@ -901,10 +907,10 @@ async function one(id) {
     // Явный режим продолжения: проблемный Product остаётся в карантине с backup.
     // Ошибки файловой системы/авторизации не превращаем в успешное завершение.
     if(e.fatal && !(CONTINUE_ON_ERROR && e.integrity && file)) {fatal=e;stopped=true;}
-    if(file && e.after) {
+    if(file) {
       try {
         const saved=JSON.parse(await readFile(file,'utf8'));
-        saved.failure={at:new Date().toISOString(),reason:clean(e.message),after:e.after};
+        saved.failure={at:new Date().toISOString(),reason:clean(e.message),...(e.after?{after:e.after}:{}),...(e.http?{http:e.http}:{})};
         await safeWrite(file,JSON.stringify(saved,null,2));
       } catch(storageError) {fatal=storageError;stopped=true;throw storageError;}
     }
@@ -916,6 +922,159 @@ async function one(id) {
     return report(id,'error_pending_backup','',note,'backup:'+id+'.json');
   }
 }
+
+// Сверка recovery намеренно не учитывает numeric relation IDs и timestamps,
+// но учитывает key, переводы, прочие поля и состав связей всех четырёх версий.
+function recoverySame(a,b) {
+  return sameVersions(a,b) && a?.data?.key===b?.data?.key;
+}
+function recoveryDecision(saved,live) {
+  const b=saved.before;
+  if(!b?.ru || !b.kk || !b.published || !Array.isArray(saved.plan?.changes) ||
+    !['save-kk','publish-kk','preflight'].includes(saved.phase))return 'unsupported_backup';
+  if(!recoverySame(b.ru,live.ru)||!recoverySame(b.ruPublished,live.ruPublished))return 'ru_changed';
+  if(!live.kk||!live.pub||b.kk.data.key!==live.kk.data.key||
+    b.published.data.key!==live.pub.data.key)return 'kk_key_or_version_changed';
+  const expected=expectedDraft({ru:b.ru,kk:b.kk},saved.plan.changes);
+  const matches=v=>eq(v.fields,expected.fields)&&relEqual(v,expected);
+  if(matches(live.kk)&&matches(live.pub)&&live.kk.data.key===live.pub.data.key)return 'complete';
+  if(!recoverySame(b.published,live.pub))return 'published_changed';
+  if(matches(live.kk))return 'publish';
+  if(recoverySame(b.kk,live.kk))return 'save';
+  return 'partial_or_external_change';
+}
+async function recoveryVersions(id) {
+  const [ru,ruPublished,kk,pub]=await Promise.all([
+    version(id,'ru'),version(id,'ru','published'),version(id,'kk'),version(id,'kk','published')]);
+  return {ru,ruPublished,kk,pub};
+}
+async function recoverPending(signature) {
+  const oldHash=await optionalText(join(SCRIPT_DIR,'product-kk-apply-schema.sha256'));
+  if(oldHash?.trim()!==signature)throw Error('Recovery требует исходный apply-schema.sha256 и неизменную схему');
+  const names=(await readdir(backupDir)).sort();
+  const backups=new Map();
+  for(const name of names) {
+    if(!/^[a-z0-9]{16,40}\.json$/i.test(name))throw Error('Неизвестный pending backup: '+name);
+    const saved=JSON.parse(await readFile(join(backupDir,name),'utf8'));
+    if(name!==saved.documentId+'.json')throw Error('ID backup не совпадает с именем: '+name);
+    backups.set(saved.documentId,saved);
+  }
+  // Сопоставляем исходный журнал, но НЕ используем его seen: ошибки уже в checkpoint.
+  const journal=await optionalText(join(SCRIPT_DIR,'product-kk-apply-progress.jsonl'));
+  if(journal && !journal.endsWith('\n'))throw Error('Неполный исходный apply checkpoint');
+  const previous=new Map((journal||'').split('\n').filter(Boolean).map(line=>{
+    const r=JSON.parse(line);return [r.id,r];
+  }));
+  const keyOwners=new Map();
+  for(const [id,b] of backups) {
+    const key=b.before?.kk?.data?.key;
+    if(key)keyOwners.set(key,[...(keyOwners.get(key)||[]),id]);
+  }
+  if(ONLY_ID&&!backups.has(ONLY_ID))throw Error('Для --only нет pending backup');
+  let selected=ONLY_ID?[ONLY_ID]:[...backups.keys()];
+  if(LIMIT)selected=selected.slice(0,LIMIT);
+  runTotal=counters.total=selected.length;runStartedAt=Date.now();
+  const evidenceDir=join(SCRIPT_DIR,PREFIX+'-evidence');
+  await mkdir(evidenceDir,{recursive:true});
+  const archiveDir=join(SCRIPT_DIR,'product-kk-recovered',PREFIX);
+  // Последовательно: recovery ограничен небольшим списком ошибок, без гонок справочников.
+  for(const id of selected) {
+    if(stopped)break;
+    const saved=backups.get(id),file=join(backupDir,id+'.json');
+    const evidence={documentId:id,at:new Date().toISOString(),server:URL_ROOT,
+      previous:previous.get(id)||null,backup:saved};
+    try {
+      const live=await recoveryVersions(id);
+      evidence.live=live;
+      let decision=recoveryDecision(saved,live);
+      const key=live.kk?.data?.key;
+      const duplicate=(keyOwners.get(key)||[]).filter(x=>x!==id);
+      // Успешную публикацию можно подтвердить даже после прежнего ответа с ошибкой.
+      if(decision!=='complete' && (duplicate.length ||
+        /key.*unique|unique.*key/i.test(previous.get(id)?.reason||''))) {
+        decision='key_conflict';evidence.conflictingProducts=duplicate;
+      }
+      evidence.decision=decision;
+      await safeWrite(join(evidenceDir,id+'.json'),JSON.stringify(evidence,null,2));
+      if(!['complete','save','publish'].includes(decision)) {
+        await report(id,'blocked_recovery_'+decision,'',decision,duplicate.join('|'));continue;
+      }
+      const draft=plan(live.ru,live.kk,live.pub);
+      if(draft.blockers.length || ids(live.ru,'category').length || LEGACY_UNRESOLVED.has(id)) {
+        await report(id,'blocked_recovery_plan','',draft.blockers.join('|')||'legacy category');continue;
+      }
+      // Новая версия алгоритма не должна расширять старую подтверждённую цель.
+      const originalExpected=expectedDraft({ru:saved.before.ru,kk:saved.before.kk},saved.plan.changes);
+      const newExpected=expectedDraft(live,draft.changes);
+      if(!eq(originalExpected.fields,newExpected.fields)||!relEqual(originalExpected,newExpected)) {
+        await report(id,'blocked_recovery_plan_changed');continue;
+      }
+      if(!APPLY) {
+        await report(id,decision==='complete'?'already_ok':'would_update',decision,
+          'Только сверка; pending backup сохранён');continue;
+      }
+      let actual=live;
+      if(decision!=='complete') {
+        targetCache.clear();
+        const targets=await dependencyCheck(live.ru);
+        if(targets.some(x=>!x.ok||x.requiresPublish)) {
+          await report(id,'blocked_recovery_target','','KK target отсутствует или не опубликован');continue;
+        }
+        for(const t of targets) {
+          const d=await detail(t.uid,t.id,'kk','draft');
+          if(!d||!Number.isSafeInteger(d.id))throw Error('Нет numeric KK target '+t.id);
+          targetCache.set(t.uid+'|'+t.id,{ok:true,numericId:d.id});
+        }
+        await recheckBeforeWrite(id,live);
+        const again=await recoveryVersions(id);
+        if(!Object.keys(live).every(k=>recoverySame(live[k],again[k])))throw Error('Данные изменились перед recovery');
+        if(decision==='save' && draft.changes.length) {
+          const native=await nativeWriteRelationPreflight(id,actual,draft.changes);
+          const payload=payloadForSave(native,draft.changes);
+          // Оригинальный backup не заменяем. Запрос и его исход сохраняем отдельно до PUT.
+          evidence.save={at:new Date().toISOString(),payload};
+          await safeWrite(join(evidenceDir,id+'.json'),JSON.stringify(evidence,null,2));
+          await http('PUT','/content-manager/collection-types/'+UID+'/'+id+'?locale=kk',payload);
+          actual=await postflight(id,actual,newExpected,'save');
+        }
+        if(!eq(actual.kk.fields,actual.pub.fields)||!relEqual(actual.kk,actual.pub)) {
+          await recheckBeforeWrite(id,actual);
+          const beforePublish=await recoveryVersions(id);
+          if(!Object.keys(actual).every(k=>recoverySame(actual[k],beforePublish[k])))
+            throw Error('Данные изменились перед recovery Publish');
+          const payload=publishPayload(actual.kk);
+          evidence.publish={at:new Date().toISOString(),payload};
+          await safeWrite(join(evidenceDir,id+'.json'),JSON.stringify(evidence,null,2));
+          await http('POST','/content-manager/collection-types/'+UID+'/'+id+'/actions/publish?locale=kk',payload);
+          actual=await postflight(id,actual,actual.kk,'publish');
+        }
+      }
+      const final=await recoveryVersions(id);
+      if(recoveryDecision(saved,final)!=='complete')throw Error('Итоговая сверка recovery не пройдена');
+      evidence.after=final;evidence.resolved=true;
+      await safeWrite(join(evidenceDir,id+'.json'),JSON.stringify(evidence,null,2));
+      await mkdir(archiveDir,{recursive:true});
+      await rename(file,join(archiveDir,id+'.json'));
+      await report(id,decision==='complete'?'already_ok':'normalized',decision,'Backup перенесён в product-kk-recovered');
+    } catch(e) {
+      evidence.error=clean(e.message||e);if(e.after)evidence.after=e.after;
+      if(e.http)evidence.http=e.http;
+      await safeWrite(join(evidenceDir,id+'.json'),JSON.stringify(evidence,null,2));
+      if(e.fatal && !(CONTINUE_ON_ERROR && e.integrity)) {fatal=e;stopped=true;}
+      await report(id,'error_pending_backup','',evidence.error,'Исходный backup сохранён');
+    }
+  }
+  await finishWrite;
+  const pending=(await readdir(backupDir)).length;
+  const successful=!stopped&&!counters.errors&&!counters.blocked&&(!APPLY||pending===0);
+  await safeWrite(summaryFile,JSON.stringify({at:new Date().toISOString(),recovery:true,
+    mode:MODE,completed:!stopped,successful,pendingBackups:pending,counters,
+    unfinished:selected.length-counters.scanned,fatal:fatal?.message||null},null,2));
+  log('Recovery завершён. CSV:',csvFile,'summary:',summaryFile,'pending:',pending);
+  if(fatal)throw fatal;
+  if(!successful)process.exitCode=2;
+}
+
 function selfTest() {
   const a={type:'boolean'},m={type:'media'};
   if(!eq(canonical({b:2,a:1}),{a:1,b:2}))throw Error('canonical');
@@ -1102,6 +1261,7 @@ async function main() {
     const oldHash=await readFile(signaturePath,'utf8').catch(()=>null);
     if(oldHash && oldHash!==signature)throw Error('Схема изменилась после checkpoint; начни новый state dir');
     if(!oldHash)await safeWrite(signaturePath,signature);
+    if(RECOVER) {await recoverPending(signature);return;}
     const productIds=ONLY_ID?[ONLY_ID]:await allIds();
     const selected=LIMIT?productIds.slice(0,LIMIT):productIds;
     counters.total=selected.length;
