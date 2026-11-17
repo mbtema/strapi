@@ -187,6 +187,13 @@
     throw failure;
   }
   async function verifiedJournal(job,after){
+    if(job.failure){
+      // Reconciliation proved the result from GET; retain the former reason,
+      // but do not leave a resolved failure marked as active.
+      job.recoveries=[...(job.recoveries||[]),{
+        at:now(),stage:job.phase.slice(8),reason:job.failure.reason}];
+      delete job.failure;
+    }
     job.history.push({stage:job.phase.slice(8),at:now(),before:job.before,
       after,expected:job.expected});
     job.phase='verified-'+job.phase.slice(8);
