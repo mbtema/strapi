@@ -652,6 +652,10 @@
   async function dryRun(){
     await schemas();
     state.list=await allCategoryIds();
+    if(ONLY){
+      state.list=state.list.filter(item=>item.id===ONLY);
+      if(!state.list.length)throw Error('Category documentId не найден: '+ONLY);
+    }
     state.total=state.list.length;
     const source=state.schemas.get(UID);
     const snapshots=new Map(),analyses=new Map(),failures=new Map();
@@ -957,6 +961,9 @@
     }
     fields=planFields(s,before.ru.draft,before.kk.draft,true);
     rel=relationPlan(s,before.ru.draft,before.kk.draft);
+    if(fields.skippedFields.some(x=>x.field==='brandZoneBanners'))
+      throw new Blocked('Нельзя подтвердить brandZoneBanners: '+
+        fields.skippedFields.find(x=>x.field==='brandZoneBanners').reason);
     const nestedPlan=await bannerPlan(before.ru.draft,before.kk.draft,
       fields.expected.brandZoneBanners||[]);
     fields.expected.brandZoneBanners=nestedPlan.wanted;
