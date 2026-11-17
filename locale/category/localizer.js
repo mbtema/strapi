@@ -102,7 +102,11 @@
     'application/json;charset=utf-8');
   const stopCheck=()=>{if(state.stop)throw Object.assign(Error('Остановка пользователем'),{stop:true});};
   class Blocked extends Error {constructor(message){super(message);this.blocked=true;}}
-  class Unresolved extends Error {constructor(message){super(message);this.unresolved=true;}}
+  // Unknown outcome is a global stop: never continue bulk writes after one ambiguous mutation.
+  class Unresolved extends Error {constructor(message){super(message);this.unresolved=true;this.fatal=true;}}
+  class IntegrityViolation extends Error {
+    constructor(message,after){super(message);this.integrity=true;this.fatal=true;this.after=after;}
+  }
 
   // Persistent store: a completed stage is never inferred from an HTTP success alone.
   async function openDB(){
@@ -132,6 +136,13 @@
       history:prior?.history||[],phase:'pending-'+stage,at:now(),before,expected,
       lastVerified:prior?.lastVerified||null,...extra};
     await putJob(job);state.touched.add(job.key);return job;
+  }
+  async function failedJournal(job,after,error){
+    job.failure={at:now(),reason:clean(error.message||error),
+      integrity:error.integrity===true,after:after||null};
+    await putJob(job);state.touched.add(job.key);
+    state.report.operations.push({key:job.key,stage:job.phase,verified:false,
+      at:now(),integrity:error.integrity===true,reason:clean(error.message||error)});
   }
   async function verifiedJournal(job,after){
     job.history.push({stage:job.phase.slice(8),at:now(),before:job.before,
@@ -608,16 +619,36 @@
     await verifiedJournal(job,after);
     return job;
   }
+  function matchingBaseline(before,after){
+    return ['ru','kk'].every(locale=>
+      ['draft','published'].every(status=>
+        sameVersion(before?.[locale]?.[status],after?.[locale]?.[status])));
+  }
   async function checkedWrite(uid,id,stage,before,expected,method,path,payload,verify){
-    const pending=await writeJournal(uid,id,stage,before,expected,{method,path});
+    // Four full versions, including ALL root relations and nested Draft links.
+    // Any change since preparation invalidates the write, even in a single-user CMS.
+    const fresh=await snapshot(uid,id);
+    if(!matchingBaseline(before,fresh))
+      throw new Blocked('Данные изменились между snapshot и '+stage+
+        '. Запись пропущена; нужен новый проход');
+    const pending=await writeJournal(uid,id,stage,fresh,expected,{method,path});
     let error=null;
     try{await request(method,path,payload);}catch(e){error=e;}
     let after=null;
     try{after=await snapshot(uid,id);}catch(e){error ||= e;}
-    if(!after||!verify(before,after,expected)){
-      state.report.operations.push({key:pending.key,stage,verified:false,at:now(),
-        error:clean(error||'postflight mismatch')});
-      throw new Unresolved(stage+': '+clean(error||'проверка после записи не пройдена'));
+    // Strapi can mutate RU during a KK save/publish. Stop the WHOLE batch immediately,
+    // preserve before + after snapshots in IndexedDB; do not blindly overwrite RU.
+    if(after&&!intact(fresh,after)){
+      const failure=new IntegrityViolation(stage+
+        ': нарушение целостности RU Draft/Published после записи',after);
+      await failedJournal(pending,after,failure);
+      throw failure;
+    }
+    if(!after||!verify(fresh,after,expected)){
+      const failure=new Unresolved(stage+': '+
+        clean(error||'проверка после записи не пройдена'));
+      await failedJournal(pending,after,failure);
+      throw failure;
     }
     // A failed HTTP response is ambiguous. Confirmed postflight is authoritative.
     await verifiedJournal(pending,after);
@@ -899,7 +930,8 @@
       state.report.operations.push({key,stage:'dependency-published',verified:true,at:now()});
       return null;
     }catch(e){
-      // An ambiguous write remains in IndexedDB. Never silently retry it.
+      // An ambiguous or integrity-breaking write must stop ALL further work.
+      if(e.fatal||e.unresolved||e.integrity)throw e;
       const issue={uid,id,reason:clean(e.message),status:safeStatus(e)};
       dependencyPublicationCache.set(key,issue);
       return issue;
@@ -1135,6 +1167,11 @@
             publishRU:outcome.stage==='published',publishKK:outcome.stage==='published'};
         }catch(e){
           const status=safeStatus(e);
+          if(e.fatal||e.integrity||e.unresolved){
+            state.stop=true;
+            state.phase=e.integrity?'halted_integrity':'halted_unresolved';
+            console.error('[Category Localizer] ОСТАНОВКА ВСЕХ ЗАПИСЕЙ: '+clean(e.message),e);
+          }
           resultRow={documentId:item.id,name:item.name,status,stage:'apply',
             reason:clean(e.message),changes:[],attempts:1,
             pendingLinks:[],pendingFields:[],pendingPublications:[]};
@@ -1144,7 +1181,8 @@
         state.report.results.push(resultRow);
         state.done++;render(item.name+': '+resultRow.status);
       }
-      state.phase=state.stop?'stopped':'completed';
+      if(!state.stop)state.phase='completed';
+      else if(!state.phase.startsWith('halted_'))state.phase='stopped';
     }catch(e){
       state.phase='failed';state.report.errors.push(clean(e.message));
       console.error('[Category Localizer]',e);
