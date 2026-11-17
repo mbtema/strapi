@@ -856,79 +856,197 @@
     state.phase=state.stop?'stopped':'completed';
   }
 
-  // Categories are seeded before relations to permit mutual Category references.
+
+  // Apply uses the list of RU IDs only. All data is read just-in-time per Category.
+  // Missing KK targets are postponed for the next MANUAL run, never recursively seeded.
+  const targetIdCache=new Map();
+  async function targetDraftId(uid,id){
+    const s=state.schemas.get(uid);
+    if(!s?.attributes)throw new Blocked('Неизвестная схема target '+uid);
+    const locale=s.pluginOptions?.i18n?.localized===true?'kk':'ru';
+    const key=uid+'|'+id+'|'+locale;
+    if(targetIdCache.has(key))return {id:targetIdCache.get(key),locale};
+    const row=await detail(uid,id,locale,'draft');
+    if(!row)return {id:null,locale,reason:'Нет '+locale.toUpperCase()+' Draft'};
+    if(!Number.isSafeInteger(row.id)||row.id<=0)
+      throw new Blocked('Неверный numeric target ID '+key);
+    targetIdCache.set(key,row.id);
+    return {id:row.id,locale};
+  }
+  function needsResume(job){
+    return !!job&&['verified-seed','verified-save','verified-publish-ru',
+      'verified-publish-kk'].includes(job.phase);
+  }
+  function verifiedPhaseStillCurrent(job,snap){
+    return !!job?.lastVerified&&['ru','kk'].every(locale=>
+      ['draft','published'].every(status=>
+        sameVersion(snap[locale][status],job.lastVerified[locale][status])));
+  }
+  function confirmPublishable(uid,snap){
+    // Do not send populated, non-root component relations inside a Publish payload
+    // until their Strapi write semantics have been confirmed independently.
+    const schema=state.schemas.get(uid);
+    for(const locale of ['ru','kk']){
+      const row=snap[locale].draft?.row;
+      if(!row)continue;
+      for(const [field,attr]of fieldsOf(schema)){
+        if(attr.type==='component'||attr.type==='dynamiczone')
+          validateNestedRelations(attr,row[field],field);
+      }
+    }
+  }
+  async function publishFrom(uid,id,locale,before){
+    const draft=before[locale].draft;
+    if(!draft)throw new Blocked('Нет '+locale+' Draft при Publish '+id);
+    const expected={fields:draft.fields,relations:relIDs(draft)};
+    const path='/content-manager/collection-types/'+uid+'/'+encodeURIComponent(id)+
+      '/actions/publish?locale='+locale;
+    return checkedWrite(uid,id,'publish-'+locale,before,expected,'POST',path,
+      publishPayload(uid,locale,draft),(a,b,e)=>matchPublish(a,b,e,locale));
+  }
+  async function applyOne(item){
+    const uid=UID,id=item.id,s=state.schemas.get(uid);
+    const previous=await reconcile(uid,id);
+    let pair=await draftPair(uid,id);
+    if(!pair.ru.draft)throw new Blocked('RU Draft отсутствует');
+    if(asIds(pair.ru.draft.relations.products||[]).length)
+      throw new Blocked('RU legacy products не пуст — пропуск Category');
+    const createKK=!pair.kk.draft;
+    if(createKK&&await detail(uid,id,'kk','published'))
+      throw new Blocked('KK Published существует без KK Draft');
+    let fields=planFields(s,pair.ru.draft,pair.kk.draft,true);
+    let rel=relationPlan(s,pair.ru.draft,pair.kk.draft);
+    const requested=Object.keys(fields.payload).length+
+      Object.keys(rel.changes).length+Number(createKK);
+    if(!requested&&!needsResume(previous)){
+      return {status:fields.skippedFields.length?'partial':'already_ok',
+        stage:'checked',changes:[],pendingLinks:[],pendingFields:fields.skippedFields,
+        reason:fields.skippedFields.length?'Есть неподдержанные вложенные поля':''};
+    }
+    // Full prewrite backup includes all four versions and exact native relations.
+    let before=await withPublished(uid,id,pair);
+    let didSeed=false,didSave=false;
+    // For potentially published data, ensure every non-root relation is understood.
+    confirmPublishable(uid,before);
+    if(createKK){
+      await uniquePreflight(id,s,fields.expected);
+      const expectedSeed={fields:fields.expected,relations:
+        Object.fromEntries(relFields(s).map(([field])=>[field,[]]))};
+      const path='/content-manager/collection-types/'+uid+'/'+encodeURIComponent(id)+'?locale=kk';
+      before=await checkedWrite(uid,id,'seed',before,expectedSeed,'PUT',path,
+        {locale:'kk',...fields.payload},matchSeed);
+      didSeed=true;
+    }
+    fields=planFields(s,before.ru.draft,before.kk.draft,true);
+    rel=relationPlan(s,before.ru.draft,before.kk.draft);
+    const write={locale:'kk',...fields.payload};
+    const wanted=Object.fromEntries(Object.entries(relIDs(before.kk.draft))
+      .map(([field,ids])=>[field,[...ids]]));
+    const pendingLinks=[],pendingFields=fields.skippedFields;
+    const touchedRelations=[];
+    for(const [field,delta]of Object.entries(rel.changes)){
+      const connects=[],disconnects=[],set=new Set(wanted[field]||[]);
+      for(const targetId of delta.add){
+        const target=await targetDraftId(delta.targetUid,targetId);
+        if(!target.id){
+          pendingLinks.push({field,targetUid:delta.targetUid,documentId:targetId,
+            reason:target.reason||'KK Draft недоступен'});
+          continue;
+        }
+        connects.push({id:target.id,documentId:targetId,locale:target.locale});
+        set.add(targetId);
+      }
+      for(const targetId of delta.remove){
+        const old=delta.old.find(x=>x.documentId===targetId);
+        if(!Number.isSafeInteger(old?.id)||old.id<=0)
+          throw new Blocked('Нельзя безопасно disconnect '+field+'/'+targetId);
+        disconnects.push({id:old.id,documentId:targetId,locale:old.locale||'kk'});
+        set.delete(targetId);
+      }
+      wanted[field]=[...set].sort();
+      if(connects.length||disconnects.length){
+        write[field]={connect:connects,disconnect:disconnects};
+        touchedRelations.push(field);
+      }
+    }
+    const writeChanges=Object.keys(write).filter(x=>x!=='locale');
+    if(writeChanges.length){
+      if(writeChanges.some(f=>s.attributes[f]?.unique))
+        await uniquePreflight(id,s,fields.expected);
+      // Verify the exact two relation sets immediately before each mutable PUT.
+      const checks=await Promise.all(touchedRelations.map(async field=>{
+        const [source,target]=await Promise.all([
+          relations(uid,id,field,'ru','draft'),
+          relations(uid,id,field,'kk','draft')]);
+        return {field,source,target};
+      }));
+      for(const {field,source,target}of checks)
+        if(!eq(asIds(source),asIds(before.ru.draft.relations[field]))||
+          !eq(asIds(target),asIds(before.kk.draft.relations[field])))
+          throw new Blocked('Relation изменилась до Save: '+field);
+      const expected={fields:fields.expected,relations:wanted};
+      const path='/content-manager/collection-types/'+uid+'/'+encodeURIComponent(id)+'?locale=kk';
+      before=await checkedWrite(uid,id,'save',before,expected,'PUT',path,
+        write,matchSave);
+      didSave=true;
+    }
+    const changes=[...(didSeed?['createKK']:[]),...writeChanges.map(f=>
+      s.attributes[f]?.type==='relation'?'relation:'+f:f)];
+    const incomplete=!!(pendingLinks.length||pendingFields.length);
+    if(!didSeed&&!didSave&&!needsResume(previous)){
+      return {status:incomplete?'partial':'already_ok',stage:'checked',
+        changes,pendingLinks,pendingFields,reason:incomplete?'Остались недоступные поля/связи':''};
+    }
+    // A verified publish stage is resumable without repeating already confirmed POST.
+    const alreadyVerified=verifiedPhaseStillCurrent(previous,before);
+    const ruAlready=alreadyVerified&&
+      ['verified-publish-ru','verified-publish-kk'].includes(previous.phase);
+    const kkAlready=alreadyVerified&&previous.phase==='verified-publish-kk';
+    if(!ruAlready)before=await publishFrom(uid,id,'ru',before);
+    if(!kkAlready)before=await publishFrom(uid,id,'kk',before);
+    if(!sameVersion(before.ru.draft,before.ru.published)||
+      !sameVersion(before.kk.draft,before.kk.published))
+      throw new Unresolved('Published не совпадают с Draft после публикации');
+    await completeJob(uid,id,before);
+    return {status:incomplete?'partial_published':'success',stage:'published',
+      changes,pendingLinks,pendingFields,reason:incomplete?'Частичная нормализация; повторить проход':''};
+  }
   async function run(){
     try{
       if(DRY_RUN){await dryRun();return;}
-      state.db=await openDB();await schemas();state.list=await allCategoryIds();
+      state.db=await openDB();
+      await schemas();
+      state.list=await allCategoryIds();
       state.total=state.list.length;
-      const seeded=new Map(),pending=[];
-      state.phase='Создание отсутствующих KK Draft';render();
+      state.phase='Последовательная нормализация Category';render();
       for(const item of state.list){
         if(state.stop)break;
-        state.current=item.name||item.id;render();
-        try{await seed(item);seeded.set(item.id,true);}
-        catch(e){seeded.set(item.id,false);
-          pending.push({item,status:safeStatus(e),reason:clean(e.message),stage:'seed'});}
-      }
-      const blocked=new Map(pending.map(x=>[x.item.id,x]));
-      const planned=new Map();
-      state.phase='Нормализация KK Draft';render();
-      for(const item of state.list){
-        if(state.stop)break;
-        if(!seeded.get(item.id))continue;
-        state.current=item.name||item.id;render();
-        try{const before=await snapshot(UID,item.id);
-          const job=await getJob(UID,item.id);
-          if(snapshotIsComplete(before,job)){
-            planned.set(item.id,{item,already:true,changes:[]});continue;
-          }
-          const result=await normalize(item);
-          planned.set(item.id,{item,changes:result.changes});
-        }catch(e){blocked.set(item.id,{item,status:safeStatus(e),reason:clean(e.message),
-          stage:'normalize'});}
-      }
-      state.phase='Публикация Category RU и KK';render();
-      const success=new Set(),attempts=new Map();
-      let queue=[...planned.values()].filter(x=>!x.already);
-      for(const x of blocked.values())if(x.status==='blocked'&&
-        /зависим|target|KK Category|Нет KK Draft/i.test(x.reason))
-        queue.push({item:x.item,changes:[],needsNormalize:true});
-      for(const x of planned.values())if(x.already){success.add(x.item.id);
-        result(x.item.id,x.item.name,'already_ok','complete','Без изменений, проверено по checkpoint');}
-      // Retry only blocked dependencies or ordering effects; never retry an unknown write.
-      let pass=0;
-      while(queue.length&&!state.stop){
-        pass++;let progressed=0;const postsBefore=state.post;
-        const next=[];
-        for(const row of queue){
-          if(state.stop)break;
-          const item=row.item;
-          attempts.set(item.id,(attempts.get(item.id)||0)+1);
-          state.current=item.name||item.id;render('Publish · проход '+pass);
-          try{
-            if(row.needsNormalize){
-              const n=await normalize(item);row.changes=n.changes;row.needsNormalize=false;
-            }
-            await publishCategory(item);success.add(item.id);progressed++;
-            result(item.id,item.name,'success','published','',row.changes,attempts.get(item.id));}
-          catch(e){
-            const status=safeStatus(e);
-            const issue={item,status,reason:clean(e.message),stage:'publish'};
-            blocked.set(item.id,issue);
-            if(status==='blocked'&&/зависим|target|Published|KK Category|Нет KK Draft/i.test(issue.reason))
-              next.push({...row,needsNormalize:true});
-          }
+        state.current=item.name||item.id;render('Обработка '+(state.done+1)+'/'+state.total);
+        let resultRow;
+        try{
+          const outcome=await applyOne(item);
+          const pendingLinks=outcome.pendingLinks||[];
+          const pendingFields=outcome.pendingFields||[];
+          resultRow={documentId:item.id,name:item.name,status:outcome.status,
+            stage:outcome.stage,reason:outcome.reason||'',
+            changes:outcome.changes||[],attempts:1,
+            pendingLinks:pendingLinks.map(x=>
+              x.field+':'+x.targetUid+'/'+x.documentId+' ('+x.reason+')'),
+            pendingDetails:pendingLinks,pendingFields,
+            createKK:(outcome.changes||[]).includes('createKK'),
+            fieldsChanged:(outcome.changes||[]).filter(x=>!x.startsWith('relation:')),
+            relationsConnect:null,relationsDisconnect:null,
+            publishRU:outcome.stage==='published',publishKK:outcome.stage==='published'};
+        }catch(e){
+          const status=safeStatus(e);
+          resultRow={documentId:item.id,name:item.name,status,stage:'apply',
+            reason:clean(e.message),changes:[],attempts:1,
+            pendingLinks:[],pendingFields:[]};
+          state.report.errors.push({documentId:item.id,status,reason:clean(e.message)});
+          console.warn('[Category Localizer] '+item.id+' '+status+': '+clean(e.message));
         }
-        if(!progressed&&state.post===postsBefore)break;
-        queue=next;
-      }
-      for(const item of state.list){
-        if(success.has(item.id))continue;
-        const issue=blocked.get(item.id);
-        if(issue)result(item.id,item.name,issue.status,issue.stage,issue.reason,[],attempts.get(item.id)||0);
-        else if(state.stop)result(item.id,item.name,'blocked','stopped','Остановка пользователем');
-        else result(item.id,item.name,'blocked','not_processed','Операция не завершена');
+        state.report.results.push(resultRow);
+        state.done++;render(item.name+': '+resultRow.status);
       }
       state.phase=state.stop?'stopped':'completed';
     }catch(e){
