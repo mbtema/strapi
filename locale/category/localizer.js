@@ -429,7 +429,7 @@
     }
     if(path==='name'||path==='description'||localized(attr))
       return hasKK?canonicalField(attr,kk,path):undefined;
-    if(attr.type==='relation'&&/^brandZoneBanners\\[\\d+\\]\\.products$/.test(path))
+    if(attr.type==='relation'&&/^brandZoneBanners\[\d+\]\.products$/.test(path))
       return canonicalField(attr,ru,path);
     if(attr.type==='relation')throw new Blocked('Вложенная relation '+path);
     return canonicalField(attr,ru,path);
