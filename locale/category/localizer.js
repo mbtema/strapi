@@ -707,7 +707,11 @@
   }
   async function reconcile(uid,id){
     const job=await getJob(uid,id);
+    if(job?.phase==='quarantine-ru-drift')
+      throw new IntegrityViolation('Category в карантине после нарушения RU: '+uid+'/'+id,
+        job.failure?.after);
     if(!job?.phase?.startsWith('pending-'))return job;
+    if(!job.before)throw new Unresolved('Нет prewrite snapshot в pending journal '+uid+'/'+id);
     let after;
     try{after=await snapshot(uid,id);}
     catch(e){throw new Unresolved('Recovery snapshot недоступен '+uid+'/'+id+': '+clean(e));}
@@ -729,9 +733,20 @@
     // Four full versions, including ALL root relations and nested Draft links.
     // Any change since preparation invalidates the write, even in a single-user CMS.
     const fresh=await snapshot(uid,id);
-    if(!matchingBaseline(before,fresh))
-      throw new Blocked('Данные изменились между snapshot и '+stage+
+    if(!matchingBaseline(before,fresh)){
+      if(!intact(before,fresh)){
+        const issue=new IntegrityViolation('RU изменилась ДО '+stage+
+          ' между сохранённым снимком и записью '+uid+'/'+id,fresh);
+        const old=await getJob(uid,id);
+        const job=old||{key:keyOf(uid,id),uid,id,history:[]};
+        job.phase='quarantine-ru-drift';job.before=before;
+        job.failure={at:now(),reason:clean(issue.message),integrity:true,after:fresh};
+        await putJob(job);state.touched.add(job.key);
+        throw issue;
+      }
+      throw new Blocked('KK или Published изменились между snapshot и '+stage+
         '. Запись пропущена; нужен новый проход');
+    }
     const pending=await writeJournal(uid,id,stage,fresh,expected,{method,path});
     let error=null;
     try{await request(method,path,payload);}catch(e){error=e;}
