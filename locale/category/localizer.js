@@ -23,7 +23,10 @@
   // One-time opt-in for writes: window.tmCategoryLocalizerApplyOnce = true;
   // The flag is consumed before any CMS requests. Default is ALWAYS dry-run.
   const APPLY = window.tmCategoryLocalizerApplyOnce === true;
+  const ONLY = typeof window.tmCategoryLocalizerOnlyOnce === 'string'?
+    window.tmCategoryLocalizerOnlyOnce.trim():null;
   delete window.tmCategoryLocalizerApplyOnce;
+  delete window.tmCategoryLocalizerOnlyOnce;
   const DRY_RUN = !APPLY;
   if (!location.pathname.startsWith('/admin/content-manager')) {
     console.error('[Category Localizer] Открой Content Manager Strapi.'); return;
@@ -895,6 +898,10 @@
       state.db=await openDB();
       await schemas();
       state.list=await allCategoryIds();
+      if(ONLY){
+        state.list=state.list.filter(item=>item.id===ONLY);
+        if(!state.list.length)throw Error('Пилот: Category documentId не найден: '+ONLY);
+      }
       state.total=state.list.length;
       state.phase='Последовательная нормализация Category';render();
       for(const item of state.list){
