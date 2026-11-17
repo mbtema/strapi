@@ -454,6 +454,64 @@
     }
     return {payload,expected,skippedFields};
   }
+  // Mirror nested banner relations by documentId, preserving KK component IDs.
+  // Native relation GET identifies actual links; a count alone is never treated as a link list.
+  async function bannerPlan(ru,kk,expected){
+    const src=ru?.fields?.brandZoneBanners||[];
+    const dst=kk?.fields?.brandZoneBanners||[];
+    const dstRows=kk?.row?.brandZoneBanners||[];
+    if(!Array.isArray(src)||!Array.isArray(dst)||!Array.isArray(expected))
+      throw new Blocked('Неверная структура brandZoneBanners');
+    const parts=[],wanted=[],pending=[],newTargets=[];
+    let connected=0,disconnected=0;
+    for(let i=0;i<src.length;i++){
+      const sourceIDs=src[i]?.products;
+      if(!Array.isArray(sourceIDs))
+        throw new Blocked('Неполная вложенная relation brandZoneBanners['+i+']');
+      const present=kk?.nested?.brandZoneBanners?.[i]||[];
+      const byId=new Map(present.map(x=>[x.documentId,x]));
+      const set=new Set(present.map(x=>x.documentId));
+      const connect=[],disconnect=[];
+      for(const documentId of sourceIDs){
+        if(set.has(documentId))continue;
+        const target=await targetDraftId('api::product.product',documentId);
+        if(!target.id){
+          pending.push({field:'brandZoneBanners['+i+'].products',
+            targetUid:'api::product.product',documentId,
+            reason:target.reason||'KK Draft отсутствует'});
+          continue;
+        }
+        connect.push({id:target.id,documentId,locale:target.locale});
+        newTargets.push({uid:'api::product.product',id:documentId});
+        set.add(documentId);connected++;
+      }
+      for(const [documentId,old]of byId)
+        if(!sourceIDs.includes(documentId)){
+          disconnect.push({id:old.id,documentId,locale:old.locale||'kk'});
+          set.delete(documentId);disconnected++;
+        }
+      const part={...expected[i],products:[...set].sort()};
+      wanted.push(part);
+      const payload={...part};
+      if(dstRows[i]?.id){
+        if(!Number.isSafeInteger(dstRows[i].id))throw new Blocked('Неверный KK component ID');
+        payload.id=dstRows[i].id;
+      }
+      payload.products={connect,disconnect};
+      parts.push(payload);
+    }
+    return {changed:!eq(wanted,dst),wanted,parts,pending,newTargets,
+      connected,disconnected};
+  }
+  function stripBannerLinks(parts){
+    if(parts==null)return parts;
+    if(!Array.isArray(parts))throw new Blocked('Неожиданная структура brandZoneBanners');
+    return parts.map(part=>({...part,products:[]}));
+  }
+  function seedBannerPayload(parts){
+    if(parts==null)return parts;
+    return parts.map(part=>({...part,products:{connect:[],disconnect:[]}}));
+  }
   function relationPlan(s,ru,kk){
     const changes={},expected={};
     for(const [f,a]of relFields(s)){
@@ -538,6 +596,18 @@
       if(f==='InStock'||f==='inStock')continue;
       if(a.required&&(!nonEmpty(draft.row[f])&&draft.row[f]!==false&&draft.row[f]!==0))
         throw new Blocked('Публикация: обязательное поле пустое '+uid+'.'+f);
+      if(uid===UID&&f==='brandZoneBanners'&&Array.isArray(draft.fields[f])){
+        const parts=draft.fields[f],rows=draft.row[f]||[];
+        const nested=draft.nested?.brandZoneBanners||[];
+        if(parts.length!==rows.length||parts.length!==nested.length)
+          throw new Blocked('Нет вложенных links для публикации brandZoneBanners');
+        payload[f]=parts.map((part,i)=>({
+          ...part,id:rows[i].id,
+          products:{connect:nested[i].map(x=>({id:x.id,documentId:x.documentId,
+            locale:x.locale||locale})),disconnect:[]}
+        }));
+        continue;
+      }
       payload[f]=draft.fields[f];
     }
     return payload;
@@ -835,21 +905,32 @@
     // For potentially published data, ensure every non-root relation is understood.
     confirmPublishable(uid,before);
     if(createKK){
-      const expectedSeed={fields:fields.expected,relations:
+      const seedFields=structuredClone(fields.expected);
+      const seedPayload={...fields.payload};
+      if(Object.hasOwn(seedFields,'brandZoneBanners')){
+        seedFields.brandZoneBanners=stripBannerLinks(seedFields.brandZoneBanners);
+        seedPayload.brandZoneBanners=seedBannerPayload(seedFields.brandZoneBanners);
+      }
+      const expectedSeed={fields:seedFields,relations:
         Object.fromEntries(relFields(s).map(([field])=>[field,[]]))};
       const path='/content-manager/collection-types/'+uid+'/'+encodeURIComponent(id)+'?locale=kk';
       before=await checkedWrite(uid,id,'seed',before,expectedSeed,'PUT',path,
-        {locale:'kk',...fields.payload},matchSeed);
+        {locale:'kk',...seedPayload},matchSeed);
       didSeed=true;
     }
     fields=planFields(s,before.ru.draft,before.kk.draft,true);
     rel=relationPlan(s,before.ru.draft,before.kk.draft);
+    const nestedPlan=await bannerPlan(before.ru.draft,before.kk.draft,
+      fields.expected.brandZoneBanners||[]);
+    fields.expected.brandZoneBanners=nestedPlan.wanted;
+    if(nestedPlan.changed)fields.payload.brandZoneBanners=nestedPlan.parts;
+    else delete fields.payload.brandZoneBanners;
     const write={locale:'kk',...fields.payload};
     const wanted=Object.fromEntries(Object.entries(relIDs(before.kk.draft))
       .map(([field,ids])=>[field,[...ids]]));
-    const pendingLinks=[],pendingFields=fields.skippedFields;
+    const pendingLinks=[...nestedPlan.pending],pendingFields=fields.skippedFields;
     const touchedRelations=[];
-    let addedCount=0,removedCount=0;
+    let addedCount=nestedPlan.connected,removedCount=nestedPlan.disconnected;
     for(const [field,delta]of Object.entries(rel.changes)){
       const connects=[],disconnects=[],set=new Set(wanted[field]||[]);
       for(const targetId of delta.add){
