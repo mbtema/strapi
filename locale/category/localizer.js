@@ -37,13 +37,16 @@
   const RAW_LIMIT = window.tmCategoryLocalizerLimitOnce;
   const LIMIT = Number.isSafeInteger(RAW_LIMIT)&&RAW_LIMIT>0?RAW_LIMIT:null;
   const FULL = window.tmCategoryLocalizerFullOnce === true;
+  const EXPORT_ONLY = window.tmCategoryLocalizerExportBackupsOnce === true;
   delete window.tmCategoryLocalizerApplyOnce;
   delete window.tmCategoryLocalizerOnlyOnce;
   delete window.tmCategoryLocalizerLimitOnce;
   delete window.tmCategoryLocalizerFullOnce;
+  delete window.tmCategoryLocalizerExportBackupsOnce;
   const DRY_RUN = !APPLY;
   const invalidLimit=RAW_LIMIT!==undefined&&LIMIT===null;
-  if(invalidLimit||(APPLY&&Number(!!ONLY)+Number(!!LIMIT)+Number(FULL)!==1)){
+  if(invalidLimit||(APPLY&&Number(!!ONLY)+Number(!!LIMIT)+Number(FULL)!==1)||
+    (EXPORT_ONLY&&(APPLY||ONLY||LIMIT||FULL))){
     console.error('[Category Localizer] Запуск запрещён: укажи ровно один режим'+
       ' Apply — OnlyOnce (documentId), LimitOnce (целое число > 0),'+
       ' либо FullOnce = true. Некорректный LimitOnce не означает FULL.');
@@ -141,8 +144,10 @@
     });
   }
   function dbOp(kind,value){return new Promise((resolve,reject)=>{
-    const tx=state.db.transaction('jobs',kind==='get'?'readonly':'readwrite');
-    const store=tx.objectStore('jobs');const req=kind==='get'?store.get(value):store.put(value);
+    const tx=state.db.transaction('jobs',kind==='put'?'readwrite':'readonly');
+    const store=tx.objectStore('jobs');
+    const req=kind==='get'?store.get(value):
+      kind==='all'?store.getAll():store.put(value);
     let result;
     req.onsuccess=()=>{result=req.result;};
     tx.oncomplete=()=>resolve(result); // durability: commit before making HTTP write
@@ -1265,6 +1270,13 @@
   }
   async function run(){
     try{
+      if(EXPORT_ONLY){
+        state.db=await openDB();
+        state.report.journals=await dbOp('all');
+        state.total=state.done=state.report.journals.length;
+        state.phase='backup_export_only';
+        return;
+      }
       if(DRY_RUN){await dryRun();return;}
       state.db=await openDB();
       await schemas();
@@ -1338,7 +1350,8 @@
         successful:state.phase==='completed'&&
           !['blocked','unresolved','error','partial','partial_published']
             .some(k=>statuses[k]>0),
-        scope:ONLY?'single':LIMIT?'first-'+LIMIT:FULL?'full':'dry-run',
+        scope:EXPORT_ONLY?'backup-export':ONLY?'single':LIMIT?'first-'+LIMIT:
+          FULL?'full':'dry-run',
         get:state.get,
         put:state.put,post:state.post,retries:state.retries,phase:state.phase,
         populateGET:state.populateGET,populateHits:state.populateHits,
