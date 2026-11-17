@@ -100,6 +100,18 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 `completed` означает окончание обхода; новый `successful` означает окончание без ошибок и незавершённых backup (обычные блокировки считаются отдельно). При ошибках или оставшихся backup код завершения 2, при аварии 1. Не удалять прежние журналы и backup ради продолжения. Для ночного запуска компьютер должен оставаться включённым, без сна, с доступом к Strapi.
 
 
+
+### Повторная обработка незавершённых Product
+
+`node localizer.mjs --recover-pending --dry-run` читает только JSON из `product-kk-backups`, сверяет RU/KK Draft/Published и исходный план. Исходный `product-kk-apply-schema.sha256` обязателен и должен совпадать с текущей схемой. Сохраните также `product-kk-apply-progress.jsonl`: он содержит причины прежних ошибок. JWT читается из TXT обычным способом. Старые apply/audit отчёты и checkpoint не изменяются; каждый recovery создаёт отдельные `product-kk-recovery-<audit|apply>-<timestamp>-<pid>-*` CSV, JSONL, summary и папку evidence с исходным backup, актуальными версиями и диагностикой.
+
+Решения: `complete` — результат уже достигнут; `save` — исходный KK Draft не изменился, можно заново построить сохранение по свежим native ID; `publish` — Draft уже соответствует прежней цели, нужен только Publish. Расхождение RU, неожиданные изменения Published/переводов/ключа, частичный результат и конфликт уникальности `key` блокируют запись. Numeric relation IDs и timestamps сами по себе не считаются изменением контента. Поля `InStock` по-прежнему исключены из нормализации. Recovery не переименовывает ключи, не делает rollback и не создаёт KK или справочники.
+
+После read-only сверки пилот: `node localizer.mjs --recover-pending --apply --only=DOCUMENT_ID` для конкретного `would_update` из recovery CSV. Затем `node localizer.mjs --recover-pending --apply --continue-on-error --requests=8`. Каждый товар повторно проверяется перед записью; обработка recovery последовательная, `--workers` её не распараллеливает. PUT/POST выполняются максимум по одному на фазу за этот проход, без автоматического повтора HTTP 500. После подтверждения всех четырёх версий исходный backup переносится в `product-kk-recovered/<run>/`; при ошибке остаётся pending. Полный ответ HTTP (до 16 KB, без заголовков авторизации) сохраняется в evidence; в обычном apply — в `failure.http` backup.
+
+Каждый следующий recovery заново сверяет оставшиеся pending, даже если их ID есть в прежнем apply-checkpoint. Нельзя сочетать с `--new-run` или `--probe`. Recovery использует тот же process lock, что обычный apply. Не удалять backup или checkpoint для повтора. Код 2 означает оставшиеся ошибки/блокировки/pending; 1 — аварийную остановку. В dry-run pending остаются намеренно; `successful` относится к выполнению сверки, а не к завершённому восстановлению. Тесты без Strapi: `node locale/product/localizer-recovery.test.cjs`.
+
+
 ## Migrator
 
 Pipeline разделены по типу записей и не используют общие конфиги. `products/` содержит существующий pipeline для товаров; все его CSV, media checkpoint, journal и отчёты теперь используют префикс `products-` вместо `migration-`. При переходе не смешивать новые файлы со старыми checkpoint. `attributes/` предназначен для торговых предложений (`api::attribute.attribute`, Bitrix `IBLOCK_ID=2`). Новые данные shade/volume включены в Config существующего `attributes/`, отдельного pipeline нет.
@@ -213,7 +225,8 @@ README обновляется, когда меняются структура, �
 │   │   ├── category-localizer.js
 │   │   └── category-localizer.test.cjs
 │   └── product/
-│       └── localizer.mjs
+│       ├── localizer.mjs
+│       └── localizer-recovery.test.cjs
 ├── helpdesk/
 │   ├── workflow.json
 │   └── notifications.json
