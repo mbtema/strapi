@@ -35,7 +35,7 @@
 
   const report = {
     version: 1,
-    mode: 'GET-only / brand-relation',
+    mode: 'dry-run',
     attemptedWrites: 0,
     postflight: null,
     evidence: [],
@@ -309,7 +309,7 @@
   delete window.tmChanelKKBrandApplyOnce;
   delete window.tmChanelKKBrandNoDbBackupRiskAcceptedOnce;
   delete window.tmChanelKKBrandBaselineHashOnce;
-  report.mode = APPLY ? 'apply-one-brand-link' : 'GET-only / brand-relation';
+  report.mode = APPLY ? 'apply-one-brand-link' : 'dry-run';
   const BRAND_KK_ID = 2403; // verified in user preflight, recheck live
   const PARENT_ID = 'xff5b8l7kowombgqbfekk8ms';
   const SKIPPED_FIELDS = new Set(['key','code','slug']);
