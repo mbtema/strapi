@@ -22,9 +22,11 @@ delete window.tmChanelStop;
 const report={version:1,mode,startedAt:new Date().toISOString(),finishedAt:null,
   status:'running',scope:{brandDocumentId:BRAND,categoryCount:EXPECTED},
   counters:{GET:0,PUT:0,POST:0,retries:0,verifiedWrites:0,plannedWrites:0},
-  stages:{seed:{processed:0,created:0,updated:0,unchanged:0,blocked:0},
-    relations:{processed:0,linked:0,unchanged:0,blocked:0},
-    publish:{processed:0,ru:0,kk:0,skipped:0,blocked:0}},
+  stages:{seed:{processed:0,created:0,updated:0,unchanged:0,blocked:0,
+      plannedCreates:0,plannedUpdates:0},
+    relations:{processed:0,linked:0,plannedLinks:0,unchanged:0,blocked:0},
+    publish:{processed:0,ru:0,kk:0,plannedRU:0,plannedKK:0,
+      skipped:0,blocked:0}},
   results:{},issues:[],errors:[],warnings:[],complete:false};
 window.tmChanelNormalizerReport=report;
 const SYSTEM=new Set(['id','documentId','locale','status','createdAt','updatedAt',
@@ -588,7 +590,7 @@ async function seedPhase(){
         st.unchanged++;resultFor(id).seed='unchanged';update('seed',id,'Уже заполнено');continue;
       }
       if(!APPLY){
-        st[kk?'updated':'created']++;
+        st[kk?'plannedUpdates':'plannedCreates']++;
         report.counters.plannedWrites++;
         resultFor(id).seed='planned '+(kk?'update':'create')+
           ' '+Object.keys(wanted.updates).join(', ');
@@ -648,8 +650,9 @@ async function linksPhase(){
       }
       if(!APPLY){
         report.counters.plannedWrites+=operations.length;
-        st.linked+=operations.reduce((n,x)=>n+x.targets.length,0);
-        resultFor(id).relations='planned '+st.linked+' links';
+        const planned=operations.reduce((n,x)=>n+x.targets.length,0);
+        st.plannedLinks+=planned;
+        resultFor(id).relations='planned '+planned+' links';
         update('links',id,'План: '+operations.length+' PUT по ≤20 links');
         continue;
       }
@@ -717,7 +720,8 @@ async function publishPhase(){
           st.skipped++;continue;
         }
         if(!APPLY){
-          st[locale]++;report.counters.plannedWrites++;
+          st[locale==='ru'?'plannedRU':'plannedKK']++;
+          report.counters.plannedWrites++;
           update('publish',id,'План '+locale);continue;
         }
         const payload=publishPayload(snap[locale].draft,locale);
@@ -762,8 +766,8 @@ try{
     updated:report.stages.seed.updated,linksAdded:report.stages.relations.linked,
     publishedRU:report.stages.publish.ru,publishedKK:report.stages.publish.kk,
     incompleteDocuments:skipDocs.size,verifiedWrites:report.counters.verifiedWrites};
-  report.status=!APPLY?'dry-run-ready':report.issues.length?
-    'completed-with-issues':'completed';
+  report.status=!APPLY?(report.issues.length?'dry-run-with-issues':'dry-run-ready'):
+    report.issues.length?'completed-with-issues':'completed';
 }catch(e){
   report.status='stopped';
   report.errors.push(e.message);
