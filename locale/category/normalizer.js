@@ -478,7 +478,8 @@ function verifyWrite(pending,before,after){
       for(const f of OMIT){
         const def=schema.attributes[f];
         // UID/localized slug у нового KK может быть null: не входит в PUT.
-        if(def?.type==='uid'||def?.pluginOptions?.i18n?.localized===true)
+        if(f==='slug'||def?.type==='uid'||
+            def?.pluginOptions?.i18n?.localized===true)
           continue;
         ensure(equal(a.kk.draft?.fields?.[f],b.ru.draft.fields[f]),
           'Создание KK изменило/не перенесло shared '+f);
