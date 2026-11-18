@@ -59,11 +59,22 @@
 - Snapshot/ожидаемый Published сравниваются по schema-полям (media по ID, компоненты без numeric instance ID), root relations по полному составу `documentId`; все нецелевые версии после каждого Publish должны остаться неизменны. Нет автоматического повтора неясного POST. Вложенные связи с ненулевым count требуют отдельного проверенного контракта и блокируют данный пилот.
 - Пилот намеренно **не исправляет несовпадения KK Draft**: если какая-либо структура, relation или нужное не-медиа поле различаются, блокирует публикацию. Это проверка безопасной публикации и сохранности переводных медиа, **не** готовый массовый нормализатор. Следующий этап — пилот создания KK для одной из 64 отсутствующих локалей, после проверки полного publish-only пилота.
 
+### Пилот Live: публикация выполнена, KK Published потерял 10 связей — 18.11.2026
+
+**Подтверждено по всем 7 пользовательским JSON снимкам**, включая `before`, `pending-ru`, `after-ru`, `pending-kk`, `after-kk`, `apply` и `dry-run`.
+
+- Итог `category-first-publish-pilot.js`: `status=integrity-stop`, `108 GET`, `2 POST`, `0 PUT`, `0 retries`, ошибка `Published kk не совпал с Draft после Publish`. Оба POST получили штатный HTTP-ответ (`postError=null`), ошибка выявлена при **последующей GET-сверке**.
+- RU Published создан `id=12618`, `publishedAt=2026-11-18T09:18:13.902Z`; RU Published семантически соответствует RU Draft, включая **10 links `product`** и исходное русское изображение `153055`.
+- KK Published создан `id=12619`, `publishedAt=2026-11-18T09:18:16.705Z`, сохранил **KK media `153056`**, `key=cf7f4a203aed93a8`, `brand` и другие schema-fields; **одна доказанная бизнес-разница** между KK Draft и KK Published — `relations.product` содержит **0 вместо 10** `documentId`. `raw.product.count=0` у KK Published (это не только сбой сравнения). KK Draft по-прежнему содержит все 10 ссылок.
+- Точная независимая Python-сверка схемно значимых `fields` (Media по ID, Component instance ID игнорировать) и всех root relations `documentId` показывает 0 отличий между RU Draft и RU Published; 0 непредусмотренных изменений RU Draft, RU Published и KK Draft до/после второй публикации (кроме меняющихся внутренних component numeric IDs и timestamps). Единственное нарушение — отсутствие 10 links в KK Published.
+- **Не считать пилот успешным. Никакого автоматического retry или вручную запуска того же Publish**, и никакого перехода к остальным 64 Category; Category находится в partial state, пока KK Published не восстановит 10 корректных связей. Это наблюдаемое следствие Strapi Publish для данной категории, но механизм пока не доказан: возможно связь хранится на обратной стороне Product и зависит от KK Published Product, нельзя утверждать без проверки.
+- Создан read-only скрипт `locale/chanel/published-product-links-audit.js`: проверяет 4 Category версии и обратные связи `Product.categories` для 10 Product в RU/KK Draft/Published, автоматически выгружает `chanel-published-product-links-audit.json`. Не выполняет ни одной записи. Дальнейший repair/write contract обсуждать только после проверки его результата.
+
 ### Безопасный порядок дальнейшей работы
 
 1. **Решено:** обязательно публиковать обе локали, RU Published должна отражать текущий RU Draft (включая 64 новые публикации баннеров), KK Published — нормализованную KK версию.
 2. Разработать read-only точный план создания 64 KK, зависимостей, ограничений уникальности, глубокого merge Media и обеих публикаций; готовность считать по Published, не Draft.
-3. Первый single-category publish-only пилот можно выполнить без DB backup только с явным согласием на риск и защищёнными browser snapshots (решение пользователя). Это **не** подтверждает безопасность без backup для последующего создания 64 KK/массового запуска; перед расширением сценария отдельно оценить защиту/восстановление. После пилота — проверить оба Published и все 4-version snapshots.
+3. **Пилот выполнен и завершился `integrity-stop`.** Не повторять публикацию: KK Published потерял 10/10 root `product` links. Сначала пройти `published-product-links-audit.js` (только GET), установить механизм и отдельный безопасный repair. Никакого создания 64 KK/массового запуска до полноценного postflight Published RU+KK.
 
 ### Решение по резервной копии и `key` — 18.11.2026
 
