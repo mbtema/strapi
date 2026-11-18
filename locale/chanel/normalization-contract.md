@@ -51,6 +51,14 @@
 - Root relation в RU Draft: `product` суммарно 978 связей (321 уникальный Product `documentId`), `brand` 65, `parent` 60, `categories` 60; `products` и `top_brands` пусты. Десять parent Category и все 60 child targets входят в текущие 65; наличие KK у 321 Product **не проверялось**.
 - RU `key` заполнен и уникален у всех 65; значения KK `key` остальных 64 пока отсутствуют вместе с локалями. Все 65 RU `title` заполнены. Схема root Media: `largeImage_app`, `preview_picture`, `previewImage_app`, `largeImage`, `detail_picture`, `menu_banner`, `pictures`.
 
+### Реализованный первый пилот (код, ещё не live-tested)
+
+- `locale/chanel/category-first-publish-pilot.js` — **строго первая** `Chanel / Holiday Collection` (`adl0ggt49f808cv4j2xalioq`), уже имеющая RU/KK Draft со совпадающими бизнес-полями/relations и различающимся, но защищённым KK-изображением. Скрипт использует проверенные GET и Content Manager Publish API из Category Localizer; `PUT`/создания KK нет.
+- По умолчанию выполняет **только GET** и скачивает dry-run JSON с `baselineHash` и точным планом. В write-режим переходит только через три одноразовых флага (apply token, подтверждение независимого DB backup, SHA-256 dry-run); перед каждой операцией сверяет свежую текущую бизнес-семантику всех 4 версий с checkpoint, затем последовательно отправляет максимум 2 `POST` Publish: RU и KK.
+- Payload для Publish, как в действующем Category Localizer, включает текущее неизменённое `Draft.key` (это **не** нормализация и не PUT `key`). При этом известен live-risk cross-locale key incident: независимая копия БД и postflight 4 версий обязательны; успешный кодовый dry-run не гарантирует безопасный Publish Strapi.
+- Snapshot/ожидаемый Published сравниваются по schema-полям (media по ID, компоненты без numeric instance ID), root relations по полному составу `documentId`; все нецелевые версии после каждого Publish должны остаться неизменны. Нет автоматического повтора неясного POST. Вложенные связи с ненулевым count требуют отдельного проверенного контракта и блокируют данный пилот.
+- Пилот намеренно **не исправляет несовпадения KK Draft**: если какая-либо структура, relation или нужное не-медиа поле различаются, блокирует публикацию. Это проверка безопасной публикации и сохранности переводных медиа, **не** готовый массовый нормализатор. Следующий этап — пилот создания KK для одной из 64 отсутствующих локалей, после проверки полного publish-only пилота.
+
 ### Безопасный порядок дальнейшей работы
 
 1. **Решено:** обязательно публиковать обе локали, RU Published должна отражать текущий RU Draft (включая 64 новые публикации баннеров), KK Published — нормализованную KK версию.
