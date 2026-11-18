@@ -1415,10 +1415,10 @@
       unchangedFieldsConfirmed:onlyKnownChanges,
       differencesFromOriginal:changes,
       crossLocaleConflict:!eq(originalKey,publishedKkKey),
-      plannedTarget:'RU Draft.key only; NO Publish',
+      plannedTarget:'RU/KK Draft.key from original RU, then KK Published.key',
       canSafelyAutoWrite:false,
-      reason:'Shared nonlocalized unique key and distinct KK Published value require'+
-        ' confirmation of safe Strapi write behavior before recovery',
+      reason:'GET-only preview; separate one-document Recovery Apply may copy shared'+
+        ' key to both drafts and publish KK after independent postflight checks',
       originalBackup:before,current,failedPostflight:after
     };
     state.report.results.push({documentId:id,name:before.ru?.draft?.row?.name||id,
@@ -1428,15 +1428,39 @@
     render('Recovery GET-only: '+(sourceConfirmed&&schemaConfirmed&&liveMatchesFailure?
       'исходный backup подтверждён':'требуется разбор расхождений'));
   }
-  function matchesRuKeyRecovery(before,after,expectedKey){
-    if(!before?.ru?.draft||!after?.ru?.draft||
-      before.ru.draft.fields.key!==null||
-      !eq(after.ru.draft.fields.key,expectedKey))return false;
-    // Success permits exactly ONE semantic difference, RU Draft.key.
-    // Any KK Draft/Published, RU Published, Media, component or relation
-    // change is a global unresolved stop, even if Strapi returned HTTP 200.
+  function matchesRecoveryDraftKeys(before,after,key){
+    if(!before?.ru?.draft||!before?.kk?.draft||
+      before.ru.draft.fields.key!==null||before.kk.draft.fields.key!==null||
+      after?.ru?.draft?.fields?.key!==key||after?.kk?.draft?.fields?.key!==key)
+      return false;
+    // One KK PUT may copy the shared key to both Draft locales.
+    // Every other field, relation, Media and both Published versions are immutable.
     const normalized=structuredClone(after);
     normalized.ru.draft.fields.key=null;
+    normalized.kk.draft.fields.key=null;
+    return matchingBaseline(before,normalized);
+  }
+  function recoveryReadyToPublish(snap,key){
+    const ru=snap?.ru,kk=snap?.kk;
+    if(!ru?.draft||!ru.published||!kk?.draft||!kk.published||
+      [ru.draft,ru.published,kk.draft].some(v=>v.fields.key!==key))
+      return false;
+    // Only KK Published.key and KK Published.slug may be updated.
+    const strip=v=>({...v.fields,key:null,slug:null});
+    return sameFields(strip(kk.draft),strip(kk.published))&&
+      eq(relIDs(kk.draft),relIDs(kk.published));
+  }
+  function matchesRecoveryKkPublish(before,after,key){
+    if(!recoveryReadyToPublish(before,key)||
+      !after?.kk?.published?.row?.publishedAt||
+      before.kk.published.row?.publishedAt===
+        after.kk.published.row.publishedAt||
+      after.kk.published.fields.key!==key||
+      !sameVersion(after.kk.draft,after.kk.published))
+      return false;
+    const normalized=structuredClone(after);
+    normalized.kk.published.fields.key=before.kk.published.fields.key;
+    normalized.kk.published.fields.slug=before.kk.published.fields.slug;
     return matchingBaseline(before,normalized);
   }
   async function uniqueRecoveryCheck(id,key){
