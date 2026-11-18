@@ -1381,7 +1381,7 @@
   async function previewRecovery(id){
     state.phase='Recovery preview: схемы, старый backup и текущие четыре версии';
     state.current=id;state.total=1;render();
-    state.db=await openDB();
+    state.db ||= await openDB();
     await schemas();
     const job=await getJob(UID,id);
     if(!job?.before||!job?.failure?.after)
@@ -1462,12 +1462,22 @@
     }
     if(!positive)throw new Blocked(
       'Unique filter не прошёл положительную проверку RU Published');
+    // A negative control rules out accidentally unfiltered CM results.
+    const negative=new URLSearchParams({locale:'ru',status:'published',
+      page:'1',pageSize:String(PAGE_SIZE)});
+    negative.set('filters[key][$eq]',key+'-tm-recovery-impossible');
+    const none=parseList(await get('/content-manager/collection-types/'+UID+
+      '?'+negative),1);
+    if(none.total!==0||none.rows.length!==0)
+      throw new Blocked('Unique filter проигнорирован: отрицательный контроль не пустой');
   }
   async function applyRecoveryRuKey(id){
     // Dedicated single-record recovery. Never enters the normal Category apply.
     state.db=await openDB();
     const existing=await getJob(UID,id);
     if(existing?.phase==='pending-recovery-ru-key'){
+      if(RECOVERY_CONFIRM!==existing.expected?.key)
+        throw new Blocked('Recovery ключ подтверждения не совпадает с checkpoint');
       const after=await snapshot(UID,id);
       if(!matchesRuKeyRecovery(existing.before,after,existing.expected?.key))
         throw new Unresolved('Незавершённая recovery не подтверждена; повторный PUT запрещён');
@@ -1523,7 +1533,7 @@
     }
     await verifiedJournal(pending,after);
     await completeJob(UID,id,after);
-    p.verified=true;p.current=after;p.canSafelyAutoWrite=false;
+    p.verified=true;p.writeVerified=true;p.current=after;p.canSafelyAutoWrite=false;
     p.recoveryOperation={method:'PUT',locale:'ru',fields:['key'],
       published:false,verified:true};
     state.report.results[0]={documentId:id,name:fresh.ru.draft.row.name,
@@ -1613,7 +1623,7 @@
       state.report.finishedAt=now();
       const statuses=rowsStatus();
       state.report.summary={...state.report.summary,total:state.total,...statuses,
-        successful:state.phase==='completed'&&
+        successful:(state.phase==='completed'||state.phase==='recovery_completed')&&
           !['blocked','unresolved','error','partial','partial_published']
             .some(k=>statuses[k]>0),
         scope:RECOVERY_APPLY?'recovery-apply':RECOVERY_PREVIEW?'recovery-preview':
