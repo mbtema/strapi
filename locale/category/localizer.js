@@ -4,6 +4,9 @@
 (async () => {
   'use strict';
   const UID = 'api::category.category';
+  // Known live-damaged category must never enter normal apply/reconcile.
+  const KEY_INCIDENT_QUARANTINE = new Set(['s4weogfjta7eknnbe7ptjt0f']);
+  const IGNORED_NORMALIZATION_FIELDS = new Set(['key']);
   const RUN_KEY = '__tmCategoryLocalizerRunningV1';
   const DB_NAME = 'tm-category-localizer-v1';
   const SYSTEM = new Set(['id','documentId','locale','status','publishedAt','createdAt',
@@ -121,7 +124,8 @@
   const fieldsOf=s=>Object.entries(s.attributes).filter(([f])=>!SYSTEM.has(f));
   const relFields=s=>fieldsOf(s).filter(([,a])=>a.type==='relation');
   const asIds=x=>x?x.map(v=>v.documentId).sort():[];
-  const rowsStatus=()=>Object.fromEntries(['planned','success','partial_published','partial','already_ok','blocked','unresolved','error'].map(k=>
+  const rowsStatus=()=>Object.fromEntries(['planned','success','partial_published','partial',
+    'already_ok','skipped_key','blocked','unresolved','error'].map(k=>
     [k,state.report.results.filter(v=>v.status===k).length]));
   function render(line='') {
     const c=rowsStatus();
@@ -130,6 +134,7 @@
       (DRY_RUN?'Планируется '+c.planned+' · уже нормализовано '+c.already_ok:
         'Успешно '+c.success+' · частично '+(c.partial+c.partial_published)+
         ' · без изменений '+c.already_ok)+
+      ' · key пропущено '+c.skipped_key+
       ' · blocked '+c.blocked+' · unresolved '+c.unresolved+' · errors '+c.error+'\n'+
       'GET '+state.get+' · PUT '+state.put+' · POST '+state.post+' · retries '+state.retries;
   }
@@ -151,6 +156,7 @@
     'application/json;charset=utf-8');
   const stopCheck=()=>{if(state.stop)throw Object.assign(Error('Остановка пользователем'),{stop:true});};
   class Blocked extends Error {constructor(message){super(message);this.blocked=true;}}
+  class SkipKey extends Blocked {constructor(message){super(message);this.skipKey=true;}}
   // Unknown outcome is a global stop: never continue bulk writes after one ambiguous mutation.
   class Unresolved extends Error {constructor(message){super(message);this.unresolved=true;this.fatal=true;}}
   class IntegrityViolation extends Error {
@@ -546,13 +552,11 @@
     if(uid!==UID)return;
     const ruKey=snap?.ru?.draft?.fields?.key;
     const kkKey=snap?.kk?.draft?.fields?.key;
-    // LIVE 2026-11-18: KK PUT with RU Draft.key present and KK Draft.key null
-    // unexpectedly erased RU Draft.key. Do not risk this mismatch again.
-    // No automatic repair or silent omission of the nonlocalized unique key.
-    if(nonEmpty(ruKey)&&!eq(ruKey,kkKey))
-      throw new Blocked('Запись запрещена: RU Draft.key='+clean(ruKey)+
-        ', KK Draft.key='+clean(kkKey)+
-        '. Известный риск удаления RU key при сохранении KK; нужна отдельная коррекция.');
+    // Omitting key in PUT is not enough: Strapi sync can still erase RU.key.
+    // Skip every draft-key mismatch BEFORE any writes, even RU=null vs KK=value.
+    if(!eq(ruKey??null,kkKey??null))
+      throw new SkipKey('Разные Draft.key: RU='+clean(ruKey)+
+        ', KK='+clean(kkKey)+'. Поле key не меняем; Category пропущена.');
   }
   const intact=(before,after)=>sameVersion(before.ru.draft,after.ru.draft)&&
     sameVersion(before.ru.published,after.ru.published);
@@ -648,6 +652,8 @@
     const payload={},expected=kk?{...kk.fields}:{},skippedFields=[];
     for(const [f,a]of fieldsOf(s)){
       if(a.type==='relation')continue;
+      // Preserve key in KK expected/postflight, but never plan its mutation.
+      if(IGNORED_NORMALIZATION_FIELDS.has(f))continue;
       let v;
       try{v=desiredField(f,a,
         f==='brandZoneBanners'?ru.fields[f]:ru.row[f],
