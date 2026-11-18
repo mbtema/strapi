@@ -287,7 +287,53 @@
   const ids = values => (values || []).map(item => item.documentId).sort();
   const fieldValue = (ver, field) => ver?.fields?.[field];
 
-  function buildAudit(schema) {
+  // Сравнение вложенных компонентов по схеме: numeric id экземпляров и
+  // локализованные KK media не означают необходимость перезаписать компонент.
+  // Остальные несовпадения сохраняем как явный план, без записи в CMS.
+  function componentDifferences(def, ru, kk, path, components, pending, mediaKept, review) {
+    if (def.type === 'media') {
+      if (present(kk)) {
+        if (!same(ru?.id ?? ru, kk?.id ?? kk)) mediaKept.push(path);
+      } else if (present(ru)) pending.push(path);
+      return;
+    }
+    if (def.type === 'component' || def.type === 'dynamiczone') {
+      const itemsRu = Array.isArray(ru) ? ru : ru == null ? [] : [ru];
+      const itemsKk = Array.isArray(kk) ? kk : kk == null ? [] : [kk];
+      if (itemsRu.length !== itemsKk.length) {
+        pending.push(path + ' (количество)'); return;
+      }
+      for (let i = 0; i < itemsRu.length; i++) {
+        const a = itemsRu[i], b = itemsKk[i], suffix = path + '[' + i + ']';
+        const uid = def.type === 'dynamiczone' ? a?.__component : def.component;
+        if (def.type === 'dynamiczone' && a?.__component !== b?.__component) {
+          pending.push(suffix + ' (__component)'); continue;
+        }
+        const sc = components.get(uid);
+        if (!sc) { review.push(suffix + ' (нет схемы ' + uid + ')'); continue; }
+        if (!a || !b) { pending.push(suffix + ' (нет компонента)'); continue; }
+        for (const [name, child] of Object.entries(attrs(sc))) {
+          if (SYSTEM.has(name) || name === 'id') continue;
+          const childPath = suffix + '.' + name;
+          if (child.type === 'component' || child.type === 'dynamiczone' ||
+              child.type === 'media') {
+            componentDifferences(child, a[name], b[name], childPath, components,
+              pending, mediaKept, review);
+          } else if (child.type === 'relation') {
+            const ar = a[name]?.count, br = b[name]?.count;
+            if (ar !== br) pending.push(childPath + ' (count)');
+            else if ((ar || 0) > 0) review.push(childPath + ' (сверить точные links)');
+          } else if (!same(a[name], b[name])) {
+            pending.push(childPath);
+          }
+        }
+      }
+      return;
+    }
+    if (!same(ru, kk)) pending.push(path);
+  }
+
+  function buildAudit(schema, components) {
     const ru = report.versions.ru.draft;
     const kk = report.versions.kk.draft;
     if (!ru) throw new Error('У категории отсутствует RU Draft');
@@ -318,9 +364,18 @@
       else if (definition.type === 'media' || MEDIA_FIELDS.has(name)) decision =
         present(b) ? 'preserve_kk_media' : (present(a) ? 'copy_ru_media' : 'same');
       else if (name === 'key' && !same(a, b)) decision = 'unsafe_shared_key_review';
-      else if (same(a, b)) decision = 'same';
       else if (definition.type === 'component' || definition.type === 'dynamiczone' ||
-          COMPONENT_FIELDS.has(name)) decision = 'mirror_ru_components';
+          COMPONENT_FIELDS.has(name)) {
+        const pending = [], mediaKept = [], review = [];
+        componentDifferences(definition, a, b, name, components, pending, mediaKept, review);
+        decision = pending.length ? 'mirror_ru_component_fields' :
+          review.length ? 'review_nested_relations' :
+          mediaKept.length ? 'preserve_kk_component_media' : 'same';
+        if (pending.length) report.warnings.push(name + ': различия ' + pending.join(', '));
+        if (review.length) report.warnings.push(name + ': требуют проверки ' + review.join(', '));
+        if (mediaKept.length) report.warnings.push(name + ': сохраняем KK media ' + mediaKept.join(', '));
+      }
+      else if (same(a, b)) decision = 'same';
       else if (definition.pluginOptions?.i18n?.localized === true &&
           !SOURCE_FIELDS.has(name)) decision = 'review_other_localized_field';
       else decision = 'mirror_ru_field';
@@ -416,7 +471,7 @@
     collect(schema);
     report.components = Object.fromEntries([...wanted].filter(uid => components.has(uid))
       .map(uid => [uid, components.get(uid)]));
-    buildAudit(schema);
+    buildAudit(schema, components);
     report.complete = true;
     console.table(report.fieldAudit.map(({ field, type, decision }) => ({ field, type, decision })));
     console.table(report.relationAudit.map(({ field, sourceCount, targetCount, decision }) =>
