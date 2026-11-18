@@ -18,6 +18,7 @@ if(here.pathname!=='/admin/content-manager/collection-types/'+BRAND_UID+'/'+BRAN
 }
 if(window[RUNKEY]){console.warn(TAG,'Уже выполняется');return;}
 window[RUNKEY]=true;
+delete window.tmChanelStop;
 const report={version:1,mode,startedAt:new Date().toISOString(),finishedAt:null,
   status:'running',scope:{brandDocumentId:BRAND,categoryCount:EXPECTED},
   counters:{GET:0,PUT:0,POST:0,retries:0,verifiedWrites:0,plannedWrites:0},
@@ -745,15 +746,21 @@ try{
     note:'KK Media и переводы защищены; Product не публикуется'};
   console.log(TAG,mode,'Старт',ids.length,'категорий. Для остановки window.tmChanelStop=true');
   await seedPhase();
-  if(APPLY)targets.clear();
-  await linksPhase();
-  await publishPhase();
-  report.complete=true;
+  if(APPLY){
+    targets.clear();
+    await linksPhase();
+    await publishPhase();
+  }else{
+    report.summary.preflightOnly=true;
+    report.summary.note+='; связи/публикации не моделируются до создания KK';
+  }
+  report.complete=report.issues.length===0;
   report.summary={...report.summary,created:report.stages.seed.created,
     updated:report.stages.seed.updated,linksAdded:report.stages.relations.linked,
     publishedRU:report.stages.publish.ru,publishedKK:report.stages.publish.kk,
     incompleteDocuments:skipDocs.size,verifiedWrites:report.counters.verifiedWrites};
-  report.status=report.issues.length?'completed-with-issues':'completed';
+  report.status=!APPLY?'dry-run-ready':report.issues.length?
+    'completed-with-issues':'completed';
 }catch(e){
   report.status='stopped';
   report.errors.push(e.message);
