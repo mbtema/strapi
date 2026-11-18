@@ -17,11 +17,11 @@ window[RUNKEY]=true;
 delete window.tmCategoryNormalizerStop;
 const report={version:1,mode,startedAt:new Date().toISOString(),finishedAt:null,
   status:'running',scope:{collection:UID,sourceLocale:'ru',targetLocale:'kk',categoryCount:null,listPages:0},
-  counters:{GET:0,PUT:0,POST:0,retries:0,verifiedWrites:0},
+  counters:{GET:0,PUT:0,POST:0,retries:0,verifiedWrites:0,restoredWrites:0},
   stages:{seed:{processed:0,created:0,updated:0,unchanged:0,blocked:0},
     relations:{processed:0,linked:0,unchanged:0,blocked:0},
     publish:{processed:0,ru:0,kk:0,skipped:0,blocked:0}},
-  results:{},issues:[],errors:[],warnings:[],complete:false};
+  results:{},issues:[],errors:[],warnings:[],restorations:[],complete:false};
 window.tmCategoryNormalizerReport=report;
 const SYSTEM=new Set(['id','documentId','locale','status','createdAt','updatedAt',
   'publishedAt','createdBy','updatedBy','localizations','__pivot']);
@@ -379,7 +379,8 @@ async function dbFinish(pending,after){
       (pending.locale?'/'+pending.locale:''),value:{
         at:new Date().toISOString(),stage:pending.stage,documentId:pending.documentId,
         locale:pending.locale||null,before:pending.before,
-        after:compact(after),status:stableStatus(after)}});
+        after:compact(after),status:stableStatus(after),
+        restoration:pending.restoration||null}});
     o.delete('pending');
     tx.oncomplete=resolve;
     tx.onerror=()=>reject(tx.error||Error('IndexedDB verify journal failed'));
@@ -458,8 +459,8 @@ function verifyLinks(before,after,expected){
       'KK relation '+f+' не совпал после PUT');
   }
 }
-function verifyWrite(pending,before,after){
-  const b=pending.before,a=compact(after);
+function verifyCompact(pending,a){
+  const b=pending.before;
   const stage=pending.stage;
   if(stage==='content'){
     for(const st of ['draft','published'])
@@ -507,6 +508,86 @@ function verifyWrite(pending,before,after){
       'Другой Published поля изменились');
   }else fail('Unknown pending '+stage);
 }
+// The saved IndexedDB before-snapshot is the only baseline for self-repair.
+// Never perform a broad rollback: repair only strictly missing RU Draft values
+// when a virtual restoration of those values would fully verify the original write.
+function recoveryPlan(pending,after){
+  if(!['content','links'].includes(pending.stage))return null;
+  const b=pending.before,a=compact(after);
+  if(!b.ru.draft||!a.ru.draft||!equal(b.ru.published,a.ru.published)||
+     !equal(b.ru.draft.relations,a.ru.draft.relations)||
+     !equal(b.kk.published,a.kk.published))return null;
+  const eligible=new Set(['string','text','richtext','email','enumeration',
+    'json','blocks','integer','biginteger','float','decimal','boolean',
+    'date','time','datetime','uid','media']);
+  const lost={};
+  const missing=v=>v==null||v===''||Array.isArray(v)&&v.length===0;
+  for(const [field,prior]of Object.entries(b.ru.draft.fields)){
+    const current=a.ru.draft.fields[field];
+    if(equal(prior,current))continue;
+    const type=schema?.attributes?.[field]?.type;
+    if(!eligible.has(type)||missing(prior)||!missing(current))
+      return null; // changed to another nonempty value: possible concurrent edit
+    lost[field]=prior;
+  }
+  if(!Object.keys(lost).length)return null;
+  const simulated=JSON.parse(JSON.stringify(a));
+  for(const [field,value]of Object.entries(lost)){
+    simulated.ru.draft.fields[field]=value;
+    const definition=schema.attributes[field];
+    if(definition.pluginOptions?.i18n?.localized!==true&&
+       simulated.kk.draft&&missing(simulated.kk.draft.fields[field])){
+      const oldKK=b.kk.draft?.fields?.[field];
+      // Only shared values that previously matched RU may be predicted
+      // to recover cross-locale. Never overwrite a KK-specific value.
+      if(b.kk.draft&&!equal(oldKK,value))return null;
+      simulated.kk.draft.fields[field]=value;
+    }
+  }
+  // This must prove ALL saved constraints, including key, media and links.
+  try{verifyCompact(pending,simulated);}catch{return null;}
+  return {values:lost,fields:Object.keys(lost)};
+}
+function verifyWrite(pending,before,after){
+  return verifyCompact(pending,compact(after));
+}
+async function restoreLostDraftFields(pending,after,originalError){
+  if(pending.restoration)return null; // crash-safe: never repeat recovery PUT
+  const plan=recoveryPlan(pending,after);
+  if(!plan)return null;
+  const id=pending.documentId;
+  // Persist the recovery intent BEFORE its sole real CMS write.
+  // If execution stops, next launch GET-verifies without retrying a PUT.
+  pending.restoration={
+    status:'attempted',at:new Date().toISOString(),
+    cause:originalError.message,fields:plan.fields,
+    previous:compact(after),values:plan.values
+  };
+  await dbPut('pending',pending);
+  let error=null;
+  try{
+    await request('PUT',
+      '/content-manager/collection-types/'+UID+'/'+encodeURIComponent(id)+'?locale=ru',
+      {locale:'ru',...plan.values});
+  }catch(e){error=e;}
+  // Never trust write HTTP alone; re-read all four versions and all links.
+  const restored=await snapshot(id);
+  try{verifyWrite(pending,null,restored);}
+  catch(e){
+    throw Error('Восстановление RU Draft не подтверждено: '+e.message+
+      (error?'; PUT: '+error.message:''));
+  }
+  const record={id,stage:pending.stage,fields:plan.fields,
+    originalValues:plan.values,status:'verified',
+    at:new Date().toISOString()};
+  report.restorations.push(record);
+  resultFor(id).notes.push('Автоматически восстановлено: '+plan.fields.join(', '));
+  report.counters.restoredWrites++;
+  console.warn(TAG,'Восстановлены поля RU Draft',id,plan.fields);
+  if(error)report.warnings.push('Recovery PUT вернул ошибку, но полная GET сверка подтвердила восстановление '+
+    id+': '+error.message);
+  return restored;
+}
 async function perform(stage,id,before,expected,method,path,payload,locale){
   guard();
   let pending;
@@ -522,7 +603,20 @@ async function perform(stage,id,before,expected,method,path,payload,locale){
   }
   if(after){
     try{verifyWrite(pending,before,after);}
-    catch(e){report.errors.push('Integrity '+id+'/'+stage+': '+e.message);}
+    catch(e){
+      let recoveryError=null;
+      try{
+        const restored=await restoreLostDraftFields(pending,after,e);
+        if(restored)after=restored;
+        else report.errors.push('Integrity '+id+'/'+stage+': '+e.message+
+          ' (небезопасно восстанавливать автоматически)');
+      }catch(re){
+        recoveryError=re;
+        report.errors.push('Recovery '+id+'/'+stage+': '+re.message);
+      }
+      if(recoveryError)
+        console.error(TAG,'Автовосстановление не подтверждено',id,recoveryError);
+    }
   }
   if(writeError){
     if(after&&!report.errors.length)
@@ -549,6 +643,11 @@ async function recoverPending(){
   const after=await snapshot(pending.documentId);
   verifyWrite(pending,null,after);
   await dbFinish(pending,after);
+  if(pending.restoration){
+    report.restorations.push({id:pending.documentId,stage:pending.stage,
+      fields:pending.restoration.fields,status:'verified-after-restart',
+      at:new Date().toISOString()});
+  }
   report.warnings.push('Восстановлена после GET ранее подтверждённая запись '+
     pending.documentId+'/'+pending.stage);
 }
