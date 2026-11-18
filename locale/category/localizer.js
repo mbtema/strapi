@@ -1116,8 +1116,12 @@
     // Live failure: an automatic Product Publish lost a Draft.attributes link.
     // Pause ALL automatic Product publications until this is understood.
     if(uid==='api::product.product'){
+      if(id!==PRODUCT_PUBLISH_INCIDENT&&await detail(uid,id,'kk','published')){
+        dependencyPublicationCache.set(key,null);
+        return null; // Already published: no additional Product POST needed.
+      }
       const issue={uid,id,reason:'Автопубликация KK Product приостановлена: '+
-        'после Publish потерялась связь attributes в другом Product'};
+        'Publish ранее потерял связь attributes; Product не записываем'};
       dependencyPublicationCache.set(key,issue);
       return issue;
     }
@@ -1212,12 +1216,17 @@
     if(previous?.deferredDependencies?.length){
       const pending=[];
       for(const dep of previous.deferredDependencies){
-        if(!await detail(dep.uid,dep.id,'kk','published'))pending.push(dep);
+        // A Product Published row alone is insufficient: the incident created
+        // one with missing attributes. Require explicit workflow repair first.
+        if(dep.uid==='api::product.product'||
+          !await detail(dep.uid,dep.id,'kk','published'))pending.push(dep);
       }
       if(pending.length)return {status:'partial',stage:'waiting-dependencies',
         changes:[],pendingLinks:[],pendingFields:[],
         pendingPublications:pending.map(dep=>({...dep,
-          reason:'KK Published зависимости по-прежнему отсутствует'})),
+          reason:dep.uid==='api::product.product'?
+            'Автопубликация Product приостановлена до проверки attributes':
+            'KK Published зависимости по-прежнему отсутствует'})),
         reason:'Ожидаются KK Published зависимости; никаких новых PUT/POST'};
       // All old dependencies now published; proceed to revalidate Category.
     }
