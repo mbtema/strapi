@@ -1,14 +1,20 @@
 // Этап 1: Strapi Admin -> Console -> products-config.csv
 // Только GET. Все товары локали ru без фильтра newFrom1C/active/контента.
 // Полный снимок Product + barcodes из attributes + bitrix_id категорий custom=false.
+// Незначительные ошибки в данных связей пишем в отдельный issues CSV.
+// Checkpoint IndexedDB позволяет продолжить после ошибки или закрытия вкладки.
 (async () => {
   'use strict';
 
   const CFG = {
     locale: 'ru',
     pageSize: 100,
-    concurrency: 4,
-    filename: 'products-config.csv'
+    concurrency: 12,      // Товары в работе; это НЕ число одновременных GET.
+    httpConcurrency: 8,   // Не больше прежнего пика (4 worker × 2 relations).
+    maxAttempts: 4,       // Повторяем только безопасные GET.
+    checkpointEvery: 50,
+    filename: 'products-config.csv',
+    issuesFilename: 'products-config-issues.csv'
   };
   const PRODUCT_UID = 'api::product.product';
   const ATTRIBUTE_UID = 'api::attribute.attribute';
@@ -55,16 +61,61 @@
   const normalizeBarcode = value =>
     String(value ?? '').replace(/\s+/g, '').trim();
 
-  async function get(url) {
-    const response = await fetch(url, {
-      method: 'GET',
-      credentials: 'include',
-      headers
+  // Общий лимит GET для всех worker и дополнительных запросов справочников.
+  // Удерживаем слот во время backoff, чтобы не создавать шквал повторов.
+  let activeHttp = 0;
+  const httpQueue = [];
+  let requestCount = 0;
+  let retryCount = 0;
+  const startedAt = performance.now();
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  function withHttpSlot(task) {
+    return new Promise((resolve, reject) => {
+      const run = () => {
+        activeHttp++;
+        Promise.resolve().then(task).then(resolve, reject).finally(() => {
+          activeHttp--;
+          if (httpQueue.length) httpQueue.shift()();
+        });
+      };
+      if (activeHttp < CFG.httpConcurrency) run();
+      else httpQueue.push(run);
     });
-    if (!response.ok) {
-      throw Error('HTTP ' + response.status + ': ' + url.split('?')[0]);
-    }
-    return response.json();
+  }
+  async function get(url) {
+    return withHttpSlot(async () => {
+      for (let attempt = 1; attempt <= CFG.maxAttempts; attempt++) {
+        let response;
+        requestCount++;
+        try {
+          response = await fetch(url, {
+            method: 'GET',
+            credentials: 'include',
+            headers,
+            signal: AbortSignal.timeout(30000)
+          });
+        } catch (error) {
+          if (attempt === CFG.maxAttempts) {
+            throw Error('GET не выполнен после ' + attempt +
+              ' попыток: ' + url.split('?')[0] + '; ' + error.message);
+          }
+          retryCount++;
+          await sleep(500 * 2 ** (attempt - 1));
+          continue;
+        }
+        if (response.ok) return response.json();
+        if (![429, 500, 502, 503, 504].includes(response.status) ||
+            attempt === CFG.maxAttempts) {
+          throw Error('HTTP ' + response.status + ': ' + url.split('?')[0]);
+        }
+        retryCount++;
+        const retryAfter = Number(response.headers.get('retry-after'));
+        const delay = Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(10000, retryAfter * 1000)
+          : 500 * 2 ** (attempt - 1);
+        await sleep(delay);
+      }
+    });
   }
 
   async function detail(uid, documentId) {
@@ -132,6 +183,7 @@
   console.log('[Config] Читаю все товары locale=ru без фильтров...');
   const ids = [];
   const seen = new Set();
+  let expectedTotal = null;
   let page = 1;
   let pages = 1;
   do {
@@ -145,7 +197,15 @@
       '/content-manager/collection-types/' + PRODUCT_UID + '?' + params
     );
     const list = rowsOf(json);
-    pages = Number(pageOf(json)?.pageCount);
+    const pagination = pageOf(json);
+    pages = Number(pagination?.pageCount);
+    const total = Number(pagination?.total);
+    if (Number.isSafeInteger(total) && total >= 0) {
+      if (expectedTotal === null) expectedTotal = total;
+      else if (total !== expectedTotal) {
+        throw Error('Количество Product изменилось во время обхода списка');
+      }
+    }
     if (!list || !Number.isSafeInteger(pages) || pages < 0 || pages > 100000) {
       throw Error('Некорректная пагинация списка: ' + page);
     }
@@ -164,20 +224,123 @@
       '; уникальных Product ' + ids.length);
     page++;
   } while (page <= pages);
+  if (expectedTotal !== null && ids.length !== expectedTotal) {
+    throw Error('Список Product неполный: уникальных ' + ids.length +
+      ', pagination.total=' + expectedTotal);
+  }
 
+  // Отпечаток полного списка ID: checkpoint не смешивает разные составы каталога.
+  function catalogFingerprint(values) {
+    let hash = 2166136261;
+    for (const value of values) {
+      for (let i = 0; i < value.length; i++) {
+        hash ^= value.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      hash ^= 10;
+      hash = Math.imul(hash, 16777619);
+    }
+    return CFG.locale + ':' + values.length + ':' + (hash >>> 0).toString(16);
+  }
+  async function openCheckpoint(values) {
+    const prefix = catalogFingerprint(values) + ':';
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('tm-products-config', 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains('rows')) {
+          req.result.createObjectStore('rows', { keyPath: 'key' });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return {
+      async load() {
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction('rows', 'readonly');
+          const request = tx.objectStore('rows').getAll(
+            IDBKeyRange.bound(prefix, prefix + '\uffff'));
+          request.onsuccess = () => resolve(new Map(
+            request.result.map(record => [record.documentId, record])));
+          request.onerror = () => reject(request.error);
+        });
+      },
+      async save(records) {
+        if (!records.length) return;
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction('rows', 'readwrite');
+          const store = tx.objectStore('rows');
+          for (const record of records) {
+            store.put({ ...record, key: prefix + record.documentId });
+          }
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+        });
+      },
+      async clear() {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction('rows', 'readwrite');
+          const request = tx.objectStore('rows').openCursor(
+            IDBKeyRange.bound(prefix, prefix + '\uffff'));
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (cursor) { cursor.delete(); cursor.continue(); }
+          };
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+        });
+      }
+    };
+  }
+
+  const checkpoint = await openCheckpoint(ids);
+  const restored = await checkpoint.load();
   const result = new Array(ids.length);
+  const issuesByProduct = new Array(ids.length);
   let cursor = 0;
   let done = 0;
+  let restoredCount = 0;
+  let issueCount = 0;
+  const dirty = [];
+  let saveChain = Promise.resolve();
+  async function flushCheckpoint() {
+    const batch = dirty.splice(0);
+    if (!batch.length) return;
+    saveChain = saveChain.then(() => checkpoint.save(batch));
+    await saveChain;
+  }
   let withoutAttributes = 0;
   let withoutCategories = 0;
   let failed = null;
   const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+  for (let i = 0; i < ids.length; i++) {
+    const saved = restored.get(ids[i]);
+    if (!saved || saved.row?.documentId !== ids[i] ||
+        !Array.isArray(saved.issues)) continue;
+    result[i] = saved.row;
+    issuesByProduct[i] = saved.issues;
+    done++;
+    restoredCount++;
+    issueCount += saved.issues.length;
+    if (!saved.row.attributes) withoutAttributes++;
+    if (!saved.row.categories) withoutCategories++;
+  }
+  console.log('[Config] Checkpoint: восстановлено ' + restoredCount +
+    '/' + ids.length + ' Product. Для новых строк действует лимит ' +
+    CFG.httpConcurrency + ' одновременных GET.');
 
   async function worker() {
     while (cursor < ids.length && !failed) {
       const index = cursor++;
+      if (result[index]) continue;
       const id = ids[index];
       try {
+        const issues = [];
+        const issue = (relation, relatedDocumentId, code) => {
+          issues.push({ documentId: id, relation, relatedDocumentId, code });
+        };
         const product = await detail(PRODUCT_UID, id);
         for (const field of SNAPSHOT_FIELDS) {
           if (!own(product, field)) {
@@ -202,7 +365,8 @@
           if (barcode == null) {
             const attribute = await relatedDetail(ATTRIBUTE_UID, relation.documentId);
             if (!own(attribute, 'barcode')) {
-              throw Error('Attribute ' + relation.documentId + ': barcode отсутствует в ответе');
+              issue('attributes', relation.documentId, 'ATTRIBUTE_BARCODE_MISSING');
+            continue;
             }
             barcode = attribute.barcode;
           }
@@ -217,7 +381,8 @@
             category = await relatedDetail(CATEGORY_UID, relation.documentId);
           }
           if (typeof category.custom !== 'boolean') {
-            throw Error('Category ' + relation.documentId + ': custom не boolean');
+            issue('categories', relation.documentId, 'CATEGORY_CUSTOM_UNKNOWN');
+            continue;
           }
           if (category.custom) continue; // custom=true полностью игнорируем.
           if (category.bitrix_id == null || !String(category.bitrix_id).trim()) {
@@ -225,8 +390,8 @@
             category = await relatedDetail(CATEGORY_UID, relation.documentId);
           }
           if (category.bitrix_id == null || !String(category.bitrix_id).trim()) {
-            throw Error('Category ' + relation.documentId +
-              ': custom=false, но bitrix_id отсутствует');
+            issue('categories', relation.documentId, 'CATEGORY_BITRIX_ID_MISSING');
+            continue;
           }
           bitrixIds.add(String(category.bitrix_id).trim());
         }
@@ -249,14 +414,25 @@
           categories: categoryValues.join('|'),
           detail_text: filled(product.detail_text)
         };
+        issuesByProduct[index] = issues;
         if (!values.length) withoutAttributes++;
         if (!categoryValues.length) withoutCategories++;
-
+        issueCount += issues.length;
+        dirty.push({ documentId: id, row: result[index], issues });
         done++;
+        if (dirty.length >= CFG.checkpointEvery) await flushCheckpoint();
         if (done % 50 === 0 || done === ids.length) {
+          const freshDone = done - restoredCount;
+          const elapsed = (performance.now() - startedAt) / 1000;
+          const eta = freshDone > 0
+            ? Math.round(elapsed * (ids.length - done) / freshDone)
+            : null;
           console.log('[Config] Проверено ' + done + '/' + ids.length +
             '; без barcode ' + withoutAttributes +
-            '; без категорий custom=false ' + withoutCategories);
+            '; без категорий custom=false ' + withoutCategories +
+            '; проблемных связей ' + issueCount +
+            '; GET ' + requestCount + ', повторов ' + retryCount +
+            (eta === null ? '' : '; ETA ~' + Math.round(eta / 60) + ' мин'));
         }
       } catch (error) {
         failed = error;
@@ -269,27 +445,49 @@
   await Promise.all(Array.from({
     length: Math.min(CFG.concurrency, ids.length)
   }, worker));
-  if (failed) throw failed;
+  await flushCheckpoint();
+  if (failed) {
+    console.error('[Config] Прогресс сохранён: ' + done + '/' + ids.length +
+      '. Повтори тот же скрипт для продолжения после исправления ошибки.');
+    throw failed;
+  }
+  if (result.filter(Boolean).length !== ids.length) {
+    throw Error('Неполный результат после worker; checkpoint сохранён');
+  }
 
   const products = result.sort((a, b) =>
     String(a.name).localeCompare(String(b.name), 'ru') ||
     a.documentId.localeCompare(b.documentId)
   );
   const quote = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
-  const csv = '\uFEFF' + [
-    FIELDS.join(';'),
-    ...products.map(item => FIELDS.map(field => quote(item[field])).join(';'))
-  ].join('\r\n');
-  const url = URL.createObjectURL(new Blob([csv], {
-    type: 'text/csv;charset=utf-8'
-  }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = CFG.filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  function downloadCsv(filename, columns, rows) {
+    const csv = '\uFEFF' + [
+      columns.join(';'),
+      ...rows.map(row => columns.map(field => quote(row[field])).join(';'))
+    ].join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], {
+      type: 'text/csv;charset=utf-8'
+    }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+  downloadCsv(CFG.filename, FIELDS, products);
+  const issues = issuesByProduct.flatMap(x => x ?? []);
+  if (issues.length) {
+    console.warn('[Config] Проблемных связей: ' + issues.length +
+      '. Они пропущены ТОЛЬКО в соответствующих полях CSV; исправь их перед Matcher.');
+    console.table(issues.slice(0, 20));
+    setTimeout(() => downloadCsv(CFG.issuesFilename,
+      ['documentId','relation','relatedDocumentId','code'], issues), 750);
+  }
+  // После полного экспорта checkpoint больше не нужен — следующий запуск
+  // создаст свежий snapshot даже при неизменном списке documentId.
+  await checkpoint.clear();
 
   console.log('[Config] Итог:');
   console.table([{
@@ -299,8 +497,14 @@
     withBitrixCategories: products.length - withoutCategories,
     withoutBitrixCategories: withoutCategories,
     columns: FIELDS.join(', '),
+    issues: issueCount,
+    restored: restoredCount,
+    requests: requestCount,
+    retries: retryCount,
     file: CFG.filename
   }]);
   console.log('[Config] Готово. Только GET; изменений в Strapi нет.');
   console.log('[Config] CSV совместим с migrator/products/matcher.js (12 колонок).');
+  if (issueCount) console.warn('[Config] Есть неполные связи. Сверь ' +
+    CFG.issuesFilename + ' до Matcher.');
 })();
