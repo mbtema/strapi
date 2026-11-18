@@ -437,21 +437,6 @@ function verifyLinks(before,after,expected){
       'KK relation '+f+' не совпал после PUT');
   }
 }
-function verifyPublish(before,after,locale){
-  assertRU(before,after); // may be RU publication: RU Published legitimately changed
-}
-function verifyPublishedStep(before,after,locale){
-  for(const l of ['ru','kk'])
-    ensure(equal(semantic(before[l].draft),semantic(after[l].draft)),
-      'Draft '+l+' изменился при Publish '+locale);
-  for(const l of ['ru','kk']){
-    if(l===locale)continue;
-    ensure(equal(before[l].published?.fields??null,after[l].published?.fields??null),
-      'Другой Published изменил fields: '+l);
-  }
-  ensure(publishedCheck(after[locale]).ok,
-    'Published '+locale+' не совпал с Draft по полям/key или содержит лишние links');
-}
 function verifyWrite(pending,before,after){
   const b=pending.before,a=compact(after);
   const stage=pending.stage;
@@ -468,8 +453,13 @@ function verifyWrite(pending,before,after){
       for(const f of OMIT)
         ensure(equal(a.kk.draft?.fields?.[f],b.kk.draft.fields[f]),
           'Excluded field drift '+f);
-    }else ensure(a.kk.draft?.fields?.key===b.ru.draft.fields.key,
-      'KK key mismatch after create');
+    }else{
+      ensure(a.kk.draft?.fields?.key===b.ru.draft.fields.key,
+        'KK key mismatch after create');
+      for(const [f,ids]of Object.entries(a.kk.draft?.relations||{}))
+        ensure(ids.every(id=>(b.ru.draft?.relations?.[f]||[]).includes(id)),
+          'Новая KK получила постороннюю relation '+f);
+    }
   }else if(stage==='links'){
     ensure(equal(b.ru,a.ru),'RU drift при links');
     ensure(equal(b.kk.published,a.kk.published),'KK Published drift при links');
@@ -480,6 +470,10 @@ function verifyWrite(pending,before,after){
     ensure(equal(b.ru.draft,a.ru.draft)&&equal(b.kk.draft,a.kk.draft),
       'Draft drift при Publish');
     ensure(publishedCheck(after[pending.locale]).ok,'Published postflight invalid');
+    ensure(after[pending.locale]?.published?.meta?.publishedAt &&
+      after[pending.locale].published.meta.publishedAt!==
+        pending.previousStatus[pending.locale].published.publishedAt,
+      'Нет новой версии Published после POST');
     const other=pending.locale==='ru'?'kk':'ru';
     ensure(equal(b[other].published?.fields??null,a[other].published?.fields??null),
       'Другой Published поля изменились');
@@ -487,7 +481,12 @@ function verifyWrite(pending,before,after){
 }
 async function perform(stage,id,before,expected,method,path,payload,locale){
   guard();
-  const pending=await checkpoint(stage,id,before,expected,locale);
+  let pending;
+  try{pending=await checkpoint(stage,id,before,expected,locale);}
+  catch(e){
+    report.errors.push('Не удалось сохранить prewrite journal '+id+': '+e.message);
+    throw e;
+  }
   let after=null,writeError=null;
   try{await request(method,path,payload);}catch(e){writeError=e;}
   try{after=await snapshot(id);}catch(e){
@@ -497,10 +496,19 @@ async function perform(stage,id,before,expected,method,path,payload,locale){
     try{verifyWrite(pending,before,after);}
     catch(e){report.errors.push('Integrity '+id+'/'+stage+': '+e.message);}
   }
-  if(writeError)report.errors.push('Write '+id+'/'+stage+': '+writeError.message);
+  if(writeError){
+    if(after&&!report.errors.length)
+      report.warnings.push('HTTP/Network error, но GET postflight подтвердил write '+
+        id+'/'+stage+': '+writeError.message);
+    else report.errors.push('Write '+id+'/'+stage+': '+writeError.message);
+  }
   if(report.errors.length)fail('ГЛОБАЛЬНАЯ ОСТАНОВКА: неопределённый write '+id+'/'+stage+
     '. Pending сохранён в IndexedDB; повторять запись нельзя');
-  await dbFinish(pending,after);
+  try{await dbFinish(pending,after);}
+  catch(e){
+    report.errors.push('Невозможно завершить IndexedDB journal '+id+'/'+stage+': '+e.message);
+    throw e;
+  }
   report.counters.verifiedWrites++;
   await sleep(180);
   if(report.counters.verifiedWrites%20===0)await sleep(1500);
@@ -575,54 +583,70 @@ async function seedPhase(){
   }
 }
 async function linksPhase(){
+  const CHUNK=20;
   for(const id of ids){
     guard();const st=report.stages.relations;st.processed++;
     if(skipDocs.has(id)){st.blocked++;continue;}
     try{
-      const before=await snapshot(id);ensureSafeRoot(before);
+      let before=await snapshot(id);ensureSafeRoot(before);
       if(!before.kk.draft){
-        if(APPLY)fail('Нет KK Draft после seed');else {
-          st.unchanged++;resultFor(id).relations='planned-after-seed';continue;
-        }
+        if(APPLY)fail('Нет KK Draft после seed');
+        resultFor(id).relations='planned-after-seed';
+        st.unchanged++;continue;
       }
-      const kk=before.kk.draft,ru=before.ru.draft;
-      const payload={locale:'kk'},expected={};
-      let added=0;const pending=[];
-      for(const f of WRITABLE){
-        const source=ru.relations[f],have=new Set(idsOf(kk.relations[f]));
-        const want=idsOf(source);
-        const missing=want.filter(x=>!have.has(x));
-        const connect=[];
-        for(const docId of missing){
-          const target=await targetKK(schema.attributes[f].target,docId);
-          if(!target){pending.push({field:f,documentId:docId,
-            reason:'Нет KK Draft целевой сущности'});continue;}
-          connect.push(target);
+      const ru=before.ru.draft,kk=before.kk.draft;
+      const pending=[],operations=[];
+      // Только forward-owner root relations. Inverse восстанавливается через
+      // parent (categories) и Product.categories (product), без Product PUT.
+      for(const field of WRITABLE){
+        const source=ru.relations[field];
+        const have=new Set(idsOf(kk.relations[field]));
+        const missing=idsOf(source).filter(x=>!have.has(x));
+        const ready=[];
+        for(const documentId of missing){
+          const target=await targetKK(schema.attributes[field].target,documentId);
+          if(target)ready.push(target);
+          else pending.push({field,documentId,reason:'Нет KK Draft у target'});
         }
-        if(connect.length){
-          payload[f]={connect,disconnect:[]};
-          expected[f]=[...have,...connect.map(x=>x.documentId)].sort();
-          added+=connect.length;
-        }
+        for(let i=0;i<ready.length;i+=CHUNK)
+          operations.push({field,targets:ready.slice(i,i+CHUNK)});
       }
       if(pending.length){
-        st.blocked++;skipDocs.add(id);
-        resultFor(id).relations='pending-targets';
+        st.blocked++;skipDocs.add(id);resultFor(id).relations='pending-targets';
         report.issues.push({id,stage:'relations',pending});
-        update('links',id,'Отложено: недоступны '+pending.length+' KK Draft targets');
+        update('links',id,'Ожидаются '+pending.length+' KK Draft target');
         continue;
       }
-      if(!added){st.unchanged++;resultFor(id).relations='unchanged';continue;}
+      if(!operations.length){
+        st.unchanged++;resultFor(id).relations='unchanged';continue;
+      }
       if(!APPLY){
-        st.linked+=added;report.counters.plannedWrites++;
-        resultFor(id).relations='planned '+added;
-        update('links',id,'План: '+added+' links');
+        report.counters.plannedWrites+=operations.length;
+        st.linked+=operations.reduce((n,x)=>n+x.targets.length,0);
+        resultFor(id).relations='planned '+st.linked+' links';
+        update('links',id,'План: '+operations.length+' PUT по ≤20 links');
         continue;
       }
-      await perform('links',id,before,{relations:expected},'PUT',
-        '/content-manager/collection-types/'+UID+'/'+id+'?locale=kk',payload);
-      st.linked+=added;linkedDocs.add(id);resultFor(id).relations='linked '+added;
-      update('links',id,'Подключено '+added);
+      let linked=0;
+      for(const operation of operations){
+        guard();
+        before=await snapshot(id);ensureSafeRoot(before);
+        const field=operation.field;
+        const old=idsOf(before.kk.draft.relations[field]);
+        const fresh=operation.targets.filter(x=>!old.includes(x.documentId));
+        if(!fresh.length)continue;
+        const payload={locale:'kk',
+          [field]:{connect:fresh,disconnect:[]}};
+        const wanted=Object.fromEntries(
+          Object.entries(before.kk.draft.relations).map(([f,rs])=>[f,idsOf(rs)]));
+        wanted[field]=[...old,...fresh.map(x=>x.documentId)].sort();
+        await perform('links',id,before,{relations:wanted},'PUT',
+          '/content-manager/collection-types/'+UID+'/'+id+'?locale=kk',payload);
+        linked+=fresh.length;
+        update('links',id,'Подключено '+linked+'; поле '+field);
+      }
+      st.linked+=linked;linkedDocs.add(id);
+      resultFor(id).relations='linked '+linked;
     }catch(e){
       if(report.errors.length)throw e;
       st.blocked++;skipDocs.add(id);resultFor(id).relations='blocked: '+e.message;
@@ -656,10 +680,11 @@ async function publishPhase(){
       await finalGraphCheck(id,snap);
       for(const locale of ['ru','kk']){
         const ck=publishedCheck(snap[locale]);
-        const done=await dbGet('done/publish/'+id+'/'+locale);
+        const done=APPLY?await dbGet('done/publish/'+id+'/'+locale):null;
         const unchangedSinceDone=done&&
           equal(done.after?.[locale]?.draft,semantic(snap[locale].draft))&&ck.ok;
-        if(unchangedSinceDone||(!APPLY&&ck.ok)){
+        const alreadyPublished=ck.ok&&snap[locale].draft.meta.status==='published';
+        if(unchangedSinceDone||alreadyPublished){
           st.skipped++;continue;
         }
         if(!APPLY){
@@ -691,8 +716,8 @@ try{
   if(APPLY&&!RISK)fail('Массовая запись без DB backup запрещена без явного флага принятия риска');
   await checkSchema();await loadIndex();
   if(APPLY){db=await dbOpen();await recoverPending();}
-  report.summary={scope:ids.length,expectedMissingKKAtStart:62,
-    note:'Существующие KK Media/переводы защищены; Product не публикуется'};
+  report.summary={scope:ids.length,
+    note:'KK Media и переводы защищены; Product не публикуется'};
   console.log(TAG,mode,'Старт',ids.length,'категорий. Для остановки window.tmChanelStop=true');
   await seedPhase();
   if(APPLY)targets.clear();
