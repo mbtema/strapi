@@ -166,7 +166,8 @@
   };
   async function writeJournal(uid,id,stage,before,expected,extra={}){
     const prior=await getJob(uid,id); const job={key:keyOf(uid,id),uid,id,
-      history:prior?.history||[],phase:'pending-'+stage,at:now(),before,expected,
+      history:prior?.history||[],recoveries:prior?.recoveries||[],
+      phase:'pending-'+stage,at:now(),before,expected,
       lastVerified:prior?.lastVerified||null,...extra};
     await putJob(job);state.touched.add(job.key);return job;
   }
