@@ -93,6 +93,12 @@
 - Подтверждено: RU Draft/Published присутствуют, KK Draft `id=12620`, KK Published нет; KK `brand=[]`, `parent=[]`; KK Brand Draft `id=2403`, `documentId=yeag7mng9hfpk7pd4ggm7495`. RU и KK Draft совпадают по полям, включая `key=123a9d4407da69d2`, `largeImage_app=148979`, баннер `153055`; RU Published остаётся прежним (старый баннер отсутствует), не трогать его на данном этапе.
 - **Следующий ровно один write**: `category-first-kk-brand-link.js` с одноразовым `tmChanelKKBrandApplyOnce='CONNECT_BRAND'`, `tmChanelKKBrandNoDbBackupRiskAcceptedOnce=true`, `tmChanelKKBrandBaselineHashOnce='b151357e965096c1f5cad93c94e0bd5de8c60b655fd214c963a7be53926444ac'`; скрипт проверяет live baseline повторно и `before-put` browser journal. При успешном postflight ожидается `brand-linked-pending-parent`. Никакого parent/Publish на этом шаге; **факт реального PUT пока не подтверждён**.
 
+### Live подтверждение успешного подключения KK Brand — 18.11.2026
+
+- Пользователь предоставил 3 полноценных JSON `chanel-kk-brand-before-...`, `chanel-kk-brand-after-...`, `chanel-kk-brand-apply-one-brand-link-...`. Live: **1 PUT HTTP 200**, `GET=73`, `retries=0`, `warnings=[]`, `errors=[]`, `status=brand-linked-pending-parent`. Browser journal `before-brand-put` и `after-brand-put` сохранён.
+- Независимая сверка before/after: RU Draft и RU Published полностью совпадают по бизнес-полям, медиа, nested components и relation documentIds; KK Draft поля, медиа, component ID-independent values и `key=123a9d4407da69d2` не изменились; ровно один root relation `KK Draft.brand` изменился `[] → [yeag7mng9hfpk7pd4ggm7495]`; `KK Draft.parent=[]`, KK Published отсутствует. Обе локали RU/KK сохранили свои значения `key`. Пилот подключения Brand **выполнен** и не требует retry.
+- Следующий preflight: `locale/chanel/categories-parent-kk-seed-preflight.js` (GET-only) для `xff5b8l7kowombgqbfekk8ms` / `CHANEL / Мужская парфюмерия`. По прежнему аудиту RU Draft root `parent=0`, `categories=6` (включая `Pour Monsieur`, KK уже есть), `product=42`, `brand=1`, `products=0`; 5 элементов `filters_app`, 1 dynamic banner-slider, `preview_picture=149414`, `largeImage_app=148979`, `bitrix_id=2467`, `key=2f4e2ef85ee3c4d0`. Проверить текущие данные и KK targets в live перед планированием записи, links писать отдельным этапом (без recursive Publish Product).
+
 ### Безопасный порядок дальнейшей работы
 
 1. Выполнить read-only recheck первой Category новым Draft-first пилотом: обе Published есть, Draft links 10/10, KK image 153056, отсутствующие Published links в информационном отчёте, `POST=0`.
