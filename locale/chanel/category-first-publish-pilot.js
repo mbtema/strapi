@@ -71,6 +71,38 @@
     }
   }
 
+  // Durable browser journal: подтверждение завершения IndexedDB transaction
+  // обязательно до каждого CMS POST. Даже при блокировке скачивания Chrome
+  // сырые снимки останутся в браузере (но это не backup БД).
+  const BACKUP_DB = 'tm-chanel-pilot-journal-v1';
+  async function persistEvidence(stage, evidence) {
+    if (!('indexedDB' in window)) throw new Error('IndexedDB недоступна');
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(BACKUP_DB, 1);
+      request.onupgradeneeded = () => {
+        const d = request.result;
+        if (!d.objectStoreNames.contains('evidence')) {
+          d.createObjectStore('evidence', { keyPath: 'id' });
+        }
+      };
+      request.onerror = () => reject(request.error || Error('IndexedDB open error'));
+      request.onblocked = () => reject(Error('IndexedDB open blocked'));
+      request.onsuccess = () => resolve(request.result);
+    });
+    try {
+      const stored = { id: FIRST_CATEGORY_ID + ':' + new Date().toISOString() +
+          ':' + stage, categoryId: FIRST_CATEGORY_ID, stage, at: new Date().toISOString(),
+        evidence };
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('evidence', 'readwrite');
+        tx.objectStore('evidence').put(stored);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error || Error('IndexedDB write error'));
+        tx.onabort = () => reject(tx.error || Error('IndexedDB transaction abort'));
+      });
+    } finally { db.close(); }
+  }
+
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const token = () => {
     const raw = localStorage.getItem('jwtToken');
@@ -310,15 +342,19 @@
   const fieldValue = (ver, field) => ver?.fields?.[field];
 
 
-  // Apply-токены требуют результатов прошлого dry-run и отдельного DB backup.
+  // Нет независимого DB backup: режим включается только при отдельном
+  // подтверждении риска. JSON/IndexedDB снимки НЕ являются backup базы.
   const APPLY = window.tmChanelPilotApplyOnce === 'PUBLISH_BOTH';
-  const BACKUP = window.tmChanelPilotDbBackupConfirmedOnce === true;
+  const RISK_ACK = window.tmChanelPilotNoDbBackupRiskAcceptedOnce === true;
   const CONFIRM_HASH = typeof window.tmChanelPilotBaselineHashOnce === 'string'
     ? window.tmChanelPilotBaselineHashOnce : null;
   delete window.tmChanelPilotApplyOnce;
-  delete window.tmChanelPilotDbBackupConfirmedOnce;
+  delete window.tmChanelPilotNoDbBackupRiskAcceptedOnce;
+  delete window.tmChanelPilotDbBackupConfirmedOnce; // очистка устаревшего флага
   delete window.tmChanelPilotBaselineHashOnce;
   report.mode = APPLY ? 'apply-publish-both' : 'dry-run';
+  report.noDbBackup = true;
+  report.riskAcceptedForThisRun = APPLY && RISK_ACK;
   const stable = value => JSON.stringify(value, (_, v) =>
     v && typeof v === 'object' && !Array.isArray(v)
       ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
@@ -485,7 +521,9 @@
           ? canonicalField(def, kk.fields[name], name, components)
           : canonicalField(def, ru.fields[name], name, components);
       } else if (name === 'key') {
-        merged.fields[name] = canonicalField(def, ru.fields[name], name, components);
+        // key вне нормализации: ожидается исходное значение KK, никакого RU -> KK.
+        // Равенство RU/KK проверяется отдельно как safety gate первой Category.
+        merged.fields[name] = expectedKK.fields[name];
       } else if (def.type === 'media' || def.type === 'component' || def.type === 'dynamiczone') {
         merged.fields[name] = mergeMedia(
           def, ru.fields[name], kk.fields[name], name, components, kept);
@@ -569,6 +607,8 @@
     return result;
   }
   // Без автоповторов. Любая ошибка POST вызывает read-only after и GLOBAL STOP.
+  // key никогда не нормализуется: Publish по известному CM контракту содержит
+  // исходный Draft.key, postflight проверяет сохранность в обеих локалях.
   async function postPublish(locale, draft, schema, components) {
     const path = '/content-manager/collection-types/' + CATEGORY_UID + '/' +
       encodeURIComponent(FIRST_CATEGORY_ID) + '/actions/publish?locale=' + locale;
@@ -604,8 +644,9 @@
 
   let schema, components, current;
   try {
-    if (APPLY && (!BACKUP || !/^[a-f0-9]{64}$/i.test(CONFIRM_HASH ?? ''))) {
-      throw new Error('APPLY запрещён: нужен сохранённый dry-run hash и подтверждение DB backup');
+    if (APPLY && (!RISK_ACK || !/^[a-f0-9]{64}$/i.test(CONFIRM_HASH ?? ''))) {
+      throw new Error('APPLY запрещён: нужен dry-run hash и отдельное согласие ' +
+        'на публикацию без DB backup. Снимки JSON/IndexedDB не заменяют backup БД');
     }
     console.log(TAG, 'Проверяю связь категории с брендом');
     const brandResponse = await get('/content-manager/collection-types/' +
@@ -631,7 +672,9 @@
     const plan = previewPlan(current, schema, components);
     report.plan = {
       actions: plan.allowedActions, preserveKkMedia: plan.protectedKkMediaPaths,
-      requiredDbBackup: true, requiresManualApply: true
+      independentDbBackup: false, browserEvidenceRequired: true,
+      requiresNoBackupRiskAcceptance: true, requiresManualApply: true,
+      keyNormalization: 'skipped; original Draft.key retained and postflight checked'
     };
     report.baselineHash = await hashOf(current, schema, components);
     report.complete = true;
@@ -647,9 +690,11 @@
       if (plan.allowedActions.some(x => !['publish-ru','publish-kk'].includes(x))) {
         throw new Error('В пилоте разрешена только публикация');
       }
-      // Snapshot is exported before the first attempted write below.
+      // Снимки before сохраняются в IndexedDB до первого POST. Если браузер
+      // запретит запись, скрипт завершится без изменения CMS.
       report.phases.push({ phase: 'preflight', at: new Date().toISOString(),
         verified: true, hash: report.baselineHash });
+      await persistEvidence('before', { snapshot: current, report });
       download('chanel-pilot-before-' + FIRST_CATEGORY_ID + '.json', report);
       report.status = 'publishing';
       for (const locale of ['ru','kk']) {
@@ -663,9 +708,11 @@
         }
         report.phases.push({ phase: 'pending-publish-' + locale,
           at: new Date().toISOString(), beforeHash: freshHash });
+        const pendingEvidence = { phase: 'pending-publish-' + locale, before: fresh,
+          previousPhases: report.phases };
+        await persistEvidence('pending-publish-' + locale, pendingEvidence);
         download('chanel-pilot-pending-' + locale + '-' + FIRST_CATEGORY_ID + '.json',
-          { phase: 'pending-publish-' + locale, before: fresh,
-            previousPhases: report.phases });
+          pendingEvidence);
         let postError = null;
         try {
           await postPublish(locale, fresh[locale].draft, schema, components);
@@ -675,8 +722,18 @@
         catch (error) { postError ||= error; }
         report.phases.push({ phase: 'after-publish-' + locale,
           at: new Date().toISOString(), after, postError: postError?.message ?? null });
+        const afterEvidence = { before: fresh, after,
+          postError: postError?.message ?? null };
+        try {
+          await persistEvidence('after-publish-' + locale, afterEvidence);
+        } catch (journalError) {
+          // Не продолжать другую локаль, если evidence потерян.
+          postError ||= journalError;
+          report.errors.push('Не удалось сохранить postflight journal: ' +
+            journalError.message);
+        }
         download('chanel-pilot-after-' + locale + '-' + FIRST_CATEGORY_ID + '.json',
-          { before: fresh, after, postError: postError?.message ?? null });
+          afterEvidence);
         if (!after) throw new Error('Не удалось получить postflight ' + locale + ': STOP');
         try { checkAfter(fresh, after, locale, schema, components); }
         catch (error) {
