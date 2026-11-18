@@ -13,9 +13,9 @@
   const RUN_KEY = '__tmChanelFirstCategoryAuditRunning';
   const SYSTEM = new Set(['id', 'documentId', 'locale', 'status', 'createdAt', 'updatedAt',
     'publishedAt', 'createdBy', 'updatedBy', 'localizations', '__pivot']);
-  const MEDIA_FIELDS = new Set(['largeimage_app', 'larheImage', 'preview_picture', 'menu_banner']);
+  const MEDIA_FIELDS = new Set(['largeImage_app', 'largeImage', 'previewImage_app', 'preview_picture', 'menu_banner']);
   const SOURCE_FIELDS = new Set(['active', 'custom', 'title', 'seo_name', 'code',
-    'bitrix_id', 'sortOrder', 'detail_avaible_from', 'slug', 'description',
+    'bitrix_id', 'sortOrder', 'detail_available_from', 'slug', 'description',
     'key', 'customName', 'showProducts']);
   const COMPONENT_FIELDS = new Set(['productsLabelFilter', 'brandZoneBanners',
     'filters_app', 'dynamic']);
@@ -362,7 +362,8 @@
       else if (name === 'name') decision =
         present(b) ? 'preserve_kk_translation' : (present(a) ? 'copy_ru_if_kk_empty' : 'same');
       else if (definition.type === 'media' || MEDIA_FIELDS.has(name)) decision =
-        present(b) ? 'preserve_kk_media' : (present(a) ? 'copy_ru_media' : 'same');
+        present(b) ? (same(a?.id ?? a, b?.id ?? b) ? 'same' : 'preserve_kk_media') :
+          (present(a) ? 'copy_ru_media' : 'same');
       else if (name === 'key' && !same(a, b)) decision = 'unsafe_shared_key_review';
       else if (definition.type === 'component' || definition.type === 'dynamiczone' ||
           COMPONENT_FIELDS.has(name)) {
