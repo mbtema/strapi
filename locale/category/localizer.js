@@ -1428,6 +1428,109 @@
     render('Recovery GET-only: '+(sourceConfirmed&&schemaConfirmed&&liveMatchesFailure?
       'исходный backup подтверждён':'требуется разбор расхождений'));
   }
+  function matchesRuKeyRecovery(before,after,expectedKey){
+    if(!before?.ru?.draft||!after?.ru?.draft||
+      before.ru.draft.fields.key!==null||
+      !eq(after.ru.draft.fields.key,expectedKey))return false;
+    // Success permits exactly ONE semantic difference, RU Draft.key.
+    // Any KK Draft/Published, RU Published, Media, component or relation
+    // change is a global unresolved stop, even if Strapi returned HTTP 200.
+    const normalized=structuredClone(after);
+    normalized.ru.draft.fields.key=null;
+    return matchingBaseline(before,normalized);
+  }
+  async function uniqueRecoveryCheck(id,key){
+    // Positive control in RU Published, because damaged RU Draft.key is NULL.
+    // Never trust a filtered list until this exact document is returned.
+    let positive=false;
+    for(const locale of ['ru','kk'])for(const status of ['draft','published']){
+      const q=new URLSearchParams({locale,status,page:'1',
+        pageSize:String(PAGE_SIZE)});
+      q.set('filters[key][$eq]',key);
+      const data=parseList(await get('/content-manager/collection-types/'+UID+'?'+q),1);
+      if(data.total>PAGE_SIZE||data.pageCount>1||data.rows.length!==data.total)
+        throw new Blocked('Unique key search неполный: '+locale+'/'+status);
+      for(const raw of data.rows){
+        const row=raw?.attributes&&!raw.documentId?
+          {...raw.attributes,id:raw.id}:raw;
+        if(!row?.documentId)
+          throw new Blocked('В unique key search нет documentId');
+        if(row.documentId!==id)
+          throw new Blocked('Ключ уже занят другой Category '+row.documentId);
+        if(locale==='ru'&&status==='published')positive=true;
+      }
+    }
+    if(!positive)throw new Blocked(
+      'Unique filter не прошёл положительную проверку RU Published');
+  }
+  async function applyRecoveryRuKey(id){
+    // Dedicated single-record recovery. Never enters the normal Category apply.
+    state.db=await openDB();
+    const existing=await getJob(UID,id);
+    if(existing?.phase==='pending-recovery-ru-key'){
+      const after=await snapshot(UID,id);
+      if(!matchesRuKeyRecovery(existing.before,after,existing.expected?.key))
+        throw new Unresolved('Незавершённая recovery не подтверждена; повторный PUT запрещён');
+      await verifiedJournal(existing,after);
+      await completeJob(UID,id,after);
+      state.report.results.push({documentId:id,status:'success',
+        stage:'recovery-verified-without-repeat',changes:['ru.draft.key'],
+        reason:'Проверено GET, повторный PUT не отправлен'});
+      state.report.recovery={documentId:id,verified:true,
+        before:existing.before,after,putRepeated:false,publish:false};
+      state.total=state.done=1;state.phase='recovery_completed';return;
+    }
+    if(existing?.phase!=='pending-save'||existing?.failure?.integrity!==true)
+      throw new Blocked('Нет исходного подтверждённого pending-save для восстановления');
+    await previewRecovery(id);
+    const p=state.report.recovery;
+    const differences=p.differencesFromOriginal||[];
+    const exactlyKnown=differences.length===2&&
+      differences.some(x=>x.locale==='ru'&&x.status==='draft'&&x.field==='key'&&
+        x.before===p.originalKey&&x.after===null)&&
+      differences.some(x=>x.locale==='kk'&&x.status==='draft'&&x.field==='slug'&&
+        x.before===null&&x.after===p.failedPostflight?.kk?.draft?.fields?.slug);
+    if(!p.sourceConfirmed||!p.schemaConfirmed||!p.liveMatchesFailure||
+      !p.pendingConfirmed||!p.unchangedFieldsConfirmed||!exactlyKnown||
+      p.currentRuKey!==null||p.currentKkKey!==null||
+      p.originalKey!==RECOVERY_CONFIRM||
+      !eq(p.publishedKkKey,p.originalBackup?.kk?.published?.fields?.key))
+      throw new Blocked('Recovery preflight не подтверждён; ни один PUT не отправлен');
+    // Explicitly verify uniqueness across all locales/statuses before the write.
+    await uniqueRecoveryCheck(id,p.originalKey);
+    stopCheck();
+    const fresh=await snapshot(UID,id);
+    if(!matchingBaseline(p.current,fresh))
+      throw new Blocked('Данные изменились во время recovery preflight; PUT запрещён');
+    const path='/content-manager/collection-types/'+UID+'/'+encodeURIComponent(id)+
+      '?locale=ru';
+    const payload={locale:'ru',key:p.originalKey};
+    const pending=await writeJournal(UID,id,'recovery-ru-key',fresh,
+      {key:p.originalKey},{method:'PUT',path,payload,
+        originalIncident:'pending-save integrity after KK Save'});
+    let error=null,after=null;
+    try{await request('PUT',path,payload);}
+    catch(e){error=e;}
+    try{after=await snapshot(UID,id);}
+    catch(e){error ||=e;}
+    p.recoveryPostflight=after;
+    if(!after||!matchesRuKeyRecovery(fresh,after,p.originalKey)||error){
+      const failure=after&&!matchesRuKeyRecovery(fresh,after,p.originalKey)?
+        new IntegrityViolation(
+          'Recovery изменила поля за пределами RU Draft.key; STOP, без rollback',after):
+        new Unresolved('Recovery PUT не подтверждён: '+clean(error));
+      await stopWithEvidence(pending,after,failure);
+    }
+    await verifiedJournal(pending,after);
+    await completeJob(UID,id,after);
+    p.verified=true;p.current=after;p.canSafelyAutoWrite=false;
+    p.recoveryOperation={method:'PUT',locale:'ru',fields:['key'],
+      published:false,verified:true};
+    state.report.results[0]={documentId:id,name:fresh.ru.draft.row.name,
+      status:'success',stage:'recovered-ru-draft-key',
+      changes:['ru.draft.key'],reason:'RU key восстановлен; остальные три версии неизменны'};
+    state.done=state.total=1;state.phase='recovery_completed';
+  }
   async function run(){
     try{
       if(RECOVERY_APPLY){await applyRecoveryRuKey(RECOVERY_APPLY);return;}
