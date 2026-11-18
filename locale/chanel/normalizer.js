@@ -709,7 +709,10 @@ async function publishPhase(){
         const done=APPLY?await dbGet('done/publish/'+id+'/'+locale):null;
         const unchangedSinceDone=done&&
           equal(done.after?.[locale]?.draft,semantic(snap[locale].draft))&&ck.ok;
-        const alreadyPublished=ck.ok&&snap[locale].draft.meta.status==='published';
+        // Уже Published + те же поля/Media/key = не нужен лишний POST.
+        // Единственное исключение: в этой сессии добавлены KK Draft links,
+        // тогда обновляем KK Published даже при неполной видимости targets.
+        const alreadyPublished=ck.ok&&(locale==='ru'||!linkedDocs.has(id));
         if(unchangedSinceDone||alreadyPublished){
           st.skipped++;continue;
         }
