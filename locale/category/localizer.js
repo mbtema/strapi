@@ -513,6 +513,18 @@
   const publicationWarnings=snap=>['ru','kk'].filter(locale=>
     preservedPublishedKey(snap[locale].draft,snap[locale].published)).map(locale=>
     locale+'.published.key: сохранено историческое значение; Draft.key=null');
+  function assertSafeCategoryKey(uid,snap){
+    if(uid!==UID)return;
+    const ruKey=snap?.ru?.draft?.fields?.key;
+    const kkKey=snap?.kk?.draft?.fields?.key;
+    // LIVE 2026-11-18: KK PUT with RU Draft.key present and KK Draft.key null
+    // unexpectedly erased RU Draft.key. Do not risk this mismatch again.
+    // No automatic repair or silent omission of the nonlocalized unique key.
+    if(nonEmpty(ruKey)&&!eq(ruKey,kkKey))
+      throw new Blocked('Запись запрещена: RU Draft.key='+clean(ruKey)+
+        ', KK Draft.key='+clean(kkKey)+
+        '. Известный риск удаления RU key при сохранении KK; нужна отдельная коррекция.');
+  }
   const intact=(before,after)=>sameVersion(before.ru.draft,after.ru.draft)&&
     sameVersion(before.ru.published,after.ru.published);
   function immutableIntact(before,after,stage){
@@ -779,6 +791,7 @@
     // Four full versions, including ALL root relations and nested Draft links.
     // Any change since preparation invalidates the write, even in a single-user CMS.
     const fresh=await snapshot(uid,id);
+    assertSafeCategoryKey(uid,fresh);
     if(!matchingBaseline(before,fresh)){
       if(!intact(before,fresh)){
         const issue=new IntegrityViolation('RU изменилась ДО '+stage+
@@ -1134,6 +1147,8 @@
     const previous=await reconcile(uid,id);
     let pair=await draftPair(uid,id);
     if(!pair.ru.draft)throw new Blocked('RU Draft отсутствует');
+    // Early gate avoids extra GET and planning for a known unsafe key mismatch.
+    assertSafeCategoryKey(uid,pair);
     if(asIds(pair.ru.draft.relations.products||[]).length)
       throw new Blocked('RU legacy products не пуст — пропуск Category');
     const createKK=!pair.kk.draft;
