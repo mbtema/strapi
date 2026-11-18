@@ -175,7 +175,7 @@ function componentVal(uid,raw,path){
 function fieldsFrom(row){
   const fields={};
   for(const [f,a]of attrList(schema)){
-    if(a.type==='relation')continue;
+    if(a.type==='relation'||f==='InStock'||f==='inStock')continue;
     fields[f]=fieldVal(a,row[f],f);
   }
   return fields;
