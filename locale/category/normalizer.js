@@ -26,6 +26,9 @@ window.tmCategoryNormalizerReport=report;
 const SYSTEM=new Set(['id','documentId','locale','status','createdAt','updatedAt',
   'publishedAt','createdBy','updatedBy','localizations','__pivot']);
 const OMIT=new Set(['key','code','slug']);
+// Новый KK Draft нельзя создавать, когда nonlocalized code существует в RU:
+// live Strapi 2026-11-18 обнулил RU Draft.code при KK PUT без code в payload.
+const SHARED_SEED_GUARD=['code'];
 const WRITABLE=['parent','brand','product'];
 const INVERSE=['categories','products','top_brands'];
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -472,9 +475,14 @@ function verifyWrite(pending,before,after){
         ensure(equal(a.kk.draft?.fields?.[f],b.kk.draft.fields[f]),
           'Excluded field drift '+f);
     }else{
-      for(const f of OMIT)
+      for(const f of OMIT){
+        const def=schema.attributes[f];
+        // UID/localized slug у нового KK может быть null: не входит в PUT.
+        if(def?.type==='uid'||def?.pluginOptions?.i18n?.localized===true)
+          continue;
         ensure(equal(a.kk.draft?.fields?.[f],b.ru.draft.fields[f]),
           'Создание KK изменило/не перенесло shared '+f);
+      }
       for(const [f,ids]of Object.entries(a.kk.draft?.relations||{}))
         ensure(ids.every(id=>(b.ru.draft?.relations?.[f]||[]).includes(id)),
           'Новая KK получила постороннюю relation '+f);
@@ -609,7 +617,18 @@ async function seedPhase(){
       let before=await snapshot(id);ensureSafeRoot(before);
       const ru=before.ru.draft,kk=before.kk.draft;
       const wanted=expectedKK(before);
-      if(!kk)await checkUnique(id,ru);
+      if(!kk){
+        const risky=SHARED_SEED_GUARD.filter(field=>{
+          const def=schema.attributes[field];
+          return def&&def.pluginOptions?.i18n?.localized!==true&&
+            ru.fields[field]!==null&&ru.fields[field]!==undefined&&
+            ru.fields[field]!=='';
+        });
+        ensure(!risky.length,
+          'Создание KK запрещено: Strapi обнуляет общий RU Draft '+
+          risky.join(', ')+'. Нужна проверенная схема синхронизации');
+        await checkUnique(id,ru);
+      }
       if(!Object.keys(wanted.updates).length){
         st.unchanged++;resultFor(id).seed='unchanged';update('seed',id,'Уже заполнено');continue;
       }
