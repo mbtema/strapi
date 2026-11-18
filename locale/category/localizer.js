@@ -1433,7 +1433,7 @@
       before.ru.draft.fields.key!==null||before.kk.draft.fields.key!==null||
       after?.ru?.draft?.fields?.key!==key||after?.kk?.draft?.fields?.key!==key)
       return false;
-    // One KK PUT may copy the shared key to both Draft locales.
+    // One RU default-locale PUT should copy the shared key to both Draft locales.
     // Every other field, relation, Media and both Published versions are immutable.
     const normalized=structuredClone(after);
     normalized.ru.draft.fields.key=null;
@@ -1497,16 +1497,16 @@
   }
   async function applyRecoveryRuKey(id){
     // One Category only. RU Published.key is the canonical value.
-    // Strapi syncs non-localized fields across Draft locales, so KK Save
-    // must restore RU Draft.key AND set KK Draft.key in a single operation.
+    // The incident's KK Save already planned the RU key, but both Drafts
+    // became null. Shared non-localized fields must be edited from default RU.
     // KK Published is updated only after the first stage is verified.
     state.db=await openDB();
     await schemas();
     const originalJob=await getJob(UID,id);
     if(!originalJob)throw new Blocked('Нет сохранённого recovery journal');
     const stage=originalJob.phase;
-    const isRecovery=stage==='pending-recovery-save-kk-key'||
-      stage==='verified-recovery-save-kk-key'||
+    const isRecovery=stage==='pending-recovery-save-ru-key'||
+      stage==='verified-recovery-save-ru-key'||
       stage==='pending-recovery-publish-kk-key'||
       stage==='verified-recovery-publish-kk-key';
     let before,after,p,expectedKey;
@@ -1530,10 +1530,10 @@
         RECOVERY_CONFIRM)
         throw new Blocked('Нет исходного повреждённого snapshot или key не совпадает');
       after=await snapshot(UID,id);
-      if(stage==='pending-recovery-save-kk-key'){
+      if(stage==='pending-recovery-save-ru-key'){
         if(originalJob.expected?.key!==RECOVERY_CONFIRM||
           !matchesRecoveryDraftKeys(originalJob.before,after,RECOVERY_CONFIRM))
-          throw new Unresolved('Recovery KK Save не подтверждён; повторный PUT запрещён');
+          throw new Unresolved('Recovery RU Save не подтверждён; повторный PUT запрещён');
         await verifiedJournal(originalJob,after);
       }else if(stage==='pending-recovery-publish-kk-key'){
         if(originalJob.expected?.key!==RECOVERY_CONFIRM||
@@ -1588,11 +1588,11 @@
       stopCheck();
       before=await snapshot(UID,id);
       if(!matchingBaseline(p.current,before))
-        throw new Blocked('Recovery baseline изменился до KK Save');
+        throw new Blocked('Recovery baseline изменился до RU Save');
       const path='/content-manager/collection-types/'+UID+'/'+encodeURIComponent(id)+
-        '?locale=kk';
-      const payload={locale:'kk',key:RECOVERY_CONFIRM};
-      const pending=await writeJournal(UID,id,'recovery-save-kk-key',before,
+        '?locale=ru';
+      const payload={locale:'ru',key:RECOVERY_CONFIRM};
+      const pending=await writeJournal(UID,id,'recovery-save-ru-key',before,
         {key:RECOVERY_CONFIRM},{method:'PUT',path,payload});
       let error=null;
       try{await request('PUT',path,payload);}catch(e){error=e;}
@@ -1600,8 +1600,8 @@
       p.recoverySavePostflight=after;
       if(!after||error||!matchesRecoveryDraftKeys(before,after,RECOVERY_CONFIRM)){
         const failure=after&&!matchesRecoveryDraftKeys(before,after,RECOVERY_CONFIRM)?
-          new IntegrityViolation('KK Save изменил посторонние поля или не синхронизировал RU Draft.key',after):
-          new Unresolved('KK Save не подтверждён: '+clean(error));
+          new IntegrityViolation('RU Save изменила посторонние поля или не синхронизировала KK Draft.key',after):
+          new Unresolved('RU Save не подтверждён: '+clean(error));
         await stopWithEvidence(pending,after,failure);
       }
       await verifiedJournal(pending,after);
