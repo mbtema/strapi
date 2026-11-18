@@ -54,6 +54,23 @@
     complete: false
   };
 
+  // Export отчётов и предзаписных снимков: предыдущая версия пилота
+  // не содержала эту функцию, поэтому dry-run завершался без JSON.
+  function download(filename, data) {
+    const content = JSON.stringify(data, null, 2);
+    const href = URL.createObjectURL(new Blob([content],
+      { type: 'application/json;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = filename;
+    document.body.append(link);
+    try { link.click(); }
+    finally {
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 15000);
+    }
+  }
+
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const token = () => {
     const raw = localStorage.getItem('jwtToken');
