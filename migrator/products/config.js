@@ -318,7 +318,7 @@
   for (let i = 0; i < ids.length; i++) {
     const saved = restored.get(ids[i]);
     if (!saved || saved.row?.documentId !== ids[i] ||
-        !Array.isArray(saved.issues)) continue;
+        !Array.isArray(saved.issues) || saved.issues.length) continue;
     result[i] = saved.row;
     issuesByProduct[i] = saved.issues;
     done++;
