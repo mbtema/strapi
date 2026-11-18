@@ -639,11 +639,21 @@ async function perform(stage,id,before,expected,method,path,payload,locale){
 async function recoverPending(){
   const pending=await dbGet('pending');
   if(!pending)return;
-  console.warn(TAG,'Восстановление после прерванного write:',pending.stage,pending.documentId);
-  const after=await snapshot(pending.documentId);
-  verifyWrite(pending,null,after);
+  console.warn(TAG,'Восстановление после прерванного write:',
+    pending.stage,pending.documentId);
+  let after=await snapshot(pending.documentId);
+  try{verifyWrite(pending,null,after);}
+  catch(e){
+    // Exact same safeguards as the normal postwrite path. If repair was
+    // attempted before a crash, no second recovery PUT is allowed.
+    const restored=await restoreLostDraftFields(pending,after,e);
+    if(!restored)throw Error('Pending не подтверждён; запись нельзя повторять: '+
+      e.message+'. Журнал сохранён');
+    after=restored;
+  }
   await dbFinish(pending,after);
-  if(pending.restoration){
+  if(pending.restoration&&!report.restorations.some(x=>
+    x.id===pending.documentId&&x.stage===pending.stage)){
     report.restorations.push({id:pending.documentId,stage:pending.stage,
       fields:pending.restoration.fields,status:'verified-after-restart',
       at:new Date().toISOString()});
