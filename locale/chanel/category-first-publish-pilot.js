@@ -552,9 +552,8 @@
   function previewPlan(snapshot, schema, components) {
     const ru = snapshot.ru.draft, kk = snapshot.kk.draft;
     if (!ru || !kk) throw new Error('Пилот предназначен только для существующих RU и KK Draft');
-    if (!ru.fields.key || ru.fields.key !== kk.fields.key) {
-      throw new Error('Блокировка: RU/KK Draft.key отсутствует или не совпадает');
-    }
+    // key не нормализуем: возможное существующее отличие RU/KK не блокирует.
+    // После каждой операции контролируем, что key не изменился в каждой локали.
     if (ru.relations.products.length || kk.relations.products.length) {
       throw new Error('Legacy products должен быть пуст в обеих локалях');
     }
@@ -678,9 +677,18 @@
     const b = digestData(before, schema, components);
     const a = digestData(after, schema, components);
     const changed = [];
-    for (const lc of ['ru', 'kk']) for (const st of ['draft', 'published']) {
-      if (lc === locale && st === 'published') continue;
-      if (stable(b[lc][st]) !== stable(a[lc][st])) changed.push(lc + '/' + st);
+    for (const lc of ['ru', 'kk']) {
+      // Draft — единственный источник полноты данных и состава relations.
+      if (stable(b[lc].draft) !== stable(a[lc].draft)) {
+        changed.push(lc + '/draft');
+      }
+      if (lc === locale) continue;
+      // Для чужого Published сверяем только поля/медиа/key и наличие:
+      // состав links может меняться вместе с доступностью target записей.
+      const bp = b[lc].published, ap = a[lc].published;
+      if (stable(bp?.fields ?? null) !== stable(ap?.fields ?? null)) {
+        changed.push(lc + '/published-fields');
+      }
     }
     if (changed.length) throw new Error('ОПАСНО: непредвиденный дрейф ' + changed.join(', '));
     const status = publishedAssessment(after, locale, schema, components);
@@ -736,7 +744,10 @@
     report.complete = true;
     report.status = plan.allowedActions.length ? 'ready' : 'verified-published';
     if (!APPLY) {
-      if (!plan.allowedActions.length) report.final = current;
+      if (!plan.allowedActions.length) {
+        report.final = current;
+        report.postflight = plan.publication;
+      }
       console.log(TAG, 'DRY-RUN готов. POST=0. actions:', plan.allowedActions,
         'KK media:', plan.protectedKkMediaPaths,
         'Published relations visibility notes:',
