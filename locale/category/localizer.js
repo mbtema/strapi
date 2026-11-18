@@ -40,24 +40,37 @@
   const EXPORT_ONLY = window.tmCategoryLocalizerExportBackupsOnce === true;
   const RECOVERY_PREVIEW=typeof window.tmCategoryLocalizerRecoveryPreviewOnce==='string'?
     window.tmCategoryLocalizerRecoveryPreviewOnce.trim():null;
+  const RECOVERY_APPLY=typeof window.tmCategoryLocalizerRecoveryApplyOnce==='string'?
+    window.tmCategoryLocalizerRecoveryApplyOnce.trim():null;
+  const RECOVERY_CONFIRM=typeof window.tmCategoryLocalizerRecoveryKeyConfirmOnce==='string'?
+    window.tmCategoryLocalizerRecoveryKeyConfirmOnce.trim():null;
   delete window.tmCategoryLocalizerApplyOnce;
   delete window.tmCategoryLocalizerOnlyOnce;
   delete window.tmCategoryLocalizerLimitOnce;
   delete window.tmCategoryLocalizerFullOnce;
   delete window.tmCategoryLocalizerExportBackupsOnce;
   delete window.tmCategoryLocalizerRecoveryPreviewOnce;
-  const DRY_RUN = !APPLY;
-  const OUTPUT_KIND=RECOVERY_PREVIEW?'recovery-preview':
+  delete window.tmCategoryLocalizerRecoveryApplyOnce;
+  delete window.tmCategoryLocalizerRecoveryKeyConfirmOnce;
+  const DRY_RUN = !(APPLY||RECOVERY_APPLY);
+  const OUTPUT_KIND=RECOVERY_APPLY?'recovery-apply':
+    RECOVERY_PREVIEW?'recovery-preview':
     EXPORT_ONLY?'backup-export':DRY_RUN?'dry-run':'apply';
   const invalidLimit=RAW_LIMIT!==undefined&&LIMIT===null;
   if(invalidLimit||(APPLY&&Number(!!ONLY)+Number(!!LIMIT)+Number(FULL)!==1)||
-    (EXPORT_ONLY&&(APPLY||ONLY||LIMIT||FULL||RECOVERY_PREVIEW))||
-    (RECOVERY_PREVIEW&&(APPLY||ONLY||LIMIT||FULL||EXPORT_ONLY||
-      !/^[a-z0-9]{24}$/.test(RECOVERY_PREVIEW)))){
+    (EXPORT_ONLY&&(APPLY||ONLY||LIMIT||FULL||RECOVERY_PREVIEW||RECOVERY_APPLY))||
+    (RECOVERY_PREVIEW&&(APPLY||ONLY||LIMIT||FULL||EXPORT_ONLY||RECOVERY_APPLY||
+      RECOVERY_CONFIRM||!/^[a-z0-9]{24}$/.test(RECOVERY_PREVIEW)))||
+    (RECOVERY_APPLY&&(APPLY||ONLY||LIMIT||FULL||EXPORT_ONLY||RECOVERY_PREVIEW||
+      !/^[a-z0-9]{24}$/.test(RECOVERY_APPLY)||
+      !/^[a-z0-9]{16}$/.test(RECOVERY_CONFIRM||'')))||
+    (!RECOVERY_APPLY&&!!RECOVERY_CONFIRM)){
     console.error('[Category Localizer] Запуск запрещён: укажи ровно один режим'+
       ' Apply — OnlyOnce (documentId), LimitOnce (целое число > 0),'+
       ' либо FullOnce = true. RecoveryPreviewOnce допускает только один documentId'+
-      ' без флагов записи. Некорректный LimitOnce не означает FULL.');
+      ' без флагов записи. RecoveryApplyOnce требует точный documentId и'+
+      ' RecoveryKeyConfirmOnce (16 символов), без любых других режимов.'+
+      ' Некорректный LimitOnce не означает FULL.');
     return;
   }
   if (!location.pathname.startsWith('/admin/content-manager')) {
@@ -87,7 +100,8 @@
     'width:min(490px,calc(100vw - 32px));max-height:75vh;overflow:auto;'+
     'box-shadow:0 10px 32px #0009;font:13px/1.5 system-ui';
   const heading=$('strong','Category Localizer · '+
-    (RECOVERY_PREVIEW?'RECOVERY PREVIEW · только GET':
+    (RECOVERY_APPLY?'RECOVERY APPLY · один RU Draft PUT без Publish':
+      RECOVERY_PREVIEW?'RECOVERY PREVIEW · только GET':
       DRY_RUN?'DRY RUN · только GET':'APPLY · RU → KK'));
   const message=$('pre','Подготовка…'); message.style.cssText='white-space:pre-wrap;font:12px/1.5 system-ui';
   const buttons=$('div'); buttons.style.cssText='display:flex;gap:7px;flex-wrap:wrap';
@@ -175,8 +189,13 @@
     catch(e){e.fatal=true;throw e;}
   };
   async function writeJournal(uid,id,stage,before,expected,extra={}){
-    const prior=await getJob(uid,id); const job={key:keyOf(uid,id),uid,id,
-      history:prior?.history||[],recoveries:prior?.recoveries||[],
+    const prior=await getJob(uid,id);
+    const incidents=[...(prior?.incidents||[])];
+    if(prior?.phase?.startsWith('pending-')&&prior.failure)
+      incidents.push({at:prior.at,phase:prior.phase,
+        before:prior.before,expected:prior.expected,failure:prior.failure});
+    const job={key:keyOf(uid,id),uid,id,
+      history:prior?.history||[],recoveries:prior?.recoveries||[],incidents,
       phase:'pending-'+stage,at:now(),before,expected,
       lastVerified:prior?.lastVerified||null,...extra};
     await putJob(job);state.touched.add(job.key);return job;
@@ -1411,6 +1430,7 @@
   }
   async function run(){
     try{
+      if(RECOVERY_APPLY){await applyRecoveryRuKey(RECOVERY_APPLY);return;}
       if(RECOVERY_PREVIEW){await previewRecovery(RECOVERY_PREVIEW);return;}
       if(EXPORT_ONLY){
         state.db=await openDB();
@@ -1493,7 +1513,8 @@
         successful:state.phase==='completed'&&
           !['blocked','unresolved','error','partial','partial_published']
             .some(k=>statuses[k]>0),
-        scope:RECOVERY_PREVIEW?'recovery-preview':EXPORT_ONLY?'backup-export':
+        scope:RECOVERY_APPLY?'recovery-apply':RECOVERY_PREVIEW?'recovery-preview':
+          EXPORT_ONLY?'backup-export':
           ONLY?'single':LIMIT?'first-'+LIMIT:FULL?'full':'dry-run',
         get:state.get,
         put:state.put,post:state.post,retries:state.retries,phase:state.phase,
