@@ -1,16 +1,15 @@
 (async function chanelNormalizerProduction() {
 'use strict';
 // One CHANEL-only RU→KK pipeline: seed → root relations → RU/KK Publish.
-// No recursive writes, no Product Publish, no disconnect, default GET-only.
+// Production by default: no dry-run or apply flags; skip already-current records.
 const TAG='[CHANEL Normalizer]', BRAND='yeag7mng9hfpk7pd4ggm7495';
 const UID='api::category.category', BRAND_UID='api::brand.brand';
 const EXPECTED=65, PAGE=100, DB='tm-chanel-normalizer-production-v1';
 const RUNKEY='__tmChanelNormalizerRunning';
-const APPLY=window.tmChanelProductionOnce==='RUN_ALL';
-const RISK=window.tmChanelNoDbBackupRiskAcceptedOnce===true;
+// Every launch is production. Legacy one-time flags are ignored and cleared.
 delete window.tmChanelProductionOnce;
 delete window.tmChanelNoDbBackupRiskAcceptedOnce;
-const mode=APPLY?'production':'dry-run';
+const mode='production';
 const here=new URL(location.href);
 if(here.pathname!=='/admin/content-manager/collection-types/'+BRAND_UID+'/'+BRAND ||
    here.searchParams.get('plugins[i18n][locale]')!=='ru') {
@@ -21,12 +20,10 @@ window[RUNKEY]=true;
 delete window.tmChanelStop;
 const report={version:1,mode,startedAt:new Date().toISOString(),finishedAt:null,
   status:'running',scope:{brandDocumentId:BRAND,categoryCount:EXPECTED},
-  counters:{GET:0,PUT:0,POST:0,retries:0,verifiedWrites:0,plannedWrites:0},
-  stages:{seed:{processed:0,created:0,updated:0,unchanged:0,blocked:0,
-      plannedCreates:0,plannedUpdates:0},
-    relations:{processed:0,linked:0,plannedLinks:0,unchanged:0,blocked:0},
-    publish:{processed:0,ru:0,kk:0,plannedRU:0,plannedKK:0,
-      skipped:0,blocked:0}},
+  counters:{GET:0,PUT:0,POST:0,retries:0,verifiedWrites:0},
+  stages:{seed:{processed:0,created:0,updated:0,unchanged:0,blocked:0},
+    relations:{processed:0,linked:0,unchanged:0,blocked:0},
+    publish:{processed:0,ru:0,kk:0,skipped:0,blocked:0}},
   results:{},issues:[],errors:[],warnings:[],complete:false};
 window.tmChanelNormalizerReport=report;
 const SYSTEM=new Set(['id','documentId','locale','status','createdAt','updatedAt',
@@ -52,7 +49,6 @@ const targets=new Map(),skipDocs=new Set(),linkedDocs=new Set();
 let ids=[];
 async function request(method,path,payload,allow404=false){
   ensure(['GET','PUT','POST'].includes(method),'Запрещённый HTTP метод');
-  if(method!=='GET'&&!APPLY)fail('Dry-run запрещает '+method);
   const tries=method==='GET'?3:1;
   for(let t=1;t<=tries;t++){
     report.counters[method]++;
@@ -590,14 +586,6 @@ async function seedPhase(){
       if(!Object.keys(wanted.updates).length){
         st.unchanged++;resultFor(id).seed='unchanged';update('seed',id,'Уже заполнено');continue;
       }
-      if(!APPLY){
-        st[kk?'plannedUpdates':'plannedCreates']++;
-        report.counters.plannedWrites++;
-        resultFor(id).seed='planned '+(kk?'update':'create')+
-          ' '+Object.keys(wanted.updates).join(', ');
-        update('seed',id,'План полей '+Object.keys(wanted.updates).length);
-        continue;
-      }
       const payload={locale:'kk',...wanted.updates};
       before=await perform('content',id,before,{fields:wanted.fields},'PUT',
         '/content-manager/collection-types/'+UID+'/'+id+'?locale=kk',payload);
@@ -618,11 +606,7 @@ async function linksPhase(){
     if(skipDocs.has(id)){st.blocked++;continue;}
     try{
       let before=await snapshot(id);ensureSafeRoot(before);
-      if(!before.kk.draft){
-        if(APPLY)fail('Нет KK Draft после seed');
-        resultFor(id).relations='planned-after-seed';
-        st.unchanged++;continue;
-      }
+      if(!before.kk.draft)fail('Нет KK Draft после seed');
       const ru=before.ru.draft,kk=before.kk.draft;
       const pending=[],operations=[];
       // Только forward-owner root relations. Inverse восстанавливается через
@@ -648,14 +632,6 @@ async function linksPhase(){
       }
       if(!operations.length){
         st.unchanged++;resultFor(id).relations='unchanged';continue;
-      }
-      if(!APPLY){
-        report.counters.plannedWrites+=operations.length;
-        const planned=operations.reduce((n,x)=>n+x.targets.length,0);
-        st.plannedLinks+=planned;
-        resultFor(id).relations='planned '+planned+' links';
-        update('links',id,'План: '+operations.length+' PUT по ≤20 links');
-        continue;
       }
       let linked=0;
       for(const operation of operations){
@@ -708,10 +684,9 @@ async function publishPhase(){
     try{
       let snap=await snapshot(id);
       await finalGraphCheck(id,snap);
-      const plannedLocales=[];
       for(const locale of ['ru','kk']){
         const ck=publishedCheck(snap[locale]);
-        const done=APPLY?await dbGet('done/publish/'+id+'/'+locale):null;
+        const done=await dbGet('done/publish/'+id+'/'+locale);
         const unchangedSinceDone=done&&
           equal(done.after?.[locale]?.draft,semantic(snap[locale].draft))&&ck.ok;
         // Уже Published + те же поля/Media/key = не нужен лишний POST.
@@ -721,39 +696,16 @@ async function publishPhase(){
         if(unchangedSinceDone||alreadyPublished){
           st.skipped++;continue;
         }
-        if(!APPLY){
-          st[locale==='ru'?'plannedRU':'plannedKK']++;
-          report.counters.plannedWrites++;
-          plannedLocales.push(locale);
-          update('publish',id,'План '+locale);continue;
-        }
         const payload=publishPayload(snap[locale].draft,locale);
         snap=await perform('publish',id,snap,{locale},'POST',
           '/content-manager/collection-types/'+UID+'/'+id+
           '/actions/publish?locale='+locale,payload,locale);
         st[locale]++;update('publish',id,'Опубликована '+locale);
       }
-      if(APPLY){
-        const r=publishedCheck(snap.ru),k=publishedCheck(snap.kk);
-        ensure(r.ok&&k.ok,'Postflight Published нет/не совпадают после RU+KK');
-        resultFor(id).publish={status:'verified',
-          visibility:{ru:r.invisible,kk:k.invisible}};
-      }else{
-        const ru=publishedCheck(snap.ru),kk=publishedCheck(snap.kk);
-        resultFor(id).publish={
-          status:plannedLocales.length?'planned':'verified',
-          plannedLocales,
-          visibility:{ru:ru.invisible,kk:kk.invisible},
-          diagnostics:{
-            ru:{ok:ru.ok,draftModified:!!ru.draftModified,
-              missingPublished:ru.missingPublished,fieldDiffs:ru.fieldDiffs,
-              unexpected:ru.unexpected},
-            kk:{ok:kk.ok,draftModified:!!kk.draftModified,
-              missingPublished:kk.missingPublished,fieldDiffs:kk.fieldDiffs,
-              unexpected:kk.unexpected}
-          }
-        };
-      }
+      const r=publishedCheck(snap.ru),k=publishedCheck(snap.kk);
+      ensure(r.ok&&k.ok,'Postflight Published нет/не совпадают после RU+KK');
+      resultFor(id).publish={status:'verified',
+        visibility:{ru:r.invisible,kk:k.invisible}};
     }catch(e){
       if(report.errors.length)throw e;
       st.blocked++;skipDocs.add(id);
@@ -764,41 +716,25 @@ async function publishPhase(){
   }
 }
 try{
-  if(APPLY&&!RISK)fail('Массовая запись без DB backup запрещена без явного флага принятия риска');
-  await checkSchema();await loadIndex();
-  if(APPLY){db=await dbOpen();await recoverPending();}
+  await checkSchema();
+  await loadIndex();
+  // DB journal opens on every launch, before any CMS writes.
+  db=await dbOpen();
+  await recoverPending();
   report.summary={scope:ids.length,
     note:'KK Media и переводы защищены; Product не публикуется'};
-  console.log(TAG,mode,'Старт',ids.length,'категорий. Для остановки window.tmChanelStop=true');
+  console.log(TAG,'production','Старт',ids.length,
+    'категорий. Для остановки window.tmChanelStop=true');
   await seedPhase();
-  if(APPLY){
-    targets.clear();
-    await linksPhase();
-    await publishPhase();
-  }else{
-    // При уже нормализованном контенте безопасно провести полный GET-аудит
-    // root relations и RU/KK Published, ничего не записывая.
-    const contentReady=!report.stages.seed.plannedCreates &&
-      !report.stages.seed.plannedUpdates;
-    if(contentReady){
-      await linksPhase();
-      await publishPhase();
-      report.summary.fullReadOnlyAudit=true;
-      report.summary.note+='; relations и Published проверены только GET';
-    }else{
-      report.summary.preflightOnly=true;
-      report.summary.fullReadOnlyAudit=false;
-      report.summary.note+='; есть план изменений KK content: '+
-        'связи и публикация проверяются после применения content';
-    }
-  }
+  targets.clear();
+  await linksPhase();
+  await publishPhase();
   report.complete=report.issues.length===0;
   report.summary={...report.summary,created:report.stages.seed.created,
     updated:report.stages.seed.updated,linksAdded:report.stages.relations.linked,
     publishedRU:report.stages.publish.ru,publishedKK:report.stages.publish.kk,
     incompleteDocuments:skipDocs.size,verifiedWrites:report.counters.verifiedWrites};
-  report.status=!APPLY?(report.issues.length?'dry-run-with-issues':'dry-run-ready'):
-    report.issues.length?'completed-with-issues':'completed';
+  report.status=report.issues.length?'completed-with-issues':'completed';
 }catch(e){
   report.status='stopped';
   report.errors.push(e.message);
