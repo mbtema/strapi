@@ -7,6 +7,7 @@
   const BRAND_UID = 'api::brand.brand';
   const CATEGORY_UID = 'api::category.category';
   const BRAND_ID = 'yeag7mng9hfpk7pd4ggm7495';
+  const FIRST_CATEGORY_ID = 'adl0ggt49f808cv4j2xalioq'; // Первый documentId из проверенного JSON
   const BRAND_PATH = '/admin/content-manager/collection-types/' + BRAND_UID + '/' + BRAND_ID;
   const PAGE_SIZE = 100;
   const RUN_KEY = '__tmChanelFirstCategoryAuditRunning';
@@ -364,6 +365,10 @@
     }
     if (!source.length) throw new Error('У CHANEL нет связанных categories');
     const first = source[0];
+    if (first.documentId !== FIRST_CATEGORY_ID) {
+      throw new Error('Первый documentId в живом relation CHANEL изменился: ' +
+        first.documentId + ', ожидался ' + FIRST_CATEGORY_ID + '. Обновите index перед аудитом.');
+    }
     report.category = {
       order: 1, documentId: first.documentId, id: first.id,
       title: first.name,
