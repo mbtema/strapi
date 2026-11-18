@@ -211,6 +211,10 @@ function assertOtherKKPublished(before,after){
 }
 function ensureSafeRoot(before){
   ensure(before.ru.draft,'Нет RU Draft');
+  ensure(typeof before.ru.draft.fields.key==='string'&&before.ru.draft.fields.key.length>0,
+    'Пустой RU key, документ пропущен без записи');
+  ensure(equal(idsOf(before.ru.draft.relations.brand),[BRAND]),
+    'RU Category не принадлежит строго CHANEL');
   for(const f of INVERSE){
     ensure(idsOf(before.ru.draft.relations[f]).length===0||f==='categories',
       'Неподдерживаемая inverse relation '+f+' с links');
@@ -393,6 +397,26 @@ function download(name,data){
     link.remove();setTimeout(()=>URL.revokeObjectURL(u),20000);
   }
 }
+function downloadCSV(){
+  const issues=new Map();
+  for(const item of report.issues){
+    const list=issues.get(item.id)||[];
+    list.push(item.stage+': '+(item.reason||item.pending?.length+' missing targets'||'review'));
+    issues.set(item.id,list);
+  }
+  const quote=value=>'"'+String(value??'').replace(/"/g,'""')+'"';
+  const records=[['documentId','seed','relations','publish','issues'],
+    ...ids.map(id=>[id,report.results[id]?.seed,report.results[id]?.relations,
+      typeof report.results[id]?.publish==='object'?
+        report.results[id]?.publish.status:report.results[id]?.publish,
+      (issues.get(id)||[]).join('; ')])];
+  const value='\uFEFF'+records.map(x=>x.map(quote).join(',')).join('\r\n');
+  const u=URL.createObjectURL(new Blob([value],{type:'text/csv;charset=utf-8'}));
+  const a=document.createElement('a');a.href=u;
+  a.download='chanel-normalization-'+mode+'-results.csv';
+  document.body.appendChild(a);
+  try{a.click();}finally{a.remove();setTimeout(()=>URL.revokeObjectURL(u),20000);}
+}
 function resultFor(id){
   return report.results[id]??={seed:null,relations:null,publish:null,notes:[]};
 }
@@ -454,8 +478,9 @@ function verifyWrite(pending,before,after){
         ensure(equal(a.kk.draft?.fields?.[f],b.kk.draft.fields[f]),
           'Excluded field drift '+f);
     }else{
-      ensure(a.kk.draft?.fields?.key===b.ru.draft.fields.key,
-        'KK key mismatch after create');
+      for(const f of OMIT)
+        ensure(equal(a.kk.draft?.fields?.[f],b.ru.draft.fields[f]),
+          'Создание KK изменило/не перенесло shared '+f);
       for(const [f,ids]of Object.entries(a.kk.draft?.relations||{}))
         ensure(ids.every(id=>(b.ru.draft?.relations?.[f]||[]).includes(id)),
           'Новая KK получила постороннюю relation '+f);
@@ -724,6 +749,10 @@ try{
   await linksPhase();
   await publishPhase();
   report.complete=true;
+  report.summary={...report.summary,created:report.stages.seed.created,
+    updated:report.stages.seed.updated,linksAdded:report.stages.relations.linked,
+    publishedRU:report.stages.publish.ru,publishedKK:report.stages.publish.kk,
+    incompleteDocuments:skipDocs.size,verifiedWrites:report.counters.verifiedWrites};
   report.status=report.issues.length?'completed-with-issues':'completed';
 }catch(e){
   report.status='stopped';
@@ -734,6 +763,8 @@ try{
   try{
     download('chanel-normalization-'+mode+'-'+new Date().toISOString().slice(0,10)+'.json',report);
   }catch(e){console.warn(TAG,'JSON download error',e);}
+  try{downloadCSV();}
+  catch(e){console.warn(TAG,'CSV download error',e);}
   if(db)db.close();
   window[RUNKEY]=false;
   console.log(TAG,'Итог',report.status,report.counters,report.stages,
