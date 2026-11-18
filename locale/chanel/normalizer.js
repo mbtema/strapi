@@ -318,8 +318,9 @@ function publishedCheck(ver){
     if(gone.length)invisible[f]={count:gone.length,documentIds:gone};
     if(extra.length)unexpected[f]=extra;
   }
-  return {ok:!fieldDiffs.length&&!Object.keys(unexpected).length,
-    missingPublished:false,fieldDiffs,invisible,unexpected,
+  const draftModified=draft.meta.status==='modified';
+  return {ok:!draftModified&&!fieldDiffs.length&&!Object.keys(unexpected).length,
+    missingPublished:false,draftModified,fieldDiffs,invisible,unexpected,
     publishedAt:pub.meta.publishedAt};
 }
 async function targetKK(uid,id){
@@ -707,6 +708,7 @@ async function publishPhase(){
     try{
       let snap=await snapshot(id);
       await finalGraphCheck(id,snap);
+      const plannedLocales=[];
       for(const locale of ['ru','kk']){
         const ck=publishedCheck(snap[locale]);
         const done=APPLY?await dbGet('done/publish/'+id+'/'+locale):null;
@@ -722,6 +724,7 @@ async function publishPhase(){
         if(!APPLY){
           st[locale==='ru'?'plannedRU':'plannedKK']++;
           report.counters.plannedWrites++;
+          plannedLocales.push(locale);
           update('publish',id,'План '+locale);continue;
         }
         const payload=publishPayload(snap[locale].draft,locale);
@@ -735,7 +738,22 @@ async function publishPhase(){
         ensure(r.ok&&k.ok,'Postflight Published нет/не совпадают после RU+KK');
         resultFor(id).publish={status:'verified',
           visibility:{ru:r.invisible,kk:k.invisible}};
-      }else resultFor(id).publish='planned';
+      }else{
+        const ru=publishedCheck(snap.ru),kk=publishedCheck(snap.kk);
+        resultFor(id).publish={
+          status:plannedLocales.length?'planned':'verified',
+          plannedLocales,
+          visibility:{ru:ru.invisible,kk:kk.invisible},
+          diagnostics:{
+            ru:{ok:ru.ok,draftModified:!!ru.draftModified,
+              missingPublished:ru.missingPublished,fieldDiffs:ru.fieldDiffs,
+              unexpected:ru.unexpected},
+            kk:{ok:kk.ok,draftModified:!!kk.draftModified,
+              missingPublished:kk.missingPublished,fieldDiffs:kk.fieldDiffs,
+              unexpected:kk.unexpected}
+          }
+        };
+      }
     }catch(e){
       if(report.errors.length)throw e;
       st.blocked++;skipDocs.add(id);
@@ -758,8 +776,21 @@ try{
     await linksPhase();
     await publishPhase();
   }else{
-    report.summary.preflightOnly=true;
-    report.summary.note+='; связи/публикации не моделируются до создания KK';
+    // При уже нормализованном контенте безопасно провести полный GET-аудит
+    // root relations и RU/KK Published, ничего не записывая.
+    const contentReady=!report.stages.seed.plannedCreates &&
+      !report.stages.seed.plannedUpdates;
+    if(contentReady){
+      await linksPhase();
+      await publishPhase();
+      report.summary.fullReadOnlyAudit=true;
+      report.summary.note+='; relations и Published проверены только GET';
+    }else{
+      report.summary.preflightOnly=true;
+      report.summary.fullReadOnlyAudit=false;
+      report.summary.note+='; есть план изменений KK content: '+
+        'связи и публикация проверяются после применения content';
+    }
   }
   report.complete=report.issues.length===0;
   report.summary={...report.summary,created:report.stages.seed.created,
