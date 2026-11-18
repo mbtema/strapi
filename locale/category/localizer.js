@@ -1496,74 +1496,164 @@
       throw new Blocked('Unique filter проигнорирован: отрицательный контроль не пустой');
   }
   async function applyRecoveryRuKey(id){
-    // Dedicated single-record recovery. Never enters the normal Category apply.
+    // One Category only. RU Published.key is the canonical value.
+    // Strapi syncs non-localized fields across Draft locales, so KK Save
+    // must restore RU Draft.key AND set KK Draft.key in a single operation.
+    // KK Published is updated only after the first stage is verified.
     state.db=await openDB();
-    const existing=await getJob(UID,id);
-    if(existing?.phase==='pending-recovery-ru-key'){
-      if(RECOVERY_CONFIRM!==existing.expected?.key)
-        throw new Blocked('Recovery ключ подтверждения не совпадает с checkpoint');
-      const after=await snapshot(UID,id);
-      if(!matchesRuKeyRecovery(existing.before,after,existing.expected?.key))
-        throw new Unresolved('Незавершённая recovery не подтверждена; повторный PUT запрещён');
-      await verifiedJournal(existing,after);
-      await completeJob(UID,id,after);
-      state.report.results.push({documentId:id,status:'success',
-        stage:'recovery-verified-without-repeat',changes:['ru.draft.key'],
-        reason:'Проверено GET, повторный PUT не отправлен'});
-      state.report.recovery={documentId:id,verified:true,
-        before:existing.before,after,putRepeated:false,publish:false};
+    await schemas();
+    const originalJob=await getJob(UID,id);
+    if(!originalJob)throw new Blocked('Нет сохранённого recovery journal');
+    const stage=originalJob.phase;
+    const isRecovery=stage==='pending-recovery-save-kk-key'||
+      stage==='verified-recovery-save-kk-key'||
+      stage==='pending-recovery-publish-kk-key'||
+      stage==='verified-recovery-publish-kk-key';
+    let before,after,p,expectedKey;
+    if(stage==='complete'){
+      const current=await snapshot(UID,id);
+      const key=RECOVERY_CONFIRM;
+      if(!matchingBaseline(originalJob.lastVerified,current)||
+        ![current.ru.draft,current.ru.published,current.kk.draft,
+          current.kk.published].every(v=>v?.fields?.key===key))
+        throw new Blocked('Complete journal отличается от текущих четырёх версий');
+      state.report.recovery={documentId:id,verified:true,alreadyComplete:true,
+        before:originalJob.lastVerified,after:current,publishRepeated:false};
+      state.report.results.push({documentId:id,status:'already_ok',
+        stage:'recovery-already-complete',changes:[]});
       state.total=state.done=1;state.phase='recovery_completed';return;
     }
-    if(existing?.phase!=='pending-save'||existing?.failure?.integrity!==true)
-      throw new Blocked('Нет исходного подтверждённого pending-save для восстановления');
-    await previewRecovery(id);
-    const p=state.report.recovery;
-    const differences=p.differencesFromOriginal||[];
-    const exactlyKnown=differences.length===2&&
-      differences.some(x=>x.locale==='ru'&&x.status==='draft'&&x.field==='key'&&
-        x.before===p.originalKey&&x.after===null)&&
-      differences.some(x=>x.locale==='kk'&&x.status==='draft'&&x.field==='slug'&&
-        x.before===null&&x.after===p.failedPostflight?.kk?.draft?.fields?.slug);
-    if(!p.sourceConfirmed||!p.schemaConfirmed||!p.liveMatchesFailure||
-      !p.pendingConfirmed||!p.unchangedFieldsConfirmed||!exactlyKnown||
-      p.currentRuKey!==null||p.currentKkKey!==null||
-      p.originalKey!==RECOVERY_CONFIRM||
-      !eq(p.publishedKkKey,p.originalBackup?.kk?.published?.fields?.key))
-      throw new Blocked('Recovery preflight не подтверждён; ни один PUT не отправлен');
-    // Explicitly verify uniqueness across all locales/statuses before the write.
-    await uniqueRecoveryCheck(id,p.originalKey);
+    if(isRecovery){
+      const initialIncident=originalJob.incidents?.find(x=>
+        x.phase==='pending-save'&&x.failure?.integrity===true);
+      if(!initialIncident||initialIncident.before?.ru?.draft?.fields?.key!==
+        RECOVERY_CONFIRM)
+        throw new Blocked('Нет исходного повреждённого snapshot или key не совпадает');
+      after=await snapshot(UID,id);
+      if(stage==='pending-recovery-save-kk-key'){
+        if(originalJob.expected?.key!==RECOVERY_CONFIRM||
+          !matchesRecoveryDraftKeys(originalJob.before,after,RECOVERY_CONFIRM))
+          throw new Unresolved('Recovery KK Save не подтверждён; повторный PUT запрещён');
+        await verifiedJournal(originalJob,after);
+      }else if(stage==='pending-recovery-publish-kk-key'){
+        if(originalJob.expected?.key!==RECOVERY_CONFIRM||
+          !matchesRecoveryKkPublish(originalJob.before,after,RECOVERY_CONFIRM))
+          throw new Unresolved('Recovery KK Publish не подтверждён; повторный POST запрещён');
+        await verifiedJournal(originalJob,after);
+        await completeJob(UID,id,after);
+        state.report.recovery={documentId:id,verified:true,
+          resumedWithoutWrite:true,publishVerified:true,current:after};
+        state.report.results.push({documentId:id,status:'success',
+          stage:'recovery-publish-confirmed-without-retry',
+          changes:['ru.draft.key','kk.draft.key','kk.published.key']});
+        state.total=state.done=1;state.phase='recovery_completed';return;
+      }else if(!matchingBaseline(originalJob.lastVerified,after))
+        throw new Blocked('Checkpoint восстановления отличается от текущих данных');
+      if(stage==='verified-recovery-publish-kk-key'){
+        if(![after.ru.draft,after.ru.published,after.kk.draft,
+          after.kk.published].every(v=>v?.fields?.key===RECOVERY_CONFIRM))
+          throw new Blocked('Ключи не совпадают при завершении recovery');
+        await completeJob(UID,id,after);
+        state.report.recovery={documentId:id,verified:true,
+          resumedWithoutWrite:true,current:after};
+        state.report.results.push({documentId:id,status:'success',
+          stage:'recovery-completed-without-retry',
+          changes:['ru.draft.key','kk.draft.key','kk.published.key']});
+        state.total=state.done=1;state.phase='recovery_completed';return;
+      }
+      before=after;
+      state.report.recovery={documentId:id,recoveredSaveVerified:true,
+        current:before,mode:'recovery-apply'};
+      state.report.results.push({documentId:id,status:'planned',
+        stage:'recovery-resume-publish-kk',changes:[]});
+    }else{
+      if(stage!=='pending-save'||originalJob.failure?.integrity!==true)
+        throw new Blocked('Нет повреждённого pending-save для recovery');
+      await previewRecovery(id);
+      p=state.report.recovery;
+      const changes=p.differencesFromOriginal||[];
+      const exactlyKnown=changes.length===2&&
+        changes.some(x=>x.locale==='ru'&&x.status==='draft'&&x.field==='key'&&
+          x.before===p.originalKey&&x.after===null)&&
+        changes.some(x=>x.locale==='kk'&&x.status==='draft'&&x.field==='slug'&&
+          x.before===null&&x.after===p.failedPostflight?.kk?.draft?.fields?.slug);
+      if(!p.sourceConfirmed||!p.schemaConfirmed||!p.liveMatchesFailure||
+        !p.pendingConfirmed||!p.unchangedFieldsConfirmed||!exactlyKnown||
+        p.currentRuKey!==null||p.currentKkKey!==null||
+        p.originalKey!==RECOVERY_CONFIRM||
+        !eq(p.publishedKkKey,p.originalBackup?.kk?.published?.fields?.key))
+        throw new Blocked('Recovery preflight не подтверждён, запись запрещена');
+      // No unrelated document may own the RU source key.
+      await uniqueRecoveryCheck(id,RECOVERY_CONFIRM);
+      stopCheck();
+      before=await snapshot(UID,id);
+      if(!matchingBaseline(p.current,before))
+        throw new Blocked('Recovery baseline изменился до KK Save');
+      const path='/content-manager/collection-types/'+UID+'/'+encodeURIComponent(id)+
+        '?locale=kk';
+      const payload={locale:'kk',key:RECOVERY_CONFIRM};
+      const pending=await writeJournal(UID,id,'recovery-save-kk-key',before,
+        {key:RECOVERY_CONFIRM},{method:'PUT',path,payload});
+      let error=null;
+      try{await request('PUT',path,payload);}catch(e){error=e;}
+      try{after=await snapshot(UID,id);}catch(e){error ||=e;}
+      p.recoverySavePostflight=after;
+      if(!after||error||!matchesRecoveryDraftKeys(before,after,RECOVERY_CONFIRM)){
+        const failure=after&&!matchesRecoveryDraftKeys(before,after,RECOVERY_CONFIRM)?
+          new IntegrityViolation('KK Save изменил посторонние поля или не синхронизировал RU Draft.key',after):
+          new Unresolved('KK Save не подтверждён: '+clean(error));
+        await stopWithEvidence(pending,after,failure);
+      }
+      await verifiedJournal(pending,after);
+      before=after;
+      p.recoverySaveVerified=true;p.mode='recovery-apply';
+    }
+    // Publish is permitted only if KK Published differs from KK Draft
+    // strictly by the now-approved key and the previously planned slug.
+    if(!recoveryReadyToPublish(before,RECOVERY_CONFIRM))
+      throw new Blocked('KK Publish изменил бы другие данные — остановлено');
+    if(before.kk.published.fields.key===RECOVERY_CONFIRM&&
+      sameVersion(before.kk.draft,before.kk.published)){
+      await completeJob(UID,id,before);
+      state.report.recovery={...state.report.recovery,verified:true,current:before,
+        publishSkipped:true};
+      state.report.results[0]={documentId:id,status:'success',
+        stage:'recovery-complete-no-publish',changes:['ru.draft.key','kk.draft.key']};
+      state.total=state.done=1;state.phase='recovery_completed';return;
+    }
     stopCheck();
     const fresh=await snapshot(UID,id);
-    if(!matchingBaseline(p.current,fresh))
-      throw new Blocked('Данные изменились во время recovery preflight; PUT запрещён');
+    if(!matchingBaseline(before,fresh))
+      throw new Blocked('Recovery baseline изменился до KK Publish');
+    if(!recoveryReadyToPublish(fresh,RECOVERY_CONFIRM))
+      throw new Blocked('KK Published отличается по другим полям, публикация запрещена');
     const path='/content-manager/collection-types/'+UID+'/'+encodeURIComponent(id)+
-      '?locale=ru';
-    const payload={locale:'ru',key:p.originalKey};
-    const pending=await writeJournal(UID,id,'recovery-ru-key',fresh,
-      {key:p.originalKey},{method:'PUT',path,payload,
-        originalIncident:'pending-save integrity after KK Save'});
-    let error=null,after=null;
-    try{await request('PUT',path,payload);}
-    catch(e){error=e;}
-    try{after=await snapshot(UID,id);}
-    catch(e){error ||=e;}
-    p.recoveryPostflight=after;
-    if(!after||!matchesRuKeyRecovery(fresh,after,p.originalKey)||error){
-      const failure=after&&!matchesRuKeyRecovery(fresh,after,p.originalKey)?
-        new IntegrityViolation(
-          'Recovery изменила поля за пределами RU Draft.key; STOP, без rollback',after):
-        new Unresolved('Recovery PUT не подтверждён: '+clean(error));
-      await stopWithEvidence(pending,after,failure);
+      '/actions/publish?locale=kk';
+    const payload=publishPayload(UID,'kk',fresh.kk.draft);
+    const pending=await writeJournal(UID,id,'recovery-publish-kk-key',fresh,
+      {key:RECOVERY_CONFIRM},{method:'POST',path});
+    let error=null,postflight=null;
+    try{await request('POST',path,payload);}catch(e){error=e;}
+    try{postflight=await snapshot(UID,id);}catch(e){error ||=e;}
+    if(!postflight||error||
+      !matchesRecoveryKkPublish(fresh,postflight,RECOVERY_CONFIRM)){
+      const failure=postflight&&
+        !matchesRecoveryKkPublish(fresh,postflight,RECOVERY_CONFIRM)?
+        new IntegrityViolation('KK Publish изменила неразрешённые поля или связи',postflight):
+        new Unresolved('KK Publish не подтверждён: '+clean(error));
+      await stopWithEvidence(pending,postflight,failure);
     }
-    await verifiedJournal(pending,after);
-    await completeJob(UID,id,after);
-    p.verified=true;p.writeVerified=true;p.current=after;p.canSafelyAutoWrite=false;
-    p.recoveryOperation={method:'PUT',locale:'ru',fields:['key'],
-      published:false,verified:true};
-    state.report.results[0]={documentId:id,name:fresh.ru.draft.row.name,
-      status:'success',stage:'recovered-ru-draft-key',
-      changes:['ru.draft.key'],reason:'RU key восстановлен; остальные три версии неизменны'};
-    state.done=state.total=1;state.phase='recovery_completed';
+    await verifiedJournal(pending,postflight);
+    await completeJob(UID,id,postflight);
+    state.report.recovery={...state.report.recovery,verified:true,
+      current:postflight,publishVerified:true,
+      changes:['ru.draft.key','kk.draft.key','kk.published.key',
+        'kk.published.slug']};
+    state.report.results[0]={documentId:id,name:postflight.ru.draft.row.name,
+      status:'success',stage:'recovery-key-aligned',
+      changes:state.report.recovery.changes,
+      reason:'Четыре key равны исходному RU; остальные поля и связи сохранены'};
+    state.total=state.done=1;state.phase='recovery_completed';
   }
   async function run(){
     try{
