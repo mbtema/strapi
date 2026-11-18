@@ -6,6 +6,10 @@
   const UID = 'api::category.category';
   // Known live-damaged category must never enter normal apply/reconcile.
   const KEY_INCIDENT_QUARANTINE = new Set(['s4weogfjta7eknnbe7ptjt0f']);
+  // A Product KK Publish created Published without its Draft.attributes link.
+  // Do not reconcile or retry either incident while normalizing Categories.
+  const DEPENDENCY_INCIDENT_QUARANTINE = new Set(['tlsueik73oho5duwf0ylttsh']);
+  const PRODUCT_PUBLISH_INCIDENT = 'a6sxq2s8iiv9xkl9m8b0y6f1';
   const IGNORED_NORMALIZATION_FIELDS = new Set(['key']);
   const RUN_KEY = '__tmCategoryLocalizerRunningV1';
   const DB_NAME = 'tm-category-localizer-v1';
@@ -125,7 +129,7 @@
   const relFields=s=>fieldsOf(s).filter(([,a])=>a.type==='relation');
   const asIds=x=>x?x.map(v=>v.documentId).sort():[];
   const rowsStatus=()=>Object.fromEntries(['planned','success','partial_published','partial',
-    'already_ok','skipped_key','blocked','unresolved','error'].map(k=>
+    'already_ok','skipped_key','skipped_dependency','blocked','unresolved','error'].map(k=>
     [k,state.report.results.filter(v=>v.status===k).length]));
   function render(line='') {
     const c=rowsStatus();
@@ -135,6 +139,7 @@
         'Успешно '+c.success+' · частично '+(c.partial+c.partial_published)+
         ' · без изменений '+c.already_ok)+
       ' · key пропущено '+c.skipped_key+
+      ' · dependencies пропущено '+c.skipped_dependency+
       ' · blocked '+c.blocked+' · unresolved '+c.unresolved+' · errors '+c.error+'\n'+
       'GET '+state.get+' · PUT '+state.put+' · POST '+state.post+' · retries '+state.retries;
   }
@@ -1108,6 +1113,14 @@
   async function publishDependencyOnce(uid,id){
     const key=keyOf(uid,id);
     if(dependencyPublicationCache.has(key))return dependencyPublicationCache.get(key);
+    // Live failure: an automatic Product Publish lost a Draft.attributes link.
+    // Pause ALL automatic Product publications until this is understood.
+    if(uid==='api::product.product'){
+      const issue={uid,id,reason:'Автопубликация KK Product приостановлена: '+
+        'после Publish потерялась связь attributes в другом Product'};
+      dependencyPublicationCache.set(key,issue);
+      return issue;
+    }
     const schema=state.schemas.get(uid);
     if(!schema?.attributes)return {uid,id,reason:'Нет schema зависимости'};
     // Category locales are created/published by the stream, not recursively.
@@ -1188,7 +1201,26 @@
           reason:'RU Draft.key повреждён; требуется независимое восстановление'}],
         reason:'Известный аварийный документ: пропущен без GET/PUT/POST'};
     }
+    if(DEPENDENCY_INCIDENT_QUARANTINE.has(id))
+      return {status:'skipped_dependency',stage:'dependency-quarantine',changes:[],
+        pendingLinks:[],pendingFields:[],pendingPublications:[{
+          uid:'api::product.product',id:PRODUCT_PUBLISH_INCIDENT,
+          reason:'KK Published потерял attributes; отдельная проверка Product'}],
+        reason:'Category сохранена в KK Draft, но Published не обновлён; '+ 
+          'инцидент Product оставлен в журнале без повторного POST'};
     const previous=await reconcile(uid,id);
+    if(previous?.deferredDependencies?.length){
+      const pending=[];
+      for(const dep of previous.deferredDependencies){
+        if(!await detail(dep.uid,dep.id,'kk','published'))pending.push(dep);
+      }
+      if(pending.length)return {status:'partial',stage:'waiting-dependencies',
+        changes:[],pendingLinks:[],pendingFields:[],
+        pendingPublications:pending.map(dep=>({...dep,
+          reason:'KK Published зависимости по-прежнему отсутствует'})),
+        reason:'Ожидаются KK Published зависимости; никаких новых PUT/POST'};
+      // All old dependencies now published; proceed to revalidate Category.
+    }
     let pair=await draftPair(uid,id);
     if(!pair.ru.draft)throw new Blocked('RU Draft отсутствует');
     // Early gate avoids extra GET and planning for a known unsafe key mismatch.
@@ -1348,6 +1380,20 @@
     }
     const incomplete=!!(pendingLinks.length||pendingFields.length||
       pendingPublications.length);
+    if(pendingPublications.length){
+      // Save KK Draft was verified, but never publish Category while newly
+      // linked Product targets still require a blocked/deferred publication.
+      const old=await getJob(uid,id);
+      const checkpoint=old||{key:keyOf(uid,id),uid,id,history:[]};
+      checkpoint.deferredDependencies=pendingPublications.map(x=>({uid:x.uid,id:x.id}));
+      checkpoint.lastVerified=before;
+      if(!old)checkpoint.phase='deferred-dependencies';
+      await putJob(checkpoint);state.touched.add(checkpoint.key);
+      return {status:'partial',stage:'saved-waiting-dependencies',
+        changes,pendingLinks,pendingFields,pendingPublications,
+        addedCount,removedCount,publishedRU:false,publishedKK:false,
+        reason:'KK Draft сохранён; публикация Category отложена до зависимостей'};
+    }
     if(!didSeed&&!didSave&&!needsResume(previous)&&!needsPublication){
       return {status:incomplete?'partial':'already_ok',stage:'checked',
         changes,pendingLinks,pendingFields,pendingPublications,
@@ -1735,8 +1781,9 @@
         state.report.results.push(resultRow);
         state.done++;render(item.name+': '+resultRow.status);
       }
-      if(!state.stop)state.phase=rowsStatus().skipped_key?
-        'completed_with_key_skips':'completed';
+      if(!state.stop)state.phase=
+        rowsStatus().skipped_key||rowsStatus().skipped_dependency?
+          'completed_with_skips':'completed';
       else if(!state.phase.startsWith('halted_'))state.phase='stopped';
     }catch(e){
       state.phase='failed';state.report.errors.push(clean(e.message));
@@ -1756,7 +1803,7 @@
       const statuses=rowsStatus();
       state.report.summary={...state.report.summary,total:state.total,...statuses,
         successful:(state.phase==='completed'||state.phase==='recovery_completed')&&
-          !['skipped_key','blocked','unresolved','error','partial','partial_published']
+          !['skipped_key','skipped_dependency','blocked','unresolved','error','partial','partial_published']
             .some(k=>statuses[k]>0),
         scope:RECOVERY_APPLY?'recovery-apply':RECOVERY_PREVIEW?'recovery-preview':
           EXPORT_ONLY?'backup-export':
@@ -1770,8 +1817,11 @@
         publishedNestedCountOnly:state.publishedNestedCountOnly.size,
         publishedNestedVerification:'count-only (composition not proven)',
         ignoredFields:[...IGNORED_NORMALIZATION_FIELDS],
-        quarantinedDocuments:[...KEY_INCIDENT_QUARANTINE],
-        skippedKey:statuses.skipped_key };
+        quarantinedDocuments:[...KEY_INCIDENT_QUARANTINE,
+          ...DEPENDENCY_INCIDENT_QUARANTINE],
+        pausedProductAutoPublish:true,
+        skippedKey:statuses.skipped_key,
+        skippedDependency:statuses.skipped_dependency };
       stop.disabled=true;
       try{csv.onclick();json.onclick();}catch(e){console.error('[Category Localizer] export',e);}
       state.db?.close();window[RUN_KEY]=false;
