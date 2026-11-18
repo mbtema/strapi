@@ -458,6 +458,15 @@
       throw Error('KK для пилота уже существует: нельзя повторно создавать');
     const ru=snaps.ru.draft;
     const base=seedPayload(ru,schema,components);
+    if (report.warnings.length) {
+      throw Error('Schema/компоненты прочитаны с предупреждениями: ' +
+        report.warnings.join(' | '));
+    }
+    if (base.nestedPending.length) {
+      throw Error('В выбранной категории есть вложенные links: ' +
+        JSON.stringify(base.nestedPending) +
+        '. Не выполнять seed до отдельного контракта');
+    }
     const available=[],pending=[],sourceIds={};
     for(const [field,def] of Object.entries(attrs(schema))) {
       if(def.type!=='relation'||SYSTEM.has(field))continue;
