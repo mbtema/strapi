@@ -38,18 +38,26 @@
   const LIMIT = Number.isSafeInteger(RAW_LIMIT)&&RAW_LIMIT>0?RAW_LIMIT:null;
   const FULL = window.tmCategoryLocalizerFullOnce === true;
   const EXPORT_ONLY = window.tmCategoryLocalizerExportBackupsOnce === true;
+  const RECOVERY_PREVIEW=typeof window.tmCategoryLocalizerRecoveryPreviewOnce==='string'?
+    window.tmCategoryLocalizerRecoveryPreviewOnce.trim():null;
   delete window.tmCategoryLocalizerApplyOnce;
   delete window.tmCategoryLocalizerOnlyOnce;
   delete window.tmCategoryLocalizerLimitOnce;
   delete window.tmCategoryLocalizerFullOnce;
   delete window.tmCategoryLocalizerExportBackupsOnce;
+  delete window.tmCategoryLocalizerRecoveryPreviewOnce;
   const DRY_RUN = !APPLY;
+  const OUTPUT_KIND=RECOVERY_PREVIEW?'recovery-preview':
+    EXPORT_ONLY?'backup-export':DRY_RUN?'dry-run':'apply';
   const invalidLimit=RAW_LIMIT!==undefined&&LIMIT===null;
   if(invalidLimit||(APPLY&&Number(!!ONLY)+Number(!!LIMIT)+Number(FULL)!==1)||
-    (EXPORT_ONLY&&(APPLY||ONLY||LIMIT||FULL))){
+    (EXPORT_ONLY&&(APPLY||ONLY||LIMIT||FULL||RECOVERY_PREVIEW))||
+    (RECOVERY_PREVIEW&&(APPLY||ONLY||LIMIT||FULL||EXPORT_ONLY||
+      !/^[a-z0-9]{24}$/.test(RECOVERY_PREVIEW)))){
     console.error('[Category Localizer] Запуск запрещён: укажи ровно один режим'+
       ' Apply — OnlyOnce (documentId), LimitOnce (целое число > 0),'+
-      ' либо FullOnce = true. Некорректный LimitOnce не означает FULL.');
+      ' либо FullOnce = true. RecoveryPreviewOnce допускает только один documentId'+
+      ' без флагов записи. Некорректный LimitOnce не означает FULL.');
     return;
   }
   if (!location.pathname.startsWith('/admin/content-manager')) {
@@ -68,7 +76,7 @@
     retries:0,populateGET:0,populateHits:0,nativeFallbacks:0,
     schemas:new Map(),components:new Map(),list:[],db:null,touched:new Set(),
     publishedNestedCountOnly:new Set(),report:{
-      tool:'category-localizer',version:3,mode:DRY_RUN?'dry-run':'apply',
+      tool:'category-localizer',version:4,mode:OUTPUT_KIND,
       startedAt:new Date().toISOString(),finishedAt:null,
       results:[],operations:[],journals:[],errors:[],snapshots:[],plans:[],summary:null}};
   const $ = (tag, text) => { const e=document.createElement(tag); if(text!==undefined)e.textContent=text; return e; };
@@ -78,7 +86,9 @@
     'background:#202035;color:#fff;padding:14px;border:1px solid #7774b5;border-radius:10px;'+
     'width:min(490px,calc(100vw - 32px));max-height:75vh;overflow:auto;'+
     'box-shadow:0 10px 32px #0009;font:13px/1.5 system-ui';
-  const heading=$('strong','Category Localizer · '+(DRY_RUN?'DRY RUN · только GET':'APPLY · RU → KK'));
+  const heading=$('strong','Category Localizer · '+
+    (RECOVERY_PREVIEW?'RECOVERY PREVIEW · только GET':
+      DRY_RUN?'DRY RUN · только GET':'APPLY · RU → KK'));
   const message=$('pre','Подготовка…'); message.style.cssText='white-space:pre-wrap;font:12px/1.5 system-ui';
   const buttons=$('div'); buttons.style.cssText='display:flex;gap:7px;flex-wrap:wrap';
   const stop=$('button','Стоп'); const csv=$('button','CSV'); const json=$('button','JSON');
@@ -120,10 +130,10 @@
     const a=$('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),20000);
   }
-  csv.onclick=()=>download('category-localizer-'+(DRY_RUN?'dry-run':'apply')+'.csv','\uFEFF'+[
+  csv.onclick=()=>download('category-localizer-'+OUTPUT_KIND+'.csv','\uFEFF'+[
     csvFields.join(';'),...state.report.results.map(row=>csvFields.map(f=>q(row[f])).join(';'))
   ].join('\n'),'text/csv;charset=utf-8');
-  json.onclick=()=>download('category-localizer-'+(DRY_RUN?'dry-run':'apply')+'.json',JSON.stringify(state.report,null,2),
+  json.onclick=()=>download('category-localizer-'+OUTPUT_KIND+'.json',JSON.stringify(state.report,null,2),
     'application/json;charset=utf-8');
   const stopCheck=()=>{if(state.stop)throw Object.assign(Error('Остановка пользователем'),{stop:true});};
   class Blocked extends Error {constructor(message){super(message);this.blocked=true;}}
@@ -1326,8 +1336,82 @@
       addedCount,removedCount,
       reason:incomplete?'Частичная нормализация; повторить проход':''};
   }
+  function compareRecoveryVersions(before,after){
+    if(!before||!after)return [];
+    const changes=[];
+    for(const locale of ['ru','kk'])for(const status of ['draft','published']){
+      const old=before[locale]?.[status],cur=after[locale]?.[status];
+      if(!old||!cur){
+        if(!!old!==!!cur)changes.push({locale,status,field:'__version',
+          before:!!old,after:!!cur});
+        continue;
+      }
+      const keys=uniq([...Object.keys(old.fields||{}),...Object.keys(cur.fields||{})]);
+      for(const field of keys)
+        if(!eq(old.fields?.[field],cur.fields?.[field]))
+          changes.push({locale,status,field,
+            before:old.fields?.[field],after:cur.fields?.[field]});
+      const oldRelations=relIDs(old),curRelations=relIDs(cur);
+      for(const field of uniq([...Object.keys(oldRelations),...Object.keys(curRelations)]))
+        if(!eq(oldRelations[field]||[],curRelations[field]||[]))
+          changes.push({locale,status,field:'relation:'+field,
+            before:oldRelations[field]||[],after:curRelations[field]||[]});
+    }
+    return changes;
+  }
+  async function previewRecovery(id){
+    state.phase='Recovery preview: схемы, старый backup и текущие четыре версии';
+    state.current=id;state.total=1;render();
+    state.db=await openDB();
+    await schemas();
+    const job=await getJob(UID,id);
+    if(!job?.before||!job?.failure?.after)
+      throw new Error('Для '+id+' нет незавершённого before/after backup в IndexedDB');
+    const current=await snapshot(UID,id);
+    const keySchema=state.schemas.get(UID).attributes?.key;
+    const before=job.before,after=job.failure.after;
+    const originalKey=before.ru?.draft?.fields?.key;
+    const currentRuKey=current.ru?.draft?.fields?.key;
+    const currentKkKey=current.kk?.draft?.fields?.key;
+    const publishedRuKey=current.ru?.published?.fields?.key;
+    const publishedKkKey=current.kk?.published?.fields?.key;
+    const changes=compareRecoveryVersions(before,current);
+    const onlyKnownChanges=changes.every(x=>
+      (x.locale==='ru'&&x.status==='draft'&&x.field==='key'&&
+        eq(x.before,originalKey)&&x.after===null)||
+      (x.locale==='kk'&&x.status==='draft'&&x.field==='slug'&&
+        eq(x.after,after.kk?.draft?.fields?.slug)));
+    const sourceConfirmed=nonEmpty(originalKey)&&eq(originalKey,publishedRuKey);
+    const schemaConfirmed=keySchema?.type==='string'&&keySchema.unique===true&&
+      !localized(keySchema);
+    const liveMatchesFailure=matchingBaseline(current,after);
+    const pendingConfirmed=job.phase==='pending-save'&&job.failure.integrity===true;
+    state.report.recovery={
+      documentId:id,mode:'GET-only; no writes or publish',
+      source:'IndexedDB '+DB_NAME+' '+keyOf(UID,id),
+      schema:{key:keySchema},
+      journalPhase:job.phase,journalFailure:job.failure.reason,
+      originalKey,currentRuKey,currentKkKey,publishedRuKey,publishedKkKey,
+      sourceConfirmed,schemaConfirmed,liveMatchesFailure,pendingConfirmed,
+      unchangedFieldsConfirmed:onlyKnownChanges,
+      differencesFromOriginal:changes,
+      crossLocaleConflict:!eq(originalKey,publishedKkKey),
+      plannedTarget:'RU Draft.key only; NO Publish',
+      canSafelyAutoWrite:false,
+      reason:'Shared nonlocalized unique key and distinct KK Published value require'+
+        ' confirmation of safe Strapi write behavior before recovery',
+      originalBackup:before,current,failedPostflight:after
+    };
+    state.report.results.push({documentId:id,name:before.ru?.draft?.row?.name||id,
+      status:'planned',stage:'recovery-preview',changes:changes.map(x=>
+        x.locale+'.'+x.status+'.'+x.field),reason:state.report.recovery.reason});
+    state.done=1;state.phase='recovery_preview_completed';
+    render('Recovery GET-only: '+(sourceConfirmed&&schemaConfirmed&&liveMatchesFailure?
+      'исходный backup подтверждён':'требуется разбор расхождений'));
+  }
   async function run(){
     try{
+      if(RECOVERY_PREVIEW){await previewRecovery(RECOVERY_PREVIEW);return;}
       if(EXPORT_ONLY){
         state.db=await openDB();
         state.report.journals=await dbOp('all');
@@ -1409,8 +1493,8 @@
         successful:state.phase==='completed'&&
           !['blocked','unresolved','error','partial','partial_published']
             .some(k=>statuses[k]>0),
-        scope:EXPORT_ONLY?'backup-export':ONLY?'single':LIMIT?'first-'+LIMIT:
-          FULL?'full':'dry-run',
+        scope:RECOVERY_PREVIEW?'recovery-preview':EXPORT_ONLY?'backup-export':
+          ONLY?'single':LIMIT?'first-'+LIMIT:FULL?'full':'dry-run',
         get:state.get,
         put:state.put,post:state.post,retries:state.retries,phase:state.phase,
         populateGET:state.populateGET,populateHits:state.populateHits,
