@@ -381,7 +381,10 @@ function publishedCheck(ver){
     if(extra.length)unexpected[f]=extra;
   }
   const draftModified=draft.meta.status==='modified';
-  return {ok:!draftModified&&!fieldDiffs.length&&!Object.keys(unexpected).length,
+  // Product Published relations must match Draft exactly: attributes and
+  // Product.categories must not silently disappear as in older incidents.
+  return {ok:!draftModified&&!fieldDiffs.length&&!Object.keys(invisible).length&&
+      !Object.keys(unexpected).length,
     missingPublished:false,draftModified,fieldDiffs,invisible,unexpected,
     publishedAt:pub.meta.publishedAt};
 }
@@ -614,7 +617,7 @@ async function loadIndex(){
     ensure(Array.isArray(rows)&&Number.isSafeInteger(meta?.total)&&meta.total>=0&&
       Number.isSafeInteger(meta.pageCount)&&meta.pageCount>=0&&
       (meta.page==null||Number(meta.page)===page)&&
-      (meta.total===0||rows.length>0),'Неверный ответ RU Category list page='+page);
+      (meta.total===0||rows.length>0),'Неверный ответ RU Product list page='+page);
     if(!first)first={total:meta.total,pageCount:meta.pageCount};
     ensure(meta.total===first.total&&meta.pageCount===first.pageCount,
       'Список категорий изменился в ходе загрузки (pagination drift)');
@@ -622,7 +625,7 @@ async function loadIndex(){
       const row=raw?.attributes&&!raw.documentId?{...raw.attributes,id:raw.id}:raw;
       ensure(row?.locale==='ru'&&typeof row.documentId==='string'&&
         row.documentId.length>0&&!seen.has(row.documentId),
-        'Неверная локаль/дубль RU Category в списке');
+        'Неверная локаль/дубль RU Product в списке');
       ensure(Number.isSafeInteger(row.id)&&row.id>previousId,
         'Нарушен порядок id:ASC или изменилась пагинация');
       previousId=row.id;
@@ -631,32 +634,36 @@ async function loadIndex(){
       ids.push(row.documentId);
     }
     report.scope.listPages=page;
-    report.scope.categoryCount=first.total;
+    report.scope.productCount=first.total;
     console.log(TAG,'[index]','Страница',page+'/'+first.pageCount,
       'категорий:',ids.length+'/'+first.total);
     if(page>=first.pageCount)break;
-    if(page===10000)fail('Превышен предел страниц Category list');
+    if(page===10000)fail('Превышен предел страниц Product list');
   }
-  ensure(first&&first.total>0,'RU Category list пустой — запись запрещена');
-  ensure(ids.length===first.total,'Неполная загрузка RU Category: '+
+  ensure(first&&first.total>0,'RU Product list пустой — запись запрещена');
+  ensure(ids.length===first.total,'Неполная загрузка RU Product: '+
     ids.length+'/'+first.total);
   report.scope.documentIds=ids;
 }
 async function checkSchema(){
   const [types,parts]=await Promise.all([get('/content-manager/content-types'),
     get('/content-manager/components')]);
-  ensure(Array.isArray(types?.data)&&Array.isArray(parts?.data),'Нет CMS schemas');
+  ensure(Array.isArray(types?.data)&&Array.isArray(parts?.data),'Нет схем Content Manager');
   schemas=new Map(types.data.map(x=>[x.uid,x]));
   components=new Map(parts.data.map(x=>[x.uid,x]));
   schema=schemas.get(UID);
-  ensure(schema?.attributes,'Нет schema Category');
-  const want={parent:'api::category.category',brand:BRAND_UID,product:'api::product.product'};
-  for(const [f,uid]of Object.entries(want))
-    ensure(schema.attributes[f]?.type==='relation'&&schema.attributes[f].target===uid,
-      'Изменился source relation contract '+f);
-  ensure(schema.attributes.categories?.mappedBy==='parent'&&
-    schema.attributes.product?.mappedBy==='categories',
-    'Изменился inverse relation contract');
+  ensure(schema?.attributes&&schema.pluginOptions?.i18n?.localized===true,
+    'Не подтверждена локализованная schema Product');
+  for(const [f,a] of rootRelations(schema)){
+    ensure(typeof a.target==='string'&&a.target.startsWith('api::'),
+      'Неподдержанный root relation target '+f);
+  }
+  WRITABLE=rootRelations(schema).filter(([f,a])=>!a.mappedBy&&f!=='category').map(([f])=>f);
+  INVERSE=rootRelations(schema).filter(([f,a])=>a.mappedBy||f==='category').map(([f])=>f);
+  ensure(schema.attributes.key?.unique===true,
+    'Schema Product.key отличается от подтверждённого unique contract');
+  report.scope.writableRelations=WRITABLE;
+  report.scope.inverseRelations=INVERSE;
 }
 async function seedPhase(){
   for(const id of ids){
@@ -665,7 +672,9 @@ async function seedPhase(){
       let before=await snapshot(id);ensureSafeRoot(before);
       const ru=before.ru.draft,kk=before.kk.draft;
       const wanted=expectedKK(before);
-      if(!kk)await checkUnique(id,ru);
+      // Missing KK Product seed via Content Manager is not yet live-confirmed:
+      // one attempted PUT is guarded by prewrite journal and strict postflight.
+      // No Product.key is copied from RU.
       if(!Object.keys(wanted.updates).length){
         st.unchanged++;resultFor(id).seed='unchanged';update('seed',id,'Уже заполнено');continue;
       }
@@ -752,13 +761,33 @@ async function finalGraphCheck(id,snap){
   const wanted=expectedKK(snap).fields;
   assertDraftValues(snap,wanted);
 }
-function publishPayload(draft,locale){
-  const out={locale};
+function publishPayload(draft){
+  const out={locale:'kk'};
+  ensure(typeof draft.fields.key==='string'&&draft.fields.key.length>0,
+    'Нельзя публиковать Product без уникального KK.key');
   for(const [f,a]of attrList(schema)){
+    if(OMIT.has(f)){if(f==='key')out[f]=draft.fields.key;continue;}
     if(a.type==='relation'){out[f]={connect:[],disconnect:[]};continue;}
     out[f]=draft.fields[f];
   }
   return out;
+}
+const publishedTargets=new Map();
+async function allTargetsPublished(snap){
+  const missing=[];
+  for(const [field,a] of rootRelations(schema)){
+    for(const documentId of idsOf(snap.kk.draft.relations[field])){
+      const key=a.target+'/'+documentId;
+      let status=publishedTargets.get(key);
+      if(status===undefined){
+        const pub=await detail(a.target,documentId,'kk','published');
+        status=!!pub?.publishedAt;
+        if(status)publishedTargets.set(key,true);
+      }
+      if(!status)missing.push({field,documentId,target:a.target});
+    }
+  }
+  return missing;
 }
 async function publishPhase(){
   for(const id of ids){
@@ -767,30 +796,35 @@ async function publishPhase(){
     try{
       let snap=await snapshot(id);
       await finalGraphCheck(id,snap);
-      for(const locale of ['ru','kk']){
-        const ck=publishedCheck(snap[locale]);
-        const done=await dbGet('done/publish/'+id+'/'+locale);
-        const unchangedSinceDone=done&&
-          equal(done.after?.[locale]?.draft,semantic(snap[locale].draft))&&ck.ok;
-        // Уже Published + те же поля/Media/key = не нужен лишний POST.
-        // Единственное исключение: в этой сессии добавлены KK Draft links,
-        // тогда обновляем KK Published даже при неполной видимости targets.
-        const alreadyPublished=ck.ok&&(locale==='ru'||!linkedDocs.has(id));
-        if(unchangedSinceDone||alreadyPublished){
-          st.skipped++;continue;
-        }
-        const payload=publishPayload(snap[locale].draft,locale);
-        snap=await perform('publish',id,snap,{locale},'POST',
-          '/content-manager/collection-types/'+UID+'/'+id+
-          '/actions/publish?locale='+locale,payload,locale);
-        st[locale]++;update('publish',id,'Опубликована '+locale);
+      const current=publishedCheck(snap.kk);
+      if(current.ok&&!linkedDocs.has(id)){
+        st.skipped++;
+        resultFor(id).publish={status:'verified',visibility:current.invisible};
+        continue;
       }
-      const r=publishedCheck(snap.ru),k=publishedCheck(snap.kk);
-      ensure(r.ok&&k.ok,'Postflight Published нет/не совпадают после RU+KK');
-      resultFor(id).publish={status:'verified',
-        visibility:{ru:r.invisible,kk:k.invisible}};
+      if(typeof snap.kk.draft.fields.key!=='string'||!snap.kk.draft.fields.key){
+        st.blocked++;skipDocs.add(id);
+        report.issues.push({id,stage:'publish',reason:'KK.key пустой, публикация запрещена'});
+        resultFor(id).publish='blocked-key';continue;
+      }
+      const missing=await allTargetsPublished(snap);
+      if(missing.length){
+        st.blocked++;skipDocs.add(id);
+        report.issues.push({id,stage:'publish',reason:'Неопубликованные KK dependencies',
+          count:missing.length,pending:missing.slice(0,200)});
+        resultFor(id).publish='blocked-dependencies';
+        update('publish',id,'Отложено: '+missing.length+' KK Published targets');
+        continue;
+      }
+      snap=await perform('publish',id,snap,{locale:'kk'},'POST',
+        '/content-manager/collection-types/'+UID+'/'+id+'/actions/publish?locale=kk',
+        publishPayload(snap.kk.draft),'kk');
+      const checked=publishedCheck(snap.kk);
+      ensure(checked.ok,'После POST KK Product Published не соответствует Draft');
+      st.kk++;resultFor(id).publish={status:'verified',visibility:checked.invisible};
+      update('publish',id,'KK опубликована');
     }catch(e){
-      if(report.errors.length)throw e;
+      if(report.errors.length||e.fatal||window.tmProductNormalizerStop===true)throw e;
       st.blocked++;skipDocs.add(id);
       resultFor(id).publish='blocked: '+e.message;
       report.issues.push({id,stage:'publish',reason:e.message});
@@ -805,7 +839,7 @@ try{
   db=await dbOpen();
   await recoverPending();
   report.summary={scope:ids.length,
-    note:'KK Media и переводы защищены; Product не публикуется'};
+    note:'KK переводы, изображения и уникальные key защищены; RU и справочники не публикуются'};
   console.log(TAG,'production','Старт',ids.length,
     'категорий. Для остановки window.tmProductNormalizerStop=true');
   await seedPhase();
@@ -815,7 +849,7 @@ try{
   report.complete=report.issues.length===0;
   report.summary={...report.summary,created:report.stages.seed.created,
     updated:report.stages.seed.updated,linksAdded:report.stages.relations.linked,
-    publishedRU:report.stages.publish.ru,publishedKK:report.stages.publish.kk,
+    publishedKK:report.stages.publish.kk,
     incompleteDocuments:skipDocs.size,verifiedWrites:report.counters.verifiedWrites};
   report.status=report.issues.length?'completed-with-issues':'completed';
 }catch(e){
