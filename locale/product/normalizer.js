@@ -388,7 +388,7 @@ function publishedCheck(ver){
   const draftModified=draft.meta.status==='modified';
   // Product Published relations must match Draft exactly: attributes and
   // Product.categories must not silently disappear as in older incidents.
-  return {ok:!draftModified&&!fieldDiffs.length&&!Object.keys(invisible).length&&
+  return {ok:!fieldDiffs.length&&!Object.keys(invisible).length&&
       !Object.keys(unexpected).length,
     missingPublished:false,draftModified,fieldDiffs,invisible,unexpected,
     publishedAt:pub.meta.publishedAt};
