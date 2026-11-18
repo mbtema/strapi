@@ -408,8 +408,8 @@ function downloadCSV(){
   const quote=value=>'"'+String(value??'').replace(/"/g,'""')+'"';
   const records=[['documentId','seed','relations','publish','issues'],
     ...ids.map(id=>[id,report.results[id]?.seed,report.results[id]?.relations,
-      typeof report.results[id]?.publish==='object'?
-        report.results[id]?.publish.status:report.results[id]?.publish,
+      report.results[id]?.publish&&typeof report.results[id].publish==='object'?
+        report.results[id].publish.status:report.results[id]?.publish,
       (issues.get(id)||[]).join('; ')])];
   const value='\uFEFF'+records.map(x=>x.map(quote).join(',')).join('\r\n');
   const u=URL.createObjectURL(new Blob([value],{type:'text/csv;charset=utf-8'}));
