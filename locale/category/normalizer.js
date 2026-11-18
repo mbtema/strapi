@@ -21,7 +21,7 @@ const report={version:1,mode,startedAt:new Date().toISOString(),finishedAt:null,
   stages:{seed:{processed:0,created:0,updated:0,unchanged:0,blocked:0},
     relations:{processed:0,linked:0,unchanged:0,blocked:0},
     publish:{processed:0,ru:0,kk:0,skipped:0,blocked:0}},
-  results:{},issues:[],errors:[],warnings:[],restorations:[],complete:false};
+  results:{},issues:[],errors:[],warnings:[],restorations:[],pendingDiagnostic:null,complete:false};
 window.tmCategoryNormalizerReport=report;
 const SYSTEM=new Set(['id','documentId','locale','status','createdAt','updatedAt',
   'publishedAt','createdBy','updatedBy','localizations','__pivot']);
@@ -636,6 +636,67 @@ async function perform(stage,id,before,expected,method,path,payload,locale){
   if(report.counters.verifiedWrites%20===0)await sleep(1500);
   return after;
 }
+// Read-only diagnostics for any unresolved pending write, not just one Category.
+function pendingDiff(pending,after){
+  const before=pending.before,current=compact(after);
+  const differences={};
+  for(const locale of ['ru','kk']){
+    differences[locale]={};
+    for(const version of ['draft','published']){
+      const b=before[locale][version],a=current[locale][version];
+      if(equal(b,a))continue;
+      const info={beforeExists:!!b,currentExists:!!a};
+      if(b&&a){
+        const names=new Set([...Object.keys(b.fields),...Object.keys(a.fields)]);
+        const fields={};
+        for(const field of names){
+          if(!equal(b.fields[field],a.fields[field]))
+            fields[field]={before:b.fields[field],current:a.fields[field]};
+        }
+        const relationNames=new Set([
+          ...Object.keys(b.relations),...Object.keys(a.relations)]);
+        const relations={};
+        for(const field of relationNames){
+          const prev=new Set(b.relations[field]||[]);
+          const next=new Set(a.relations[field]||[]);
+          const added=[...next].filter(x=>!prev.has(x));
+          const removed=[...prev].filter(x=>!next.has(x));
+          if(added.length||removed.length)
+            relations[field]={added,removed};
+        }
+        if(Object.keys(fields).length)info.fields=fields;
+        if(Object.keys(relations).length)info.relations=relations;
+      }else if(a&&!b){
+        info.currentFields=a.fields;
+        info.currentRelationCounts=Object.fromEntries(
+          Object.entries(a.relations).map(([field,ids])=>[field,ids.length]));
+      }else if(b&&!a){
+        info.previousFields=b.fields;
+        info.previousRelationCounts=Object.fromEntries(
+          Object.entries(b.relations).map(([field,ids])=>[field,ids.length]));
+      }
+      differences[locale][version]=info;
+    }
+  }
+  return {documentId:pending.documentId,stage:pending.stage,
+    capturedAt:new Date().toISOString(),
+    differences,status:stableStatus(after),
+    restorationAlreadyAttempted:!!pending.restoration};
+}
+// A content pending may have been followed by an independent, valid KK Publish.
+// Accept the already-complete state only if the original KK content write
+// verifies in full AND KK Published is an exact mirror of current KK Draft.
+function verifiedLaterPublished(pending,after){
+  if(pending.stage!=='content'||pending.before.kk.published!==null||
+     !after.kk.draft||!after.kk.published)return false;
+  const current=compact(after);
+  if(!equal(current.kk.draft,current.kk.published))return false;
+  const withoutLaterPublication=JSON.parse(JSON.stringify(current));
+  withoutLaterPublication.kk.published=null;
+  try{verifyCompact(pending,withoutLaterPublication);}
+  catch{return false;}
+  return true;
+}
 async function recoverPending(){
   const pending=await dbGet('pending');
   if(!pending)return;
@@ -644,12 +705,22 @@ async function recoverPending(){
   let after=await snapshot(pending.documentId);
   try{verifyWrite(pending,null,after);}
   catch(e){
-    // Exact same safeguards as the normal postwrite path. If repair was
-    // attempted before a crash, no second recovery PUT is allowed.
-    const restored=await restoreLostDraftFields(pending,after,e);
-    if(!restored)throw Error('Pending не подтверждён; запись нельзя повторять: '+
-      e.message+'. Журнал сохранён');
-    after=restored;
+    // Reconcile a separately published, already fully verified KK version.
+    // This does not repeat any earlier PUT/POST and never changes CMS data.
+    if(verifiedLaterPublished(pending,after)){
+      report.warnings.push('Позднее опубликованная KK совпадает с текущим KK Draft; '+
+        'pending контента подтверждён без новых записей '+pending.documentId);
+    }else{
+      const diagnostic=pendingDiff(pending,after);
+      report.pendingDiagnostic=diagnostic;
+      console.warn(TAG,'Pending differences',diagnostic);
+      // Exact same safeguards as the normal postwrite path. If repair was
+      // attempted before a crash, no second recovery PUT is allowed.
+      const restored=await restoreLostDraftFields(pending,after,e);
+      if(!restored)throw Error('Pending не подтверждён; запись нельзя повторять: '+
+        e.message+'. Журнал сохранён. Подробности: report.pendingDiagnostic');
+      after=restored;
+    }
   }
   await dbFinish(pending,after);
   if(pending.restoration&&!report.restorations.some(x=>
