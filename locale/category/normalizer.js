@@ -208,8 +208,6 @@ function assertOtherKKPublished(before,after){
 }
 function ensureSafeRoot(before){
   ensure(before.ru.draft,'Нет RU Draft');
-  ensure(typeof before.ru.draft.fields.key==='string'&&before.ru.draft.fields.key.length>0,
-    'Пустой RU key, документ пропущен без записи');
   for(const f of INVERSE){
     ensure(idsOf(before.ru.draft.relations[f]).length===0||f==='categories',
       'Неподдерживаемая inverse relation '+f+' с links');
