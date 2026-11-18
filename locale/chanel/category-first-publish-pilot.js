@@ -501,6 +501,54 @@
     }
     return canonicalField(def, ru, path, components);
   }
+  // Проверяем опубликованную запись, НЕ требуя опубликованных target records.
+  // Relations в Published могут быть подмножеством Draft из-за неопубликованных
+  // связных записей. В Draft точный состав всех links остаётся обязательным.
+  function publishedAssessment(snapshot, locale, schema, components) {
+    const draft = snapshot[locale]?.draft;
+    const published = snapshot[locale]?.published;
+    if (!draft) throw new Error('Нет ' + locale + ' Draft для проверки');
+    if (!published?.meta?.publishedAt) {
+      return { locale, published: false, fieldsMatch: false,
+        critical: ['missing-published'], missingPublishedLinks: {},
+        unexpectedPublishedLinks: {}, requiresPublish: true, ok: false };
+    }
+    const d = canonicalVersion(draft, schema, components);
+    const p = canonicalVersion(published, schema, components);
+    const fieldDiffs = Object.keys(d.fields).filter(name =>
+      stable(d.fields[name]) !== stable(p.fields[name]));
+    const missingPublishedLinks = {}, unexpectedPublishedLinks = {};
+    for (const name of Object.keys(d.relations)) {
+      const draftIds = new Set(d.relations[name]);
+      const pubIds = new Set(p.relations[name] ?? []);
+      const missing = [...draftIds].filter(id => !pubIds.has(id));
+      const unexpected = [...pubIds].filter(id => !draftIds.has(id));
+      if (missing.length) {
+        missingPublishedLinks[name] = { count: missing.length, documentIds: missing };
+      }
+      if (unexpected.length) {
+        unexpectedPublishedLinks[name] = { count: unexpected.length, documentIds: unexpected };
+      }
+    }
+    // Критичны только потеря полей/компонентов/media/key и новые лишние links.
+    // Недостающие Published links — заметка о видимости целей, а не потеря
+    // связи, если исходные links существуют в локальном Draft.
+    const critical = [
+      ...fieldDiffs.map(name => 'field:' + name),
+      ...Object.keys(unexpectedPublishedLinks).map(name => 'unexpected-relation:' + name)
+    ];
+    const draftModified = draft.meta?.status === 'modified';
+    return {
+      locale, published: true, publishedAt: published.meta.publishedAt,
+      fieldsMatch: fieldDiffs.length === 0, fieldDiffs,
+      missingPublishedLinks, unexpectedPublishedLinks,
+      draftModified, critical,
+      // Modified требует нового Publish; missing relations само по себе нет.
+      requiresPublish: critical.length > 0 || draftModified,
+      ok: critical.length === 0 && !draftModified
+    };
+  }
+
   function previewPlan(snapshot, schema, components) {
     const ru = snapshot.ru.draft, kk = snapshot.kk.draft;
     if (!ru || !kk) throw new Error('Пилот предназначен только для существующих RU и KK Draft');
@@ -546,14 +594,15 @@
     if (report.warnings.some(x => !x.includes('сохраняем KK media'))) {
       throw new Error('Есть предупреждения аудита, публикация запрещена');
     }
-    const ruAligned = snapshot.ru.published &&
-      stable(canonicalVersion(snapshot.ru.published, schema, components)) === stable(expectedRU);
-    const kkAligned = snapshot.kk.published &&
-      stable(canonicalVersion(snapshot.kk.published, schema, components)) === stable(expectedKK);
+    const ruPublication = publishedAssessment(snapshot, 'ru', schema, components);
+    const kkPublication = publishedAssessment(snapshot, 'kk', schema, components);
     return {
       categoryId: FIRST_CATEGORY_ID,
-      allowedActions: [ruAligned ? null : 'publish-ru', kkAligned ? null : 'publish-kk']
-        .filter(Boolean),
+      allowedActions: [
+        ruPublication.requiresPublish ? 'publish-ru' : null,
+        kkPublication.requiresPublish ? 'publish-kk' : null
+      ].filter(Boolean),
+      publication: { ru: ruPublication, kk: kkPublication },
       protectedKkMediaPaths: kept,
       rootLinksRU: expectedRU.relations,
       rootLinksKK: expectedKK.relations,
@@ -634,12 +683,16 @@
       if (stable(b[lc][st]) !== stable(a[lc][st])) changed.push(lc + '/' + st);
     }
     if (changed.length) throw new Error('ОПАСНО: непредвиденный дрейф ' + changed.join(', '));
-    if (stable(a[locale].draft) !== stable(a[locale].published)) {
-      throw new Error('Published ' + locale + ' не совпал с Draft после Publish');
+    const status = publishedAssessment(after, locale, schema, components);
+    if (!status.ok) {
+      throw new Error('Published ' + locale +
+        ' не прошёл проверку полей/публикации: ' + status.critical.join(', ') +
+        (status.draftModified ? ' (Draft остался modified)' : ''));
     }
     if (locale === 'kk' && stable(a.kk.draft) !== stable(b.kk.draft)) {
       throw new Error('ОПАСНО: изменение защищённого KK Draft');
     }
+    return status;
   }
 
   let schema, components, current;
@@ -672,16 +725,23 @@
     const plan = previewPlan(current, schema, components);
     report.plan = {
       actions: plan.allowedActions, preserveKkMedia: plan.protectedKkMediaPaths,
+      publication: plan.publication,
+      validationBasis: 'RU/KK Draft; Published fields/key/media + status only',
+      relationPublishedPolicy: 'subset of Draft; missing links informational',
       independentDbBackup: false, browserEvidenceRequired: true,
       requiresNoBackupRiskAcceptance: true, requiresManualApply: true,
       keyNormalization: 'skipped; original Draft.key retained and postflight checked'
     };
     report.baselineHash = await hashOf(current, schema, components);
     report.complete = true;
-    report.status = 'ready';
+    report.status = plan.allowedActions.length ? 'ready' : 'verified-published';
     if (!APPLY) {
+      if (!plan.allowedActions.length) report.final = current;
       console.log(TAG, 'DRY-RUN готов. POST=0. actions:', plan.allowedActions,
         'KK media:', plan.protectedKkMediaPaths,
+        'Published relations visibility notes:',
+        {ru: plan.publication.ru.missingPublishedLinks,
+          kk: plan.publication.kk.missingPublishedLinks},
         'baselineHash:', report.baselineHash);
     } else {
       if (CONFIRM_HASH !== report.baselineHash) {
@@ -735,8 +795,11 @@
         download('chanel-pilot-after-' + locale + '-' + FIRST_CATEGORY_ID + '.json',
           afterEvidence);
         if (!after) throw new Error('Не удалось получить postflight ' + locale + ': STOP');
-        try { checkAfter(fresh, after, locale, schema, components); }
-        catch (error) {
+        try {
+          const publication = checkAfter(fresh, after, locale, schema, components);
+          report.phases.push({ phase: 'publication-check-' + locale,
+            at: new Date().toISOString(), ...publication });
+        } catch (error) {
           report.status = 'integrity-stop';
           throw error;
         }
@@ -747,14 +810,19 @@
           at: new Date().toISOString(), verified: true });
         current = after;
       }
-      const final = digestData(current, schema, components);
-      if (stable(final.ru.draft) !== stable(final.ru.published) ||
-          stable(final.kk.draft) !== stable(final.kk.published)) {
-        throw new Error('Финальная проверка двух Published не пройдена');
+      const finalRU = publishedAssessment(current, 'ru', schema, components);
+      const finalKK = publishedAssessment(current, 'kk', schema, components);
+      report.postflight = { ru: finalRU, kk: finalKK };
+      if (!finalRU.ok || !finalKK.ok) {
+        throw new Error('Финальная проверка Published fields/key/media/status не пройдена');
       }
+      // Draft fields, media and root links verified by previewPlan before POST;
+      // all non-target versions protected by checkAfter between each action.
+      previewPlan(current, schema, components);
       report.final = current;
       report.status = 'success';
-      console.log(TAG, 'SUCCESS: RU/KK Published совпадают с Draft; KK media сохранены.');
+      console.log(TAG, 'SUCCESS: Draft RU/KK проверены, обе локали Published; ' +
+        'разница visibility relations не блокирует', report.postflight);
     }
   } catch (error) {
     report.errors.push(error.message);
