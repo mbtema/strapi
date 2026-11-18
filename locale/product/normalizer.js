@@ -70,7 +70,10 @@ async function request(method,path,payload,allow404=false){
     if(method==='GET'&&t<tries&&[408,429,500,502,503,504].includes(res.status)){
       report.counters.retries++;await sleep(600*t);continue;
     }
-    throw Error(method+' HTTP '+res.status+' '+path+': '+(data?.error?.message||body.slice(0,180)));
+    const error=Error(method+' HTTP '+res.status+' '+path+': '+
+      (data?.error?.message||body.slice(0,180)));
+    if(res.status===401||res.status===403)error.fatal=true;
+    throw error;
   }
 }
 let activeGets=0;
@@ -370,7 +373,9 @@ function publishedCheck(ver){
   if(!draft||!pub?.meta.publishedAt)
     return {ok:false,missingPublished:true,fieldDiffs:['missing-published'],
       invisible:{},unexpected:{}};
-  const fieldDiffs=Object.keys(draft.fields).filter(f=>!equal(draft.fields[f],pub.fields[f]));
+  const fieldDiffs=Object.keys(draft.fields)
+    .filter(f=>!['InStock','inStock'].includes(f)&&
+      !equal(draft.fields[f],pub.fields[f]));
   const invisible={},unexpected={};
   for(const f of Object.keys(draft.relations)){
     const want=new Set(idsOf(draft.relations[f]));
@@ -466,7 +471,7 @@ function downloadCSV(){
   const value='\uFEFF'+records.map(x=>x.map(quote).join(',')).join('\r\n');
   const u=URL.createObjectURL(new Blob([value],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');a.href=u;
-  a.download='category-normalization-'+mode+'-results.csv';
+  a.download='product-normalization-'+mode+'-results.csv';
   document.body.appendChild(a);
   try{a.click();}finally{a.remove();setTimeout(()=>URL.revokeObjectURL(u),20000);}
 }
@@ -531,12 +536,14 @@ function verifyWrite(pending,before,after){
         ensure(equal(a.kk.draft?.fields?.[f],b.kk.draft.fields[f]),
           'Excluded field drift '+f);
     }else{
-      for(const f of OMIT)
-        ensure(equal(a.kk.draft?.fields?.[f],b.ru.draft.fields[f]),
-          'Создание KK изменило/не перенесло shared '+f);
-      for(const [f,ids]of Object.entries(a.kk.draft?.relations||{}))
-        ensure(ids.every(id=>(b.ru.draft?.relations?.[f]||[]).includes(id)),
-          'Новая KK получила постороннюю relation '+f);
+      const k=a.kk.draft?.fields?.key;
+      ensure(typeof k==='string'&&k.trim().length>0,
+        'Новая KK Product не получила уникальный key — stop');
+      ensure(k!==b.ru.draft.fields.key,
+        'Новая KK Product скопировала RU.key: защитная остановка');
+      for(const [field,links] of Object.entries(a.kk.draft?.relations||{}))
+        ensure(links.every(docId=>(b.ru.draft?.relations?.[field]||[]).includes(docId)),
+          'Новая KK получила постороннюю relation '+field);
     }
   }else if(stage==='links'){
     ensure(equal(b.ru,a.ru),'RU drift при links');
@@ -684,7 +691,7 @@ async function seedPhase(){
       st[kk?'updated':'created']++;resultFor(id).seed=kk?'updated':'created';
       update('seed',id,resultFor(id).seed);
     }catch(e){
-      if(report.errors.length)throw e;
+      if(report.errors.length||e.fatal||window.tmProductNormalizerStop===true)throw e;
       st.blocked++;skipDocs.add(id);resultFor(id).seed='blocked: '+e.message;
       report.issues.push({id,stage:'seed',reason:e.message});
       update('seed',id,'Пропущено: '+e.message);
@@ -746,7 +753,7 @@ async function linksPhase(){
       st.linked+=linked;linkedDocs.add(id);
       resultFor(id).relations='linked '+linked;
     }catch(e){
-      if(report.errors.length)throw e;
+      if(report.errors.length||e.fatal||window.tmProductNormalizerStop===true)throw e;
       st.blocked++;skipDocs.add(id);resultFor(id).relations='blocked: '+e.message;
       report.issues.push({id,stage:'relations',reason:e.message});
       update('links',id,'Пропущено: '+e.message);
@@ -859,7 +866,7 @@ try{
 }finally{
   report.finishedAt=new Date().toISOString();
   try{
-    download('category-normalization-'+mode+'-'+new Date().toISOString().slice(0,10)+'.json',report);
+    download('product-normalization-'+mode+'-'+new Date().toISOString().slice(0,10)+'.json',report);
   }catch(e){console.warn(TAG,'JSON download error',e);}
   try{downloadCSV();}
   catch(e){console.warn(TAG,'CSV download error',e);}
