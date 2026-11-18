@@ -296,7 +296,7 @@ function mergeField(def,ru,kk,hasKK,path){
       return null;
     return ru;
   }
-  if(def.type==='media')return kk;
+  if(def.type==='media')return kk!=null?kk:ru;
   if(def.type==='component'){
     if(ru==null||kk==null){
       if(ru==null&&kk==null)return null;
