@@ -459,7 +459,7 @@ function verifyLinks(before,after,expected){
       'KK relation '+f+' не совпал после PUT');
   }
 }
-function verifyCompact(pending,a){
+function verifyCompact(pending,a,after=null){
   const b=pending.before;
   const stage=pending.stage;
   if(stage==='content'){
@@ -549,7 +549,7 @@ function recoveryPlan(pending,after){
   return {values:lost,fields:Object.keys(lost)};
 }
 function verifyWrite(pending,before,after){
-  return verifyCompact(pending,compact(after));
+  return verifyCompact(pending,compact(after),after);
 }
 async function restoreLostDraftFields(pending,after,originalError){
   if(pending.restoration)return null; // crash-safe: never repeat recovery PUT
