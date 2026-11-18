@@ -826,7 +826,6 @@
     // Four full versions, including ALL root relations and nested Draft links.
     // Any change since preparation invalidates the write, even in a single-user CMS.
     const fresh=await snapshot(uid,id);
-    assertSafeCategoryKey(uid,fresh);
     if(!matchingBaseline(before,fresh)){
       if(!intact(before,fresh)){
         const issue=new IntegrityViolation('RU изменилась ДО '+stage+
@@ -841,6 +840,7 @@
       throw new Blocked('KK или Published изменились между snapshot и '+stage+
         '. Запись пропущена; нужен новый проход');
     }
+    assertSafeCategoryKey(uid,fresh);
     const pending=await writeJournal(uid,id,stage,fresh,expected,{method,path});
     let error=null;
     try{await request(method,path,payload);}catch(e){error=e;}
@@ -914,7 +914,8 @@
           throw new Blocked('Конфликт unique '+field+' с '+row?.documentId);
     }
   }
-  const safeStatus=e=>e instanceof Blocked?'blocked':e instanceof Unresolved?'unresolved':'error';
+  const safeStatus=e=>e?.skipKey?'skipped_key':
+    e instanceof Blocked?'blocked':e instanceof Unresolved?'unresolved':'error';
   // Read-only preflight: no IndexedDB, PUT or POST. Capture all four versions
   // and their exact native root relations before proposing any action.
   async function dryRun(){
@@ -1179,6 +1180,14 @@
   }
   async function applyOne(item){
     const uid=UID,id=item.id,s=state.schemas.get(uid);
+    if(KEY_INCIDENT_QUARANTINE.has(id)){
+      // Never reconcile the unresolved historic RU.key loss during batch.
+      // Keep its original incident/checkpoints unchanged in IndexedDB.
+      return {status:'skipped_key',stage:'integrity-quarantine',changes:[],
+        pendingLinks:[],pendingFields:[{field:'key',
+          reason:'RU Draft.key повреждён; требуется независимое восстановление'}],
+        reason:'Известный аварийный документ: пропущен без GET/PUT/POST'};
+    }
     const previous=await reconcile(uid,id);
     let pair=await draftPair(uid,id);
     if(!pair.ru.draft)throw new Blocked('RU Draft отсутствует');
@@ -1239,6 +1248,7 @@
     // Check ALL populated unique values (including localized KK bitrix_id)
     // before the first write, not only fields changed in this pass.
     const uniqueFields=fieldsOf(s).filter(([field,a])=>
+      !IGNORED_NORMALIZATION_FIELDS.has(field)&&
       a.unique===true&&nonEmpty(fields.expected[field])).map(([field])=>field);
     if(uniqueFields.length)await uniquePreflight(id,s,fields.expected,
       before.ru.draft.row,before.kk.draft?.row,uniqueFields);
@@ -1718,13 +1728,15 @@
           resultRow={documentId:item.id,name:item.name,status,stage:'apply',
             reason:clean(e.message),changes:[],attempts:1,
             pendingLinks:[],pendingFields:[],pendingPublications:[]};
-          state.report.errors.push({documentId:item.id,status,reason:clean(e.message)});
+          if(!e.skipKey)
+            state.report.errors.push({documentId:item.id,status,reason:clean(e.message)});
           console.warn('[Category Localizer] '+item.id+' '+status+': '+clean(e.message));
         }
         state.report.results.push(resultRow);
         state.done++;render(item.name+': '+resultRow.status);
       }
-      if(!state.stop)state.phase='completed';
+      if(!state.stop)state.phase=rowsStatus().skipped_key?
+        'completed_with_key_skips':'completed';
       else if(!state.phase.startsWith('halted_'))state.phase='stopped';
     }catch(e){
       state.phase='failed';state.report.errors.push(clean(e.message));
@@ -1744,7 +1756,7 @@
       const statuses=rowsStatus();
       state.report.summary={...state.report.summary,total:state.total,...statuses,
         successful:(state.phase==='completed'||state.phase==='recovery_completed')&&
-          !['blocked','unresolved','error','partial','partial_published']
+          !['skipped_key','blocked','unresolved','error','partial','partial_published']
             .some(k=>statuses[k]>0),
         scope:RECOVERY_APPLY?'recovery-apply':RECOVERY_PREVIEW?'recovery-preview':
           EXPORT_ONLY?'backup-export':
@@ -1756,7 +1768,10 @@
         dependenciesPublished:state.report.operations.filter(x=>
           x.stage==='dependency-published').length,
         publishedNestedCountOnly:state.publishedNestedCountOnly.size,
-        publishedNestedVerification:'count-only (composition not proven)' };
+        publishedNestedVerification:'count-only (composition not proven)',
+        ignoredFields:[...IGNORED_NORMALIZATION_FIELDS],
+        quarantinedDocuments:[...KEY_INCIDENT_QUARANTINE],
+        skippedKey:statuses.skipped_key };
       stop.disabled=true;
       try{csv.onclick();json.onclick();}catch(e){console.error('[Category Localizer] export',e);}
       state.db?.close();window[RUN_KEY]=false;
