@@ -1,8 +1,8 @@
 (async function chanelFirstKKSeedApplyPilot() {
   'use strict';
 
-  // CHANEL pipeline / этап 5: preflight первого создания отсутствующей KK Draft.
-  // Только GET. Точный schema payload + targets + uniqueness. Записей нет.
+  // CHANEL pilot создания ОДНОЙ отсутствующей KK Draft.
+  // По умолчанию только GET; PUT возможен лишь с тремя отдельными флагами.
   const TAG = '[CHANEL KK Seed Apply Pilot]';
   const BRAND_UID = 'api::brand.brand';
   const CATEGORY_UID = 'api::category.category';
@@ -612,7 +612,7 @@
     }
     report.plan={
       operation:'seed-kk-draft-only',
-      noCMSWrites:true, intendedMethod:'PUT',
+      noCMSWrites:!APPLY, intendedMethod:'PUT',
       intendedEndpoint:'/content-manager/collection-types/'+CATEGORY_UID+
         '/'+PILOT_ID+'?locale=kk',
       pilotTitle:ru.fields.title,
@@ -639,6 +639,7 @@
     });
     report.complete=true;
     report.status='ready-seed-draft';
+    report.noDbBackupAcknowledged=APPLY && RISK;
     console.log(TAG,'Preflight OK. Seed fields:',Object.keys(base.payload),
       'available root links:',available.length,
       'pending:',pending.length,'hash:',report.baselineHash);
