@@ -1,6 +1,8 @@
 (async function attributeKKPreflight() {
   'use strict';
   const UID = 'api::attribute.attribute', TAG = '[Attribute KK Preflight]';
+  // Подтверждённые владельцем коллекции общие справочники: без локализации.
+  const NONLOCALIZED_TARGETS = new Set(['api::shade.shade', 'api::volume.volume']);
   const ROOT = '/admin/content-manager/collection-types/' + UID + '/';
   const documentId = location.pathname.startsWith(ROOT)
     ? decodeURIComponent(location.pathname.slice(ROOT.length).replace(/\/$/, '')) : '';
@@ -150,8 +152,9 @@
       relationTargets: Object.fromEntries(relDefs.map(([field, def]) => {
         const target = schemas.get(def.target);
         return [field, { uid: def.target,
-          i18nLocalized: typeof target?.pluginOptions?.i18n?.localized === 'boolean'
-            ? target.pluginOptions.i18n.localized : null,
+          i18nLocalized: NONLOCALIZED_TARGETS.has(def.target) ? false
+            : typeof target?.pluginOptions?.i18n?.localized === 'boolean'
+              ? target.pluginOptions.i18n.localized : null,
           pluginOptions: target?.pluginOptions || null
         }];
       })),
@@ -193,11 +196,17 @@
     for (const [field, def] of relDefs) {
       check(schemas.has(def.target), 'Не найдена схема relation target: ' + field);
       for (const relation of ru.relations[field]) {
-        const targetI18n = report.schema.relationTargets[field].i18nLocalized;
-        const draft = await kkDependency(def.target, relation.documentId, 'draft');
-        const published = await kkDependency(def.target, relation.documentId, 'published');
+        const targetI18n = NONLOCALIZED_TARGETS.has(def.target)
+          ? false : report.schema.relationTargets[field].i18nLocalized;
+        const draft = targetI18n === false
+          ? { kind: 'shared_not_applicable', id: null, responseLocale: null }
+          : await kkDependency(def.target, relation.documentId, 'draft');
+        const published = targetI18n === false
+          ? { kind: 'shared_not_applicable', id: null, responseLocale: null }
+          : await kkDependency(def.target, relation.documentId, 'published');
         const dependency = { field, uid: def.target, documentId: relation.documentId,
-          ruNumericId: relation.id, targetI18n, kkDraft: draft, kkPublished: published,
+          ruNumericId: relation.id, targetI18n, sharedDocumentId: targetI18n === false
+            ? relation.documentId : null, kkDraft: draft, kkPublished: published,
           kkDraftId: draft.id, kkPublishedId: published.id };
         report.dependencies.push(dependency);
         if (draft.kind === 'locale_fallback' || published.kind === 'locale_fallback')
