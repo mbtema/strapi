@@ -383,34 +383,6 @@ async function dbFinish(pending,after){
     tx.onabort=()=>reject(tx.error||Error('IndexedDB journal aborted'));
   });
 }
-function download(name,data){
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'});
-  const link=document.createElement('a'),u=URL.createObjectURL(blob);
-  link.href=u;link.download=name;document.body.appendChild(link);
-  try{link.click();}finally{
-    link.remove();setTimeout(()=>URL.revokeObjectURL(u),20000);
-  }
-}
-function downloadCSV(){
-  const issues=new Map();
-  for(const item of report.issues){
-    const list=issues.get(item.id)||[];
-    list.push(item.stage+': '+(item.reason||item.pending?.length+' missing targets'||'review'));
-    issues.set(item.id,list);
-  }
-  const quote=value=>'"'+String(value??'').replace(/"/g,'""')+'"';
-  const records=[['documentId','seed','relations','publish','issues'],
-    ...ids.map(id=>[id,report.results[id]?.seed,report.results[id]?.relations,
-      report.results[id]?.publish&&typeof report.results[id].publish==='object'?
-        report.results[id].publish.status:report.results[id]?.publish,
-      (issues.get(id)||[]).join('; ')])];
-  const value='\uFEFF'+records.map(x=>x.map(quote).join(',')).join('\r\n');
-  const u=URL.createObjectURL(new Blob([value],{type:'text/csv;charset=utf-8'}));
-  const a=document.createElement('a');a.href=u;
-  a.download='category-relations-ru-kk-results.csv';
-  document.body.appendChild(a);
-  try{a.click();}finally{a.remove();setTimeout(()=>URL.revokeObjectURL(u),20000);}
-}
 function resultFor(id){
   return report.results[id]??={seed:null,relations:null,publish:null,notes:[]};
 }
@@ -1061,13 +1033,13 @@ try{
   console.error(TAG,'ОСТАНОВЛЕНО:',e);
 }finally{
   report.finishedAt=new Date().toISOString();
-  try{download('category-relations-ru-kk-'+categoryId+'.json',report);}
-  catch(e){console.warn(TAG,'JSON export error',e);}
-  try{downloadCSV();}
-  catch(e){console.warn(TAG,'CSV export error',e);}
   if(db)db.close();
   window[RUNKEY]=false;
   console.log(TAG,'Итог',report.status,report.counters,report.stages,
     'Errors:',report.errors.length);
+  if(report.issues.length)console.warn(TAG,'Issues:',report.issues);
+  if(report.warnings.length)console.warn(TAG,'Warnings:',report.warnings);
+  if(report.errors.length)console.error(TAG,'Errors:',report.errors);
+  console.log(TAG,'Подробности доступны в window.tmCategoryRelationSyncReport');
 }
 })();
