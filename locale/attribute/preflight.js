@@ -69,6 +69,23 @@
     if (status === 'published' && !data.publishedAt) return null;
     return data;
   }
+  async function kkDependency(uid, id, status) {
+    const path = '/content-manager/collection-types/' + uid + '/' +
+      encodeURIComponent(id) + '?locale=kk&status=' + status;
+    const data = (await get(path, true))?.data;
+    if (data == null || (typeof data === 'object' && !Array.isArray(data) &&
+        Object.keys(data).length === 0))
+      return { kind: 'missing', id: null, responseLocale: null };
+    check(!Array.isArray(data) && data.documentId === id,
+      'Неверный documentId зависимости: ' + uid + '/' + id + '/' + status);
+    if (data.locale !== 'kk')
+      return { kind: 'locale_fallback', id: null, responseLocale: data.locale ?? null };
+    if (status === 'published' && !data.publishedAt)
+      return { kind: 'unpublished', id: null, responseLocale: 'kk' };
+    check(Number.isSafeInteger(data.id) && data.id > 0,
+      'Некорректный numeric ID зависимости: ' + uid + '/' + id + '/' + status);
+    return { kind: 'available', id: data.id, responseLocale: 'kk' };
+  }
   async function relations(id, field, locale, status) {
     const all = [], seen = new Set();
     let total = null, pageCount = null;
@@ -130,6 +147,14 @@
         mappedBy: def.mappedBy || null, inversedBy: def.inversedBy || null,
         component: def.component || null, repeatable: !!def.repeatable
       }])),
+      relationTargets: Object.fromEntries(relDefs.map(([field, def]) => {
+        const target = schemas.get(def.target);
+        return [field, { uid: def.target,
+          i18nLocalized: typeof target?.pluginOptions?.i18n?.localized === 'boolean'
+            ? target.pluginOptions.i18n.localized : null,
+          pluginOptions: target?.pluginOptions || null
+        }];
+      })),
       components: componentData.data.filter(c => c?.uid && c?.attributes)
         .map(c => ({ uid: c.uid, attributes: c.attributes }))
     };
@@ -168,11 +193,18 @@
     for (const [field, def] of relDefs) {
       check(schemas.has(def.target), 'Не найдена схема relation target: ' + field);
       for (const relation of ru.relations[field]) {
-        const targetKKDraft = await detail(def.target, relation.documentId, 'kk', 'draft');
-        const targetKKPublished = await detail(def.target, relation.documentId, 'kk', 'published');
-        report.dependencies.push({ field, uid: def.target, documentId: relation.documentId,
-          ruNumericId: relation.id, kkDraftId: targetKKDraft?.id || null,
-          kkPublishedId: targetKKPublished?.id || null });
+        const targetI18n = report.schema.relationTargets[field].i18nLocalized;
+        const draft = await kkDependency(def.target, relation.documentId, 'draft');
+        const published = await kkDependency(def.target, relation.documentId, 'published');
+        const dependency = { field, uid: def.target, documentId: relation.documentId,
+          ruNumericId: relation.id, targetI18n, kkDraft: draft, kkPublished: published,
+          kkDraftId: draft.id, kkPublishedId: published.id };
+        report.dependencies.push(dependency);
+        if (draft.kind === 'locale_fallback' || published.kind === 'locale_fallback')
+          report.warnings.push('Цель relation ' + field + '/' + relation.documentId +
+            ' вернула locale=' + (draft.responseLocale || published.responseLocale) +
+            ' на запрос kk; i18nLocalized=' + targetI18n +
+            '. Это не подтверждение существования KK.');
       }
     }
     const shared = defs.filter(([field, def]) => def.type !== 'relation' &&
@@ -181,10 +213,19 @@
       .map(([field]) => field);
     if (shared.length) report.warnings.push(
       'Непустые shared поля, подлежащие защите от изменения RU: ' + shared.join(', '));
-    const missing = report.dependencies.filter(d => !d.kkDraftId);
-    const unpublished = report.dependencies.filter(d => d.kkDraftId && !d.kkPublishedId);
-    if (missing.length) report.warnings.push('Нет KK Draft у связанных записей: ' + missing.length);
-    if (unpublished.length) report.warnings.push('Нет KK Published у связанных записей: ' + unpublished.length);
+    const sharedTargets = report.dependencies.filter(d => d.targetI18n === false);
+    const ambiguousTargets = report.dependencies.filter(d => d.targetI18n !== false &&
+      (d.kkDraft.kind === 'locale_fallback' || d.kkPublished.kind === 'locale_fallback'));
+    const missing = report.dependencies.filter(d => d.targetI18n !== false &&
+      d.kkDraft.kind === 'missing');
+    const unpublished = report.dependencies.filter(d => d.targetI18n !== false &&
+      d.kkDraft.kind === 'available' && d.kkPublished.kind !== 'available');
+    if (sharedTargets.length)
+      report.warnings.push('Не локализуемые relation targets (общие): ' + sharedTargets.length);
+    if (ambiguousTargets.length)
+      report.warnings.push('Неоднозначный ответ locale для relation targets: ' + ambiguousTargets.length);
+    if (missing.length) report.warnings.push('Нет KK Draft у локализуемых targets: ' + missing.length);
+    if (unpublished.length) report.warnings.push('Нет KK Published у локализуемых targets: ' + unpublished.length);
     report.plan = {
       action: report.versions.kk.draft ? 'kk_exists' : 'create_kk',
       source: 'ru/draft', target: 'kk', publish: 'kk_only', writes: 0,
@@ -193,6 +234,7 @@
       safeToCopyAllFields: ru.omittedFields.length === 0,
       relationCounts: Object.fromEntries(Object.entries(ru.relations)
         .map(([field, rows]) => [field, rows.length])),
+      sharedTargets: sharedTargets.length, ambiguousTargets: ambiguousTargets.length,
       missingKKTargets: missing.length, unpublishedKKTargets: unpublished.length
     };
     report.status = 'complete';
