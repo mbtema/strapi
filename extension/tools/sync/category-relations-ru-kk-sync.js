@@ -407,7 +407,7 @@ function downloadCSV(){
   const value='\uFEFF'+records.map(x=>x.map(quote).join(',')).join('\r\n');
   const u=URL.createObjectURL(new Blob([value],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');a.href=u;
-  a.download='category-normalization-'+mode+'-results.csv';
+  a.download='category-relations-ru-kk-results.csv';
   document.body.appendChild(a);
   try{a.click();}finally{a.remove();setTimeout(()=>URL.revokeObjectURL(u),20000);}
 }
@@ -1028,10 +1028,10 @@ try{
     report.complete=true;
     report.summary={note:'Уже синхронизировано и опубликовано; 0 writes'};
   }else if(!confirm('Синхронизировать Category '+categoryId+
-    '\\nRU → KK: parent +'+missing.parent.length+', categories +'+
+    '\nRU → KK: parent +'+missing.parent.length+', categories +'+
     missing.categories.length+', product +'+missing.product.length+
-    '\\nДочерние categories обновляются через KK child.parent (без Publish детей).'+
-    '\\nДалее Publish текущей RU и KK. Лишние связи не удаляются. Продолжить?')){
+    '\nДочерние categories обновляются через KK child.parent (без Publish детей).'+
+    '\nДалее Publish текущей RU и KK. Лишние связи не удаляются. Продолжить?')){
     report.status='cancelled';
     report.summary={note:'Отмена после read-only preflight; 0 writes'};
   }else{
