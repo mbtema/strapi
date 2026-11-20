@@ -137,12 +137,19 @@
       for (const status of ['draft', 'published']) {
         const data = await detail(UID, documentId, locale, status);
         if (!data) continue;
-        const fields = {}, links = {};
+        const fields = {}, links = {}, omittedFields = [];
         for (const [field, def] of defs) {
           if (def.type === 'relation') continue;
-          check(Object.hasOwn(data, field), 'Нет поля в API: ' + field + '/' + locale + '/' + status);
+          if (!Object.hasOwn(data, field)) {
+            omittedFields.push(field);
+            continue;
+          }
           fields[field] = data[field];
         }
+        if (omittedFields.length)
+          report.warnings.push('API не вернул поля ' + locale + '/' + status +
+            ': ' + omittedFields.join(', ') +
+            '. Значения неизвестны (это не null); полный перенос пока не разрешён.');
         for (const [field] of relDefs) {
           const linked = await relations(documentId, field, locale, status);
           if (Number.isSafeInteger(data[field]?.count))
@@ -152,7 +159,7 @@
         report.versions[locale][status] = {
           meta: { id: data.id, documentId: data.documentId, locale: data.locale,
             status: data.status, publishedAt: data.publishedAt, updatedAt: data.updatedAt },
-          fields, relations: links
+          fields, omittedFields, relations: links
         };
       }
     }
@@ -182,6 +189,8 @@
       action: report.versions.kk.draft ? 'kk_exists' : 'create_kk',
       source: 'ru/draft', target: 'kk', publish: 'kk_only', writes: 0,
       fields: Object.keys(ru.fields),
+      omittedSourceFields: ru.omittedFields,
+      safeToCopyAllFields: ru.omittedFields.length === 0,
       relationCounts: Object.fromEntries(Object.entries(ru.relations)
         .map(([field, rows]) => [field, rows.length])),
       missingKKTargets: missing.length, unpublishedKKTargets: unpublished.length
