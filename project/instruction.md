@@ -16,6 +16,7 @@
 - `project/instruction.md` и `project/context.md` — staging copies, не активные настройки. Сначала править/проверять их в `project/`; перенос в ChatGPT Project выполняет пользователь.
 
 ## 3. GitHub и репозиторий
+- Все изменения коммитить сразу в `main`; новые ветки и PR создавать только по явному запросу пользователя.
 - Для code/repo-задачи читать только нужные **live-файлы** и связанные registry/contracts. Пути брать из live repo/context, без догадок и лишнего сканирования.
 - **Все тексты в GitHub — на русском:** commits, Issues, PR, reviews и comments.
 - Backlog вести в GitHub Issues, не в context. Перед работой по Issue читать последние comments: комментарий пользователя может менять или отменять body.
