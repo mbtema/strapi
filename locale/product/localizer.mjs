@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// Product localizer RU → KK. Node.js 20+, без зависимостей.
-// По умолчанию только аудит; --apply разрешает запись. InStock НЕ читается как критерий.
 import { mkdir, readFile, writeFile, rename, appendFile, unlink, readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,8 +20,6 @@ const RECOVER = args.includes('--recover-pending');
 if(RECOVER && (NEW_RUN || args.some(x=>x.startsWith('--probe='))))
   throw Error('--recover-pending несовместим с --new-run/--probe');
 const ALLOW_LEGACY = args.includes('--allow-legacy-unresolved');
-// Безопасный первый production-проход: только существующие KK Product,
-// только опубликованные KK targets. Не создаём KK и не публикуем справочники.
 const EXISTING_ONLY = RECOVER || args.includes('--existing-only');
 const CONTINUE_ON_ERROR = args.includes('--continue-on-error');
 const num = (key, fallback, min, max) => {
@@ -62,12 +58,11 @@ const SYSTEM = new Set(['id','documentId','locale','status','publishedAt','creat
   'updatedAt','createdBy','updatedBy','localizations','__pivot']);
 const TEXT_KK = new Set(['name1','name2','detail_text','composition']);
 const SKIP = new Set(['InStock','inStock','key']);
-// Не перезаписывать товар с незавершённым журналом старого DIOR pipeline.
 const LEGACY_UNRESOLVED = new Set(['fajndt11d4br9jmuy32n9xq9']);
 const scalarTypes = new Set(['string','text','richtext','email','enumeration','json',
   'blocks','integer','biginteger','float','decimal','boolean','date','time','datetime','uid']);
 let token = env.STRAPI_JWT || '';
-const contentToken = env.STRAPI_API_TOKEN || ''; // Отдельный токен Content API, только для создания KK
+const contentToken = env.STRAPI_API_TOKEN || '';
 let schema, allSchemas, stopped = false, fatal = null, finishWrite = Promise.resolve();
 let interruptRequested=false;
 if(!TEST)process.on('SIGINT',()=>{
@@ -150,7 +145,6 @@ const csvFile = join(outputDir,RECOVER?'report.csv':PREFIX+'-report.csv');
 const progressFile = join(outputDir,RECOVER?'progress.jsonl':PREFIX+'-progress.jsonl');
 const summaryFile = join(outputDir,RECOVER?'summary.json':PREFIX+'-summary.json');
 const schemaFile = join(outputDir,RECOVER?'schema.sha256':PREFIX+'-schema.sha256');
-// Recovery и обычный apply используют один замок.
 const lockFile = join(SCRIPT_DIR,(RECOVER?'product-kk-apply':PREFIX)+'.lock');
 const backupDir = join(SCRIPT_DIR,'product-kk-backups');
 let seen = new Set();
@@ -172,7 +166,6 @@ async function serialize(fn) {
 }
 async function report(id,status,changes='',reason='',details='') {
   return serialize(async () => {
-    // JSONL — основной checkpoint; CSV можно полностью восстановить после сбоя.
     await appendFile(progressFile,JSON.stringify({id,status,changes,reason,details,
       at:new Date().toISOString()})+'\n');
     await appendFile(csvFile,[id,status,changes,reason,details].map(csvCell).join(';') + '\n');
@@ -263,7 +256,6 @@ async function http(method,path,body=null,allow404=false,authToken=token) {
       if(CONTINUE_ON_ERROR && authToken!==contentToken) {
         await waitForNewJwt(authToken);
         if(method==='GET')return http(method,path,body,allow404,token);
-        // Не повторяем даже отклонённый PUT/POST: новый проход только после сверки backup.
         throw Error('HTTP '+response.status+': JWT обновлён; запись не повторена, нужна сверка backup');
       }
       const error=Error('Авторизация Strapi отклонена (HTTP '+response.status+
@@ -342,9 +334,6 @@ async function relations(uid,id,field,locale,status='draft') {
 }
 let relationFields;
 const MAX_POPULATE_FIELDS = 19;
-// Нельзя слепо доверять populate: Content Manager может вернуть только часть many-relations.
-// Сверяем каждый набор documentId с числом из исходного detail.count.
-// Неоднозначные поля читаем проверенным /content-manager/relations/{uid}/{id}/{field}.
 function relationFromPopulate(value,raw,locale) {
   const count=Number.isSafeInteger(raw?.count) && raw.count>=0 ? raw.count : null;
   if(count===null)return null;
@@ -366,8 +355,6 @@ function relationFromPopulate(value,raw,locale) {
 }
 async function populatedRelations(uid,id,locale,status,raw) {
   const out={},fields=relationFields;
-  // Один запрос для группы root relations вместо отдельного запроса на каждое поле.
-  // Если сервер ограничивает populate, пробуем обычные точные GET для сомнительных fields.
   for(let i=0;i<fields.length;i+=MAX_POPULATE_FIELDS) {
     const group=fields.slice(i,i+MAX_POPULATE_FIELDS);
     const q=new URLSearchParams({locale,status});
@@ -444,8 +431,6 @@ function plan(ru,kd,kp) {
   return {changes,blockers,publication};
 }
 
-// Диагностика способа чтения root relations без изменений Content Manager.
-// Не сохраняем полные карточки и токены: только структуру ответа и сравнительные counts.
 function relationShape(value,present) {
   if(!present)return {kind:'absent'};
   if(value===null)return {kind:'null'};
@@ -513,8 +498,6 @@ async function allIds() {
     ' (страниц '+pagesNeeded+'), прочитано '+Math.min(idsList.length,required)+'/'+required);
   const pages=Array.from({length:Math.max(0,pagesNeeded-1)},(_,i)=>i+2);
   let loadedRows=idsList.length,loadedPages=1;
-  // При --limit не выгружаем оставшиеся 22 тыс. товаров.
-  // Полный обход сохраняет проверку total/pageCount/дубликатов.
   for(let i=0;i<pages.length;i+=REQUESTS) {
     const chunk=await Promise.all(pages.slice(i,i+REQUESTS).map(async page=>{
       const query=new URLSearchParams({locale:'ru',status:'draft',page:String(page),
@@ -640,7 +623,6 @@ async function dependencyCheck(ru) {
     const d=await detail(item.uid,item.id,'kk','draft');
     const p=await detail(item.uid,item.id,'kk','published');
     const result=d||p?{ok:true,requiresPublish:!p}:{ok:false,reason:'missing_kk_target'};
-    // Отсутствие или непубликация могут измениться за время обработки: кеш только текущего прогона.
     if(result.ok&&!result.requiresPublish)targetCache.set(key,result);
     return {...item,...result};
   }));
@@ -672,8 +654,6 @@ async function postflight(id,before,expected,phase) {
     throw Error('KK Published не совпадает с ожидаемым KK Draft');
   return {ru:r,ruPublished:rp,kk:k,pub:p};
 }
-// Перед записью повторно читаем *изменяемые* relations через native endpoint.
-// Populated numeric id может отличаться от id, который CM ожидает при disconnect.
 async function nativeWriteRelationPreflight(documentId,before,changes) {
   const fields=changes.filter(x=>x.kind==='relation').map(x=>x.field);
   if(!fields.length)return before;
@@ -730,7 +710,7 @@ function publishPayload(v) {
     if(SYSTEM.has(f)||f==='InStock'||f==='inStock')continue;
     if(f==='key'&&a.unique===true) {
       if(typeof v.data.key!=='string'||!v.data.key)throw Error('Пустой KK.key');
-      payload.key=v.data.key;continue; // сохраняем KK.key, не переносим RU.key
+      payload.key=v.data.key;continue;
     }
     if(a.type==='relation') {payload[f]={connect:[],disconnect:[]};continue;}
     if(!Object.hasOwn(v.data,f)) {
@@ -751,15 +731,11 @@ async function createKk(id,ru,ruPublished,original) {
   for(const [f,a] of Object.entries(schema.attributes)) {
     if(SYSTEM.has(f)||SKIP.has(f)||a.type==='relation'||!localized(a))continue;
     if(a.required)return {ok:false,reason:'required_localized_field:'+f};
-    // Намеренно НЕ копируем RU переводы, медиа и relations в REST create.
-    // Поля, не указанные здесь, остаются значениями по умолчанию Strapi.
     if(TEXT_KK.has(f))localizedFields[f]=null;
   }
   const file=join(backupDir,id+'.json');
   await safeWrite(file,JSON.stringify({documentId:id,at:new Date().toISOString(),
     before:original,phase:'create-kk',payload:{data:localizedFields}},null,2));
-  // Документированный Strapi 5 Content API: PUT создаёт локаль существующего documentId.
-  // Только status=draft; Admin JWT к Content API НЕ приравнивается.
   await http('PUT','/api/products/'+encodeURIComponent(id)+'?locale=kk&status=draft',
     {data:localizedFields},false,contentToken);
   const [source,ruPublishedAfter,target,publication]=await Promise.all([
@@ -794,7 +770,6 @@ async function one(id) {
     const originalBefore={ru:snapshot(ru),ruPublished:null,
       kk:snapshot(kk),published:snapshot(pub)};
     if(!ru)return report(id,'blocked_missing_ru','','RU Draft отсутствует');
-    // category — устаревшая связь: в RU она должна быть пустой. Не копируем аномалию в KK.
     if(relationFields.includes('category') && ids(ru,'category').length)
       return report(id,'blocked_legacy_ru_category','',
         'RU.category должен быть пустым',ids(ru,'category').join('|'));
@@ -854,7 +829,6 @@ async function one(id) {
     file ||= join(backupDir,id+'.json');
     await safeWrite(file,JSON.stringify({documentId:id,at:new Date().toISOString(),
       before:originalBefore,plan:draft,phase:'preflight'},null,2));
-    // Зависимые справочники публикуются только после сохранённого backup товара.
     const depIssues=[];
     for(const t of targets.filter(x=>x.requiresPublish)) {
       const r=await publishTarget(t.uid,t.id);
@@ -862,10 +836,9 @@ async function one(id) {
     }
     if(depIssues.length) {
       if(committed)throw Error('KK создана, но публикация target не завершена: '+depIssues.join('|'));
-      await unlink(file);file=null; // Product не менялся; backup target сохранён отдельно при ошибке.
+      await unlink(file);file=null;
       return report(id,'blocked_target_publish',parts,depIssues.join('|'));
     }
-    // Для connect нужен numeric KK id, а не RU id.
     for(const t of targets) {
       const key=t.uid+'|'+t.id;
       if(!targetCache.get(key)?.numericId) {
@@ -888,12 +861,10 @@ async function one(id) {
       const payload=payloadForSave(writeSnapshot,draft.changes);
       await safeWrite(file,JSON.stringify({documentId:id,at:new Date().toISOString(),
         before:originalBefore,plan:draft,phase:'save-kk',payload},null,2));
-      // Не повторять PUT даже при HTTP 200, если GET postflight не подтверждён.
       await http('PUT','/content-manager/collection-types/'+UID+'/'+id+'?locale=kk',payload);
       actual=await postflight(id,actual,expectedDraft(actual,draft.changes),'save');
       committed=true;
     }
-    // Published ещё может содержать старые relations или отсутствовать.
     if(!actual.pub || !eq(actual.pub.fields,actual.kk.fields)||!relEqual(actual.pub,actual.kk)) {
       const payload=publishPayload(actual.kk);
       await safeWrite(file,JSON.stringify({documentId:id,at:new Date().toISOString(),
@@ -906,8 +877,6 @@ async function one(id) {
     await unlink(file);file=null;
     return report(id,committed?'normalized':'already_ok',parts);
   } catch(e) {
-    // Явный режим продолжения: проблемный Product остаётся в карантине с backup.
-    // Ошибки файловой системы/авторизации не превращаем в успешное завершение.
     if(e.fatal && !(CONTINUE_ON_ERROR && e.integrity && file)) {fatal=e;stopped=true;}
     if(file) {
       try {
@@ -920,13 +889,10 @@ async function one(id) {
     if(!file) {
       return report(id,'error', '',note);
     }
-    // При потенциальной записи backup и journal остаются. Не делаем автоматический rollback.
     return report(id,'error_pending_backup','',note,'backup:'+id+'.json');
   }
 }
 
-// Сверка recovery намеренно не учитывает numeric relation IDs и timestamps,
-// но учитывает key, переводы, прочие поля и состав связей всех четырёх версий.
 function recoverySame(a,b) {
   return sameVersions(a,b) && a?.data?.key===b?.data?.key;
 }
@@ -961,7 +927,6 @@ async function recoverPending(signature) {
     if(name!==saved.documentId+'.json')throw Error('ID backup не совпадает с именем: '+name);
     backups.set(saved.documentId,saved);
   }
-  // Сопоставляем исходный журнал, но НЕ используем его seen: ошибки уже в checkpoint.
   const journal=await optionalText(join(SCRIPT_DIR,'product-kk-apply-progress.jsonl'));
   if(journal && !journal.endsWith('\n'))throw Error('Неполный исходный apply checkpoint');
   const previous=new Map((journal||'').split('\n').filter(Boolean).map(line=>{
@@ -979,7 +944,6 @@ async function recoverPending(signature) {
   const evidenceDir=join(outputDir,'evidence');
   await mkdir(evidenceDir,{recursive:true});
   const archiveDir=join(SCRIPT_DIR,'product-kk-recovered',PREFIX);
-  // Последовательно: recovery ограничен небольшим списком ошибок, без гонок справочников.
   for(const id of selected) {
     if(stopped)break;
     const saved=backups.get(id),file=join(backupDir,id+'.json');
@@ -991,7 +955,6 @@ async function recoverPending(signature) {
       let decision=recoveryDecision(saved,live);
       const key=live.kk?.data?.key;
       const duplicate=(keyOwners.get(key)||[]).filter(x=>x!==id);
-      // Успешную публикацию можно подтвердить даже после прежнего ответа с ошибкой.
       if(decision!=='complete' && (duplicate.length ||
         /key.*unique|unique.*key/i.test(previous.get(id)?.reason||''))) {
         decision='key_conflict';evidence.conflictingProducts=duplicate;
@@ -1005,7 +968,6 @@ async function recoverPending(signature) {
       if(draft.blockers.length || ids(live.ru,'category').length || LEGACY_UNRESOLVED.has(id)) {
         await report(id,'blocked_recovery_plan','',draft.blockers.join('|')||'legacy category');continue;
       }
-      // Новая версия алгоритма не должна расширять старую подтверждённую цель.
       const originalExpected=expectedDraft({ru:saved.before.ru,kk:saved.before.kk},saved.plan.changes);
       const newExpected=expectedDraft(live,draft.changes);
       if(!eq(originalExpected.fields,newExpected.fields)||!relEqual(originalExpected,newExpected)) {
@@ -1033,7 +995,6 @@ async function recoverPending(signature) {
         if(decision==='save' && draft.changes.length) {
           const native=await nativeWriteRelationPreflight(id,actual,draft.changes);
           const payload=payloadForSave(native,draft.changes);
-          // Оригинальный backup не заменяем. Запрос и его исход сохраняем отдельно до PUT.
           evidence.save={at:new Date().toISOString(),payload};
           await safeWrite(join(evidenceDir,id+'.json'),JSON.stringify(evidence,null,2));
           await http('PUT','/content-manager/collection-types/'+UID+'/'+id+'?locale=kk',payload);
@@ -1143,7 +1104,6 @@ function selfTest() {
   if(typeof EXISTING_ONLY!=='boolean')throw Error('existing-only mode');
   log('Self-test: 17/17 OK');
 }
-// JWT не выводится в лог и не сохраняется в отчёты.
 function extractJwt(text) {
   return unique(String(text).match(/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?![A-Za-z0-9_-])/g) || []);
 }
