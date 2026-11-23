@@ -220,7 +220,6 @@ Loader использует cached extensions для быстрого старт
 Tools Launcher получает registry из `extension/manifests/tools.json`, а код tools — из `extension/tools/`. `file` в manifest хранит относительный путь внутри `extension/tools/`, включая подпапку назначения.
 
 Физическая структура tools:
-- `extension/tools/audits/` — массовые проверки и отчёты;
 - `extension/tools/extractor/` — выгрузки и извлечение данных;
 - `extension/tools/pusher/` — контролируемые массовые записи;
 - `extension/tools/sync/` — синхронизации и управляемые write-инструменты;
@@ -234,7 +233,9 @@ semver version
 group
 ```
 
-`group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `audits`, `extractor`, `pusher`, `sync`, `diagnostics`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
+`group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `extractor`, `pusher`, `sync`, `diagnostics`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
+
+Группа `audits` и вся папка `extension/tools/audits/` удалены 2026-11-23 по решению пользователя: прежние скрипты устарели, новая архитектура аудитов будет разработана отдельно. Старые аудиторские workflows ниже оставлены исключительно как HISTORICAL.
 
 Tool-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `extension/manifests/tools.json`. Userscript metadata используется только в `extension/extension.js`, потому что только loader устанавливается напрямую в Tampermonkey.
 
@@ -323,9 +324,9 @@ Internal Content Manager namespace:
 
 Admin JWT доступен в LocalStorage как `jwtToken`.
 
-## CANONICAL — source для массовых data-audit tools
+## HISTORICAL — источник данных прежних массовых data-audit tools (удалены 2026-11-23)
 
-Массовые audit tools из `extension/tools/audits/` проверяют фактическое текущее состояние CMS только через Content Manager API. Public REST `/api/...` не используется как source для таких проверок, потому что published view не отражает draft/modified current state; Public API проверяется отдельно через Postman/client/API diagnostics.
+Ранее массовые audit tools из `extension/tools/audits/` проверяли фактическое текущее состояние CMS только через Content Manager API. Public REST `/api/...` не используется как source для таких проверок, потому что published view не отражает draft/modified current state; Public API проверяется отдельно через Postman/client/API diagnostics.
 
 Базовый read pattern:
 - list/detail: `/content-manager/collection-types/api::...`;
@@ -379,7 +380,7 @@ GET /content-manager/collection-types/api::attribute.attribute
 /api/home-page
 ```
 
-## CANONICAL — attributes wrong prices
+## HISTORICAL — attributes wrong prices (скрипт удалён 2026-11-23)
 
 Назначение проверки: найти offers/attributes, связанные с активными товарами, у которых цена не является корректным положительным целым числом.
 
@@ -435,11 +436,11 @@ CSV: `attributes-wrong-prices.csv`, без timestamp. Отдельная сор�
 
 Progress разделён по фазам: list loading → price precheck → invalid candidates relation check. Итоговый CSV contract не меняется. Дополнительно сохраняется `window.attributesWrongPricesReadReport` с totalAttributes, priceDetailFallbacks, invalidCandidates, activeInvalidOffers, requests/retries/final/best concurrency и benchmark waves.
 
-## CANONICAL — products missing content
+## HISTORICAL — products missing content (скрипт удалён 2026-11-23)
 
 Назначение: найти все Product с незаполненными критичными полями, независимо от `product.active`, статуса публикации (draft/modified/published) и активности категорий.
 
-Parser: `extension/tools/audits/products-missing-content.js`. Source — Content Manager API, локаль `ru`. Проверяется фактическое текущее состояние каждой записи в CMS; Public REST не используется.
+Исторический parser `extension/tools/audits/products-missing-content.js` удалён. Source был — Content Manager API, локаль `ru`. Проверяется фактическое текущее состояние каждой записи в CMS; Public REST не используется.
 
 Логика:
 - загрузить все страницы Product; никакие записи по `active` или status не исключать;
@@ -974,8 +975,8 @@ Source of truth для физического порядка — `layouts.edit`.
 Полезные смысловые проверки каталога:
 - active products без attributes / brand / categories — ad hoc checks, при необходимости выполнять через Postman/internal API вместо отдельных runtime tools;
 - duplicate technical fields `key`, `code_1c`, `bitrix_id`, `xml_id`, `code`; null/empty не считать duplicate value;
-- wrong prices у offers active products: отдельный CANONICAL workflow выше; `missing`, `invalid`, `zero`, `negative`, `fractional`, output `documentId`, `barcode`, `price`, `errorType`;
-- missing content: отдельный CANONICAL workflow выше; все Product `ru` независимо от `active`/status проверяются по `name1`, `name2`, `detail_picture`, `preview_picture`, `brand`, `categories`, `detail_text`;
+- wrong prices у offers active products: исторический workflow выше, требует новой архитектуры; `missing`, `invalid`, `zero`, `negative`, `fractional`, output `documentId`, `barcode`, `price`, `errorType`;
+- missing content: исторический workflow выше, требует новой архитектуры; все Product `ru` независимо от `active`/status проверяются по `name1`, `name2`, `detail_picture`, `preview_picture`, `brand`, `categories`, `detail_text`;
 - wrong variants: несколько offers нельзя последовательно выбирать одним типом `shade` или `volume`;
 - attributes without product — ad hoc/Postman check; все `attribute` в `ru` без relation `product`, server-side Content Manager filter, без дополнительных условий;
 - attributes without detail picture — offer активного product, `isInStock=true`, `detail_picture=null`;
