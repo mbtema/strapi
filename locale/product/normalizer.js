@@ -1,7 +1,5 @@
 (async function productNormalizerProduction() {
 'use strict';
-// All RU Content Manager Products → KK: reconcile fields → links → KK Publish.
-// Production by default: no dry-run or apply flags; skip already-current records.
 const TAG='[Product Normalizer]';
 const UID='api::product.product';
 const PAGE=100, DB='tm-product-normalizer-production-v1';
@@ -386,8 +384,6 @@ function publishedCheck(ver){
     if(extra.length)unexpected[f]=extra;
   }
   const draftModified=draft.meta.status==='modified';
-  // Product Published relations must match Draft exactly: attributes and
-  // Product.categories must not silently disappear as in older incidents.
   return {ok:!fieldDiffs.length&&!Object.keys(invisible).length&&
       !Object.keys(unexpected).length,
     missingPublished:false,draftModified,fieldDiffs,invisible,unexpected,
@@ -402,7 +398,6 @@ async function targetKK(uid,id){
   targets.set(k,result);
   return result;
 }
-// KK Product.key is unique; never overwrite it with RU.key.
 async function dbOpen(){
   return new Promise((resolve,reject)=>{
     const req=indexedDB.open(DB,1);
@@ -679,9 +674,6 @@ async function seedPhase(){
       let before=await snapshot(id);ensureSafeRoot(before);
       const ru=before.ru.draft,kk=before.kk.draft;
       const wanted=expectedKK(before);
-      // Missing KK Product seed via Content Manager is not yet live-confirmed:
-      // one attempted PUT is guarded by prewrite journal and strict postflight.
-      // No Product.key is copied from RU.
       if(!Object.keys(wanted.updates).length){
         st.unchanged++;resultFor(id).seed='unchanged';update('seed',id,'Уже заполнено');continue;
       }
@@ -708,8 +700,6 @@ async function linksPhase(){
       if(!before.kk.draft)fail('Нет KK Draft после seed');
       const ru=before.ru.draft,kk=before.kk.draft;
       const pending=[],operations=[];
-      // Только forward-owner root relations. Inverse восстанавливается через
-      // parent (categories) и Product.categories (product), без Product PUT.
       for(const field of WRITABLE){
         const source=ru.relations[field];
         const have=new Set(idsOf(kk.relations[field]));
@@ -842,7 +832,6 @@ async function publishPhase(){
 try{
   await checkSchema();
   await loadIndex();
-  // DB journal opens on every launch, before any CMS writes.
   db=await dbOpen();
   await recoverPending();
   report.summary={scope:ids.length,
