@@ -229,15 +229,16 @@ Manifest tool содержит:
 
 ```text
 file
-semver version
 group
 ```
+
+`schemaVersion: 1` сохраняется как версия формата registry. Для tool отсутствует отдельная `version`: Tools Launcher всегда читает свежий `tools.json` и JS-инструмент через `fetch` с `cache: 'no-store'` и cache-busting параметром. Версия `tools-launcher` как extension в `features.json` остаётся обязательной для обновления кеша Tampermonkey-loader.
 
 `group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `extractor`, `pusher`, `syncer`, `service`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
 
 Группа `audits` и вся папка `extension/tools/audits/` удалены 2026-11-23 по решению пользователя: прежние скрипты устарели, новая архитектура аудитов будет разработана отдельно. Старые аудиторские workflows ниже оставлены исключительно как HISTORICAL.
 
-Tool-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `extension/manifests/tools.json`. Userscript metadata используется только в `extension/extension.js`, потому что только loader устанавливается напрямую в Tampermonkey.
+Tool-файлы не содержат собственные metadata-блоки. Runtime-регистрация (`file`, `group`) задаётся в `extension/manifests/tools.json` без версии отдельного инструмента. Userscript metadata используется только в `extension/extension.js`, потому что только loader устанавливается напрямую в Tampermonkey.
 
 Managed regular tools получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
 

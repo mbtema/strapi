@@ -7,7 +7,6 @@
   const MANIFEST_URL = `${RAW_ROOT}manifests/tools.json`;
   const OVERLAY_ID = 'tm-tools-launcher-overlay';
   const TOOL_PATH_RE = /^(?:syncer|service|extractor|pusher)\/[a-z][a-zA-Z0-9-]*\.js$/;
-  const VERSION_RE = /^\d+\.\d+\.\d+$/;
   const ACTIVE_RUNS_KEY = '__tmToolsLauncherActiveRuns';
 
   const TOOL_GROUPS = [
@@ -62,26 +61,17 @@
         throw new Error(`${label}: file должен быть непустой строкой`);
       }
 
-      if (typeof tool.version !== 'string' || !tool.version.trim()) {
-        throw new Error(`${label}: version должен быть непустой строкой`);
-      }
-
       if (typeof tool.group !== 'string' || !tool.group.trim()) {
         throw new Error(`${label}: group должен быть непустой строкой`);
       }
 
       const normalized = {
         file: tool.file.trim(),
-        version: tool.version.trim(),
         group: tool.group.trim().toLowerCase()
       };
 
       if (!TOOL_PATH_RE.test(normalized.file)) {
         throw new Error(`${label}: некорректное имя файла ${normalized.file}`);
-      }
-
-      if (!VERSION_RE.test(normalized.version)) {
-        throw new Error(`${label}: некорректная version ${normalized.version}`);
       }
 
       if (!ALLOWED_GROUP_IDS.has(normalized.group)) {
