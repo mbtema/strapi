@@ -261,7 +261,6 @@
       }
     }
 
-    // Один подтверждённый пилот перед массовым запуском.
     await processProduct(report.results[0]);
 
     for (let index = 1; index < report.results.length &&
