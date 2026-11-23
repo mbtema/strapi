@@ -17,24 +17,24 @@
       "group": "pusher"
     },
     {
-      "file": "sync/category-relations-ru-kk-sync.js",
-      "version": "1.0.2",
-      "group": "sync"
+      "file": "syncer/category-relations-ru-kk-sync.js",
+      "version": "1.0.3",
+      "group": "syncer"
     },
     {
-      "file": "sync/layout-sync.js",
-      "version": "1.2.0",
-      "group": "sync"
-    },
-    {
-      "file": "sync/products-category-forward-sync.js",
-      "version": "1.1.1",
-      "group": "sync"
-    },
-    {
-      "file": "sync/products-category-mirror-sync.js",
+      "file": "syncer/layout-sync.js",
       "version": "1.2.1",
-      "group": "sync"
+      "group": "syncer"
+    },
+    {
+      "file": "syncer/products-category-forward-sync.js",
+      "version": "1.1.2",
+      "group": "syncer"
+    },
+    {
+      "file": "syncer/products-category-mirror-sync.js",
+      "version": "1.2.2",
+      "group": "syncer"
     },
     {
       "file": "service/dom.js",

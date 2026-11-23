@@ -222,7 +222,7 @@ Tools Launcher получает registry из `extension/manifests/tools.json`, 
 Физическая структура tools:
 - `extension/tools/extractor/` — выгрузки и извлечение данных;
 - `extension/tools/pusher/` — контролируемые массовые записи;
-- `extension/tools/sync/` — синхронизации и управляемые write-инструменты;
+- `extension/tools/syncer/` — синхронизации и управляемые write-инструменты;
 - `extension/tools/service/` — сервисные инструменты получения предметного контекста CMS (DOM, Network, стили) для анализа.
 
 Manifest tool содержит:
@@ -233,7 +233,7 @@ semver version
 group
 ```
 
-`group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `extractor`, `pusher`, `sync`, `service`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
+`group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `extractor`, `pusher`, `syncer`, `service`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
 
 Группа `audits` и вся папка `extension/tools/audits/` удалены 2026-11-23 по решению пользователя: прежние скрипты устарели, новая архитектура аудитов будет разработана отдельно. Старые аудиторские workflows ниже оставлены исключительно как HISTORICAL.
 
@@ -958,7 +958,7 @@ shareUrl
 GET/PUT /content-manager/content-types/api::product.product/configuration
 ```
 
-Source of truth для физического порядка — `layouts.edit`. Service `extension/tools/sync/layout-sync.js` используется после layout-изменений: читает текущий UI; для вкладки `Фильтры` учитывает `data-tm-product-filter-group-order`, выставленный `product-sections`, поэтому смысловые группы сохраняются в заданном порядке; делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
+Source of truth для физического порядка — `layouts.edit`. Service `extension/tools/syncer/layout-sync.js` используется после layout-изменений: читает текущий UI; для вкладки `Фильтры` учитывает `data-tm-product-filter-group-order`, выставленный `product-sections`, поэтому смысловые группы сохраняются в заданном порядке; делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
 
 ## Styles service UI origin semantics
 
@@ -1216,7 +1216,7 @@ Outbound contract:
 
 ## CANONICAL — зеркальная синхронизация категорий Products
 
-Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser tool `extension/tools/sync/products-category-mirror-sync.js` через `MIRROR_SYNC_GROUPS`; рабочая locale только `ru`.
+Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser tool `extension/tools/syncer/products-category-mirror-sync.js` через `MIRROR_SYNC_GROUPS`; рабочая locale только `ru`.
 
 Бизнес-правило для одной mirror group:
 - собрать union Products всех Category группы;
@@ -1285,13 +1285,13 @@ Concurrency:
 
 HISTORICAL live benchmark 2026-10-19 для первой mirror group из двух Category: 308 Products были опубликованы без ошибок, verify дал C1=317/C2=317/missing=0 за 37.7 сек. Throughput вырос до ~9.23 req/s на concurrency 20, а ступени 25–40 не дали улучшения и увеличили latency; это подтвердило throughput-aware rollback вместо роста только по отсутствию ошибок.
 
-Current configured groups не дублировать в context: source of truth — live `MIRROR_SYNC_GROUPS` в `extension/tools/sync/products-category-mirror-sync.js`.
+Current configured groups не дублировать в context: source of truth — live `MIRROR_SYNC_GROUPS` в `extension/tools/syncer/products-category-mirror-sync.js`.
 
 Пересечение Category между разными mirror groups сейчас не запрещается и специально не объединяется. Если реальный каталог выявит пересекающиеся группы, сначала отдельно определить бизнес-семантику такого сценария, затем менять workflow.
 
 ## CANONICAL — односторонняя синхронизация категорий Products
 
-Назначение: поддерживать одностороннее включение Products из настроенной source Category в соответствующую target Category. Runtime tool: `extension/tools/sync/products-category-forward-sync.js`; рабочая locale только `ru`.
+Назначение: поддерживать одностороннее включение Products из настроенной source Category в соответствующую target Category. Runtime tool: `extension/tools/syncer/products-category-forward-sync.js`; рабочая locale только `ru`.
 
 Группы задаются вручную через `FORWARD_SYNC_GROUPS` по контракту:
 
@@ -1335,7 +1335,7 @@ CANONICAL run:
 
 Concurrency полностью наследует подтверждённый throughput-aware adaptive механизм mirror-sync parser: старт 10, шаг 5, min 5, max 40, оценка ступени после 20 успешных requests, новая ступень должна улучшить best throughput минимум на 3%, после двух подряд неулучшающих ступеней rollback/lock на best concurrency; найденный уровень переносится между groups. На `429`/`5xx`/network error concurrency снижается и benchmark перезапускается. `POST actions/publish` автоматически не ретраить.
 
-Current configured forward-sync groups не дублировать в context: source of truth — live `FORWARD_SYNC_GROUPS` в `extension/tools/sync/products-category-forward-sync.js`.
+Current configured forward-sync groups не дублировать в context: source of truth — live `FORWARD_SYNC_GROUPS` в `extension/tools/syncer/products-category-forward-sync.js`.
 
 ---
 
