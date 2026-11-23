@@ -13,12 +13,12 @@
     },
     {
       "file": "pusher/brandProductsDeactivate.js",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "group": "pusher"
     },
     {
       "file": "sync/category-relations-ru-kk-sync.js",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "group": "sync"
     },
     {
@@ -28,12 +28,12 @@
     },
     {
       "file": "sync/products-category-forward-sync.js",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "group": "sync"
     },
     {
       "file": "sync/products-category-mirror-sync.js",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "group": "sync"
     },
     {
