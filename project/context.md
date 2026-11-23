@@ -223,7 +223,7 @@ Tools Launcher получает registry из `extension/manifests/tools.json`, 
 - `extension/tools/extractor/` — выгрузки и извлечение данных;
 - `extension/tools/pusher/` — контролируемые массовые записи;
 - `extension/tools/sync/` — синхронизации и управляемые write-инструменты;
-- `extension/tools/diagnostics/` — диагностические utilities.
+- `extension/tools/service/` — сервисные инструменты получения предметного контекста CMS (DOM, Network, стили) для анализа.
 
 Manifest tool содержит:
 
@@ -233,13 +233,15 @@ semver version
 group
 ```
 
-`group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `extractor`, `pusher`, `sync`, `diagnostics`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
+`group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `extractor`, `pusher`, `sync`, `service`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
 
 Группа `audits` и вся папка `extension/tools/audits/` удалены 2026-11-23 по решению пользователя: прежние скрипты устарели, новая архитектура аудитов будет разработана отдельно. Старые аудиторские workflows ниже оставлены исключительно как HISTORICAL.
 
 Tool-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `extension/manifests/tools.json`. Userscript metadata используется только в `extension/extension.js`, потому что только loader устанавливается напрямую в Tampermonkey.
 
 Managed regular tools получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
+
+Группа `diagnostics` переименована в `service` 2026-11-23 без изменения функций инструментов: `service/dom.js` копирует DOM, `service/network.js` записывает Network fetch/XHR, `service/styles.js` формирует design snapshot. Сервисные tools служат для передачи предметного контекста CMS. Существующие fallback-имена JSON (`network-recorder.json`, `style-stealer.json`) и структура выходных данных сохранены.
 
 ## CANONICAL — pusher отключения Product по карточке Brand (2026-11-23, mock)
 
@@ -253,7 +255,7 @@ Managed regular tools получают global run-lock. Для GET времен�
 
 ## CANONICAL — Network Recorder
 
-`extension/tools/diagnostics/network-recorder.js` — отдельный diagnostics tool для быстрого Network-контекста Strapi; `extension/tools/diagnostics/dom-stealer.js` остаётся только DOM snapshot utility.
+`extension/tools/service/network.js` — сервисный инструмент для быстрого Network-контекста Strapi; `extension/tools/service/dom.js` остаётся только DOM snapshot utility.
 
 Workflow:
 - первый запуск через Tools Launcher → Start;
@@ -958,11 +960,11 @@ GET/PUT /content-manager/content-types/api::product.product/configuration
 
 Source of truth для физического порядка — `layouts.edit`. Service `extension/tools/sync/layout-sync.js` используется после layout-изменений: читает текущий UI; для вкладки `Фильтры` учитывает `data-tm-product-filter-group-order`, выставленный `product-sections`, поэтому смысловые группы сохраняются в заданном порядке; делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
 
-## Style-stealer UI origin semantics
+## Styles service UI origin semantics
 
 **Статус:** CANONICAL.
 
-Для design snapshot страницы `extension/tools/diagnostics/style-stealer.js` делит UI на три происхождения:
+Для design snapshot страницы `extension/tools/service/styles.js` делит UI на три происхождения:
 
 - `native` — нативный Strapi без наших маркеров;
 - `modified` — нативный DOM-узел, изменённый extension; обычные `data-tm-*` / `tm-*` на самом элементе означают modified;
