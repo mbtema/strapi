@@ -1,13 +1,8 @@
-// Этап 3: импорт из готового CSV Matcher. Node.js 20+, без запросов к карточкам Bitrix.
-// Читает весь products-matched.csv: по одному товару за раз до конца файла.
-// По умолчанию dry-run; --apply для последовательной записи всех товаров.
-// Нужен только JWT Strapi; медиа скачиваются по публичным URL без Cookie.
 import { readFile, writeFile, rename, appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 
-// Рабочие файлы находятся на рабочем столе Windows.
 const DESKTOP = resolve(process.env.USERPROFILE || homedir(), 'Desktop');
 process.chdir(DESKTOP);
 
@@ -20,7 +15,6 @@ const CFG = {
   maxImageMB: 20
 };
 const AUTH = {
-  // Один раз вставь свои значения в кавычки, потом только запускай скрипт.
   strapiJwt: "ВСТАВЬ_JWT_STRAPI"
 };
 const args = process.argv.slice(2);
@@ -63,7 +57,6 @@ async function http(url, opts={}) {
     throw Error(`${opts.method || 'GET'} ${new URL(url).host}: ${e.cause?.code || e.message}`);
   }
   if (!response.ok) {
-    // Не повторять автоматически POST/PUT при неоднозначном исходе.
     throw Error(`${opts.method || 'GET'} ${new URL(url).pathname}: HTTP ${response.status}`);
   }
   return response;
@@ -200,7 +193,6 @@ async function categoryBySection(sectionId) {
   if(m.length!==1 || total!==1 || !m[0].documentId || !Number.isInteger(m[0].id))return null;
   const category=typeof m[0].custom==='boolean'?m[0]:
     await detail('api::category.category',m[0].documentId);
-  // Custom разделы не относятся к основному дереву каталога.
   return category.custom===false ? category : null;
 }
 
@@ -214,8 +206,6 @@ function mediaIds(v) {
   const arr=Array.isArray(v)?v:Array.isArray(v?.data)?v.data:[];
   return arr.map(mediaId);
 }
-// Пять обязательных контентных полей и хотя бы одна категория.
-// Галерея (pictures) необязательна; active не является критерием полноты.
 const requiredContent = ['name1','name2','preview_picture','detail_picture','detail_text'];
 const missingRequired = (product, categories) => [
   ...requiredContent.filter(field => !filled(product[field])),
@@ -251,7 +241,6 @@ async function upload(image,field,order,id,state,markWrite) {
   const filename=`bitrix-${id}-${field}${order?'-'+String(order).padStart(2,'0'):''}-${imageKey}.${ext}`;
   const form=new FormData();
   form.append('files',new Blob([buf],{type:mime}),filename);
-  // POST /upload — без retry. Если ответ неясен, проверить Media Library вручную.
   await markWrite('UPLOAD '+field+' '+image.fileId);
   let j;
   try {j=await (await http(strapiUrl('/upload'),{method:'POST',
@@ -265,8 +254,6 @@ async function upload(image,field,order,id,state,markWrite) {
   return result.id;
 }
 
-// Контроль массовой обработки: отдельный checkpoint для каждой версии CSV.
-// Перед любой записью фиксируем review. После сбоя во время POST/PUT автоматический retry запрещён.
 const sleep = ms => new Promise(resolve => setTimeout(resolve,ms));
 const csvCell = value => {
   const str = String(value ?? '');
@@ -349,7 +336,6 @@ async function migrateOne(row, markWrite, verbose) {
   for(const f of ['preview_picture','detail_picture']) {
     add(f,filled(product[f])?'KEEP':bitrix[f]?.url?'UPLOAD_AND_LINK':'SOURCE_EMPTY');
   }
-  // Не записываем неполную галерею: иначе повторный запуск сочтёт поле заполненным.
   const galleryComplete=bitrix.pictures.length>0 && bitrix.pictures.every(x=>!!x.url);
   const gallery=galleryComplete?bitrix.pictures:[];
   add('pictures',filled(product.pictures)?'KEEP':galleryComplete?'UPLOAD_AND_LINK':
@@ -358,7 +344,6 @@ async function migrateOne(row, markWrite, verbose) {
   add('active',bitrix.active===null?'SOURCE_UNAVAILABLE':product.active===bitrix.active?'KEEP':'SYNC');
   add('categories',missingCats.length?'CONNECT':mapping.some(x=>!x.category)?'SOURCE_UNAVAILABLE':'KEEP',
     `${missingCats.length} добавить; ${mapping.filter(x=>!x.category).length} разделов без соответствия`);
-  // Показываем решение по флагу заранее, но снимаем его только после проверки фактического сохранения.
   const projected={...product};
   for(const field of ['name1','name2','detail_text']) {
     if(!filled(projected[field]) && filled(bitrix[field]))projected[field]=bitrix[field];
@@ -375,7 +360,6 @@ async function migrateOne(row, markWrite, verbose) {
   log(`План: ${actions.filter(x=>['FILL','UPLOAD_AND_LINK','SYNC','CONNECT'].includes(x.action)).length} изменений, ${missingSource.length} полей без источника`);
   if(!APPLY) return {status:'dry_run',changes:actions.filter(x=>['FILL','UPLOAD_AND_LINK','SYNC','CONNECT'].includes(x.action)).length+(product.newFrom1C!==Boolean(plannedMissing.length)?1:0),missing:plannedMissing,newFrom1C:product.newFrom1C,published:false,message:'План составлен, записей нет'};
 
-  // Прямо перед записью заново проверяем значения целевых полей.
   const snapshot=p=>JSON.stringify(['name1','name2','detail_text','preview_picture','detail_picture','pictures','active','name','newFrom1C'].map(f=>p[f]));
   const fresh=await detail('api::product.product',row.documentId);
   const freshCats=await relations(row.documentId,'categories');
@@ -400,7 +384,6 @@ async function migrateOne(row, markWrite, verbose) {
   if(missingCats.length)payload.categories={connect:missingCats.map(x=>({id:x.id,documentId:x.documentId,locale:CFG.locale})),disconnect:[]};
   if(!Object.keys(payload).length)log('Новых значений контента нет; проверю полноту карточки');
 
-  // Изображения могли загружаться долго: проверяем ещё раз перед PUT.
   const now=await detail('api::product.product',row.documentId);
   const nowCats=await relations(row.documentId,'categories');
   if(snapshot(fresh)!==snapshot(now) ||
@@ -468,8 +451,6 @@ async function migrateOne(row, markWrite, verbose) {
       newFrom1C:expectedFlag,published:null,message:'Изменений нет'};
   }
 
-  // Последнее действие: Publish только после всех Save и подтверждённых проверок.
-  // Повторный live-read защищает от публикации изменённой во время операции карточки.
   const beforePublish=await detail('api::product.product',row.documentId);
   const beforePublishCats=await relations(row.documentId,'categories');
   if(snapshot(beforePublish)!==snapshot(finalSaved) ||
@@ -486,12 +467,10 @@ async function migrateOne(row, markWrite, verbose) {
       body:'{}'
     });
   } catch(e) {
-    // POST Publish не повторять автоматически: исход может быть неизвестен.
     throw Error(`Publish: результат требует проверки в Strapi; не запускай повторно вслепую (${e.message})`);
   }
   log('PUBLISH_SENT: запрос принят, проверяю опубликованную версию');
 
-  // Читаем именно опубликованную версию, а не текущий draft.
   const published=await detail('api::product.product',row.documentId,'published');
   if(!published.publishedAt || Number.isNaN(Date.parse(published.publishedAt))) {
     throw Error('Publish отправлен, но publishedAt не подтверждён; проверь статус товара в Strapi');
@@ -522,7 +501,6 @@ async function main() {
   });
   if(missingAuth.length)throw Error('Заполни JWT Strapi в const AUTH: '+missingAuth.join(', '));
   const {rows,hash}=await inputRows();
-  // --apply обрабатывает все строки файла; старый --confirm доступен только для одиночного теста.
   if(APPLY && confirmation && (rows.length!==1 || confirmation!==rows[0].bitrixId)) {
     throw Error('--confirm=<BitrixID> допускается только для CSV с одним соответствующим товаром');
   }
