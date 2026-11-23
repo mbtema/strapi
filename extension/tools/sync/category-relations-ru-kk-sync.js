@@ -1,7 +1,5 @@
 (async () => {
 'use strict';
-// Одна открытая Category: RU Draft → KK Draft для parent/categories/product; Publish RU + KK.
-// Production by default: no dry-run or apply flags; skip already-current records.
 const TAG='[Category Relations RU→KK]';
 const UID='api::category.category', BRAND_UID='api::brand.brand';
 const PAGE=100, DB='tm-category-relations-one-v1';
@@ -27,8 +25,6 @@ window.tmCategoryRelationSyncReport=report;
 const SYSTEM=new Set(['id','documentId','locale','status','createdAt','updatedAt',
   'publishedAt','createdBy','updatedBy','localizations','__pivot']);
 const OMIT=new Set(['key','code','slug']);
-// Новый KK Draft нельзя создавать, когда nonlocalized code существует в RU:
-// live Strapi 2026-11-18 обнулил RU Draft.code при KK PUT без code в payload.
 const SHARED_SEED_GUARD=['code'];
 const WRITABLE=['parent','product'];
 const INVERSE=['categories','products','top_brands'];
@@ -446,7 +442,6 @@ function verifyCompact(pending,a,after=null){
     }else{
       for(const f of OMIT){
         const def=schema.attributes[f];
-        // UID/localized slug у нового KK может быть null: не входит в PUT.
         if(f==='slug'||def?.type==='uid'||
             def?.pluginOptions?.i18n?.localized===true)
           continue;
@@ -476,9 +471,6 @@ function verifyCompact(pending,a,after=null){
       'Другой Published поля изменились');
   }else fail('Unknown pending '+stage);
 }
-// The saved IndexedDB before-snapshot is the only baseline for self-repair.
-// Never perform a broad rollback: repair only strictly missing RU Draft values
-// when a virtual restoration of those values would fully verify the original write.
 function recoveryPlan(pending,after){
   if(!['content','links'].includes(pending.stage))return null;
   const b=pending.before,a=compact(after);
@@ -495,7 +487,7 @@ function recoveryPlan(pending,after){
     if(equal(prior,current))continue;
     const type=schema?.attributes?.[field]?.type;
     if(!eligible.has(type)||missing(prior)||!missing(current))
-      return null; // changed to another nonempty value: possible concurrent edit
+      return null;
     lost[field]=prior;
   }
   if(!Object.keys(lost).length)return null;
@@ -506,13 +498,10 @@ function recoveryPlan(pending,after){
     if(definition.pluginOptions?.i18n?.localized!==true&&
        simulated.kk.draft&&missing(simulated.kk.draft.fields[field])){
       const oldKK=b.kk.draft?.fields?.[field];
-      // Only shared values that previously matched RU may be predicted
-      // to recover cross-locale. Never overwrite a KK-specific value.
       if(b.kk.draft&&!equal(oldKK,value))return null;
       simulated.kk.draft.fields[field]=value;
     }
   }
-  // This must prove ALL saved constraints, including key, media and links.
   try{verifyCompact(pending,simulated);}catch{return null;}
   return {values:lost,fields:Object.keys(lost)};
 }
@@ -520,12 +509,10 @@ function verifyWrite(pending,before,after){
   return verifyCompact(pending,compact(after),after);
 }
 async function restoreLostDraftFields(pending,after,originalError){
-  if(pending.restoration)return null; // crash-safe: never repeat recovery PUT
+  if(pending.restoration)return null;
   const plan=recoveryPlan(pending,after);
   if(!plan)return null;
   const id=pending.documentId;
-  // Persist the recovery intent BEFORE its sole real CMS write.
-  // If execution stops, next launch GET-verifies without retrying a PUT.
   pending.restoration={
     status:'attempted',at:new Date().toISOString(),
     cause:originalError.message,fields:plan.fields,
@@ -538,7 +525,6 @@ async function restoreLostDraftFields(pending,after,originalError){
       '/content-manager/collection-types/'+UID+'/'+encodeURIComponent(id)+'?locale=ru',
       {locale:'ru',...plan.values});
   }catch(e){error=e;}
-  // Never trust write HTTP alone; re-read all four versions and all links.
   const restored=await snapshot(id);
   try{verifyWrite(pending,null,restored);}
   catch(e){
@@ -604,7 +590,6 @@ async function perform(stage,id,before,expected,method,path,payload,locale){
   if(report.counters.verifiedWrites%20===0)await sleep(1500);
   return after;
 }
-// Read-only diagnostics for any unresolved pending write, not just one Category.
 function pendingDiff(pending,after){
   const before=pending.before,current=compact(after);
   const differences={};
@@ -651,9 +636,6 @@ function pendingDiff(pending,after){
     differences,status:stableStatus(after),
     restorationAlreadyAttempted:!!pending.restoration};
 }
-// A content pending may have been followed by an independent, valid KK Publish.
-// Accept the already-complete state only if the original KK content write
-// verifies in full AND KK Published is an exact mirror of current KK Draft.
 function verifiedLaterPublished(pending,after){
   if(pending.stage!=='content'||pending.before.kk.published!==null||
      !after.kk.draft||!after.kk.published)return false;
@@ -673,8 +655,6 @@ async function recoverPending(){
   let after=await snapshot(pending.documentId);
   try{verifyWrite(pending,null,after);}
   catch(e){
-    // Reconcile a separately published, already fully verified KK version.
-    // This does not repeat any earlier PUT/POST and never changes CMS data.
     if(verifiedLaterPublished(pending,after)){
       report.warnings.push('Позднее опубликованная KK совпадает с текущим KK Draft; '+
         'pending контента подтверждён без новых записей '+pending.documentId);
@@ -682,8 +662,6 @@ async function recoverPending(){
       const diagnostic=pendingDiff(pending,after);
       report.pendingDiagnostic=diagnostic;
       console.warn(TAG,'Pending differences',diagnostic);
-      // Exact same safeguards as the normal postwrite path. If repair was
-      // attempted before a crash, no second recovery PUT is allowed.
       const restored=await restoreLostDraftFields(pending,after,e);
       if(!restored)throw Error('Pending не подтверждён; запись нельзя повторять: '+
         e.message+'. Журнал сохранён. Подробности: report.pendingDiagnostic');
@@ -804,8 +782,6 @@ async function linksPhase(){
       if(!before.kk.draft)fail('Нет KK Draft после seed');
       const ru=before.ru.draft,kk=before.kk.draft;
       const pending=[],operations=[];
-      // Только forward-owner root relations. Inverse восстанавливается через
-      // parent (categories) и Product.categories (product), без Product PUT.
       for(const field of WRITABLE){
         const source=ru.relations[field];
         const have=new Set(idsOf(kk.relations[field]));
@@ -883,9 +859,6 @@ async function publishPhase(){
         const done=await dbGet('done/publish/'+id+'/'+locale);
         const unchangedSinceDone=done&&
           equal(done.after?.[locale]?.draft,semantic(snap[locale].draft))&&ck.ok;
-        // Уже Published + те же поля/Media/key = не нужен лишний POST.
-        // Единственное исключение: в этой сессии добавлены KK Draft links,
-        // тогда обновляем KK Published даже при неполной видимости targets.
         const alreadyPublished=ck.ok&&!linkedDocs.has(id);
         if(!linkedDocs.has(id)&&(unchangedSinceDone||alreadyPublished)){
           st.skipped++;continue;
@@ -980,7 +953,6 @@ try{
   console.table(Object.entries(plan).map(([field,v])=>({
     field,ru:v.ru,kk:v.kk,toAdd:v.add,extra:v.extra
   })));
-  // Preflight: каждый целевой KK Draft существует; не посылаем частичный write.
   for(const f of ['parent','product']){
     const uid=f==='parent'?UID:'api::product.product';
     for(const targetId of missing[f])
@@ -1009,7 +981,6 @@ try{
   }else{
     report.status='running';
     console.log(TAG,'Начата синхронизация',categoryId,plan);
-    // Прямая запись только parent/product, обратная categories через child.parent.
     await linksPhase();
     ensure(!skipDocs.has(categoryId),'Связи не удалось применить, Publish отменён');
     await inverseCategoriesPhase(categoryId);
