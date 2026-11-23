@@ -47,7 +47,7 @@ Loader валидирует каждый дочерний manifest и итого
 ## Features
 
 - `alt-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `tools-launcher.js` — `Alt+P`, открывает browser tools из `extension/manifests/tools.json` колонками `extractor`, `pusher`, `sync`, `diagnostics`; `group` обязан совпадать с первой папкой в `file`, валидируются path / semver / group и дубли файлов; блокирует повторный параллельный запуск async tool и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
+- `tools-launcher.js` — `Alt+P`, открывает browser tools из `extension/manifests/tools.json` колонками `extractor`, `pusher`, `sync`, `service`; `group` обязан совпадать с первой папкой в `file`, валидируются path / semver / group и дубли файлов; блокирует повторный параллельный запуск async tool и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
 
 ## UI/UX
 
@@ -67,23 +67,23 @@ Loader валидирует каждый дочерний manifest и итого
 
 ## Tools
 
-Browser tools запускаются через `Alt+P`. `sync/` — инструменты синхронизации/изменения данных, `diagnostics/` — диагностические утилиты, `extractor/` — экспорт данных в CSV, `pusher/` — контролируемые массовые изменения. Массовые tools проходят данные постранично, показывают progress/counters и при необходимости автоматически скачивают CSV. Для длительных tools реализована одинаковая плавающая панель прогресса внутри CMS с мягкой остановкой; массовые независимые задания адаптируют параллельность, последовательные UI/DOM-операции сохраняют исходный порядок. Кнопка Stop не отменяет уже начатые операции записи, а дожидается завершения текущей группы с её проверкой. При запуске через Tools Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация tool и его версия (`file`, semver `version`, `group`) хранятся только в `extension/manifests/tools.json`; metadata-блоки внутри tool-файлов не используются.
+Browser tools запускаются через `Alt+P`. `sync/` — инструменты синхронизации/изменения данных, `service/` — сервисные инструменты для сбора DOM, Network и стилей CMS, `extractor/` — экспорт данных в CSV, `pusher/` — контролируемые массовые изменения. Массовые tools проходят данные постранично, показывают progress/counters и при необходимости автоматически скачивают CSV. Для длительных tools реализована одинаковая плавающая панель прогресса внутри CMS с мягкой остановкой; массовые независимые задания адаптируют параллельность, последовательные UI/DOM-операции сохраняют исходный порядок. Кнопка Stop не отменяет уже начатые операции записи, а дожидается завершения текущей группы с её проверкой. При запуске через Tools Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация tool и его версия (`file`, semver `version`, `group`) хранятся только в `extension/manifests/tools.json`; metadata-блоки внутри tool-файлов не используются.
 
 - `extractor/brandActiveProducts.js` — на открытой карточке Brand читает все страницы relation `products` (RU Draft), проверяет `active=true` у каждого Product и скачивает `brand-active-products.csv` с одним столбцом `productDocumentId`. Запускается из `Alt+P` → `extractor` на открытой карточке Brand.
 - `extractor/categoryTreeProducts.js` — от открытой категории обходит всё поддерево вниз по `categories`, собирает relation `product` на каждом уровне и скачивает `catalog-tree-products.csv` с одной колонкой `documentId`; товары не фильтруются по active/draft/published.
 - `pusher/brandProductsDeactivate.js` — на открытой карточке Brand читает все страницы `Brand.products` (RU Draft), без общего сканирования Products; после подтверждения выполняет контрольный Product и далее батчи по 4: Save `active=false` → GET verify Draft → Publish RU → GET verify Published. При ошибке записи останавливает выдачу новых Product, сохраняет CSV `brand-products-deactivate.csv` с этапом/статусом; без автоматического повтора PUT/POST. Stop: `window.brandProductsDeactivateStop = true`.
 - `sync/products-category-mirror-sync.js` — зеркально синхронизирует Products внутри настроенных групп из 2+ categories: для каждой группы строит union Products, одним `actions/publish` добавляет Product все недостающие categories этой группы, обрабатывает группы последовательно с live re-check/verify, использует throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
 - `sync/products-category-forward-sync.js` — односторонне синхронизирует Products по настроенным группам `source → target`: добавляет в target только отсутствующие там Products из source, обратно из target в source ничего не добавляет, выполняет общий dry-run, live re-check/verify по группам, использует тот же throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
-- `diagnostics/dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
-- `diagnostics/network-recorder.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
-- `diagnostics/style-stealer.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
+- `service/dom.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
+- `service/network.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
+- `service/styles.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
 - `sync/category-relations-ru-kk-sync.js` — на открытой карточке Category сравнивает `parent`, `categories`, `product` в RU/KK Draft по `documentId`; после preflight и подтверждения добавляет недостающие KK связи (без disconnect), обратные `categories` восстанавливает через `KK child.parent`, затем публикует RU и KK текущей категории через Strapi Admin. Не создаёт KK локали и не публикует Product/дочерние категории. Проверяет результаты и сохраняет IndexedDB pending-journal; при неподтверждённом write останавливается без повторного запроса, выводит план и итог в Console без скачивания файлов. KK Published может скрывать Draft-only Product. Запуск из открытой карточки `Category` → `Alt+P` → `sync`.
 - `sync/layout-sync.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, во вкладке `Фильтры` учитывает порядок смысловых групп, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
-- `extension/manifests/tools.json` — runtime-источник `file`, semver `version` и `group` для Tools Launcher; `file` хранит путь относительно `extension/tools/`, а `group` обязан совпадать с первой папкой пути (`extractor`, `pusher`, `sync`, `diagnostics`).
+- `extension/manifests/tools.json` — runtime-источник `file`, semver `version` и `group` для Tools Launcher; `file` хранит путь относительно `extension/tools/`, а `group` обязан совпадать с первой папкой пути (`extractor`, `pusher`, `sync`, `service`).
 
-Для нового tool добавь файл в подходящую подпапку `extension/tools/` (`extractor/`, `pusher/`, `sync/` или `diagnostics/`) и зарегистрируй его в `extension/manifests/tools.json` через `file`, `version` и `group`. `version` и `group` внутри tool-файла не дублируются.
+Для нового tool добавь файл в подходящую подпапку `extension/tools/` (`extractor/`, `pusher/`, `sync/` или `service/`) и зарегистрируй его в `extension/manifests/tools.json` через `file`, `version` и `group`. `version` и `group` внутри tool-файла не дублируются.
 
-Рабочие группы: `extractor`, `pusher`, `sync`, `diagnostics`.
+Рабочие группы: `extractor`, `pusher`, `sync`, `service`.
 
 ## Locale
 
@@ -187,10 +187,10 @@ README обновляется, когда меняются структура, �
 │       │   ├── layout-sync.js
 │       │   ├── products-category-forward-sync.js
 │       │   └── products-category-mirror-sync.js
-│       └── diagnostics/
-│           ├── dom-stealer.js
-│           ├── network-recorder.js
-│           └── style-stealer.js
+│       └── service/
+│           ├── dom.js
+│           ├── network.js
+│           └── styles.js
 ├── migrator/
 │   ├── products/
 │   │   ├── config.js
