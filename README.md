@@ -1,223 +1,65 @@
-Набор рабочих инструментов для админки Strapi: постоянные extensions, UI/UX-кастомы, browser tools, универсальный RU → KK переводчик и backup/sync snapshot Project Instructions и Project Context.
+# Скрипты репозитория
 
-## Структура
+Краткий каталог активных скриптов: назначение и архитектура. Подробные рабочие контракты и история хранятся отдельно в `project/context.md`.
 
-| Папка | Назначение |
+## Strapi Admin — расширения
+
+| Скрипт | Функция и архитектура |
 |---|---|
-| [`extension/`](./extension) | Модули Strapi Admin: loader, manifests, features, UI/UX и browser tools |
-| [`migrator/`](./migrator) | Независимые pipeline: `products/` — товары, `attributes/` — торговые предложения (включая shade/volume) |
-| [`locale/`](./locale) | Независимые localizer по коллекциям (Product — Node.js, остальные инструменты — по назначению) |
-| [`helpdesk/`](./helpdesk) | n8n workflows Telegram-бота MonAmie Helpdesk |
-| [`translator/`](./translator) | RU → KK переводчик: полная версия, compressed-версия и extractor для накопленного translation context |
-| [`project/`](./project) | Sync/staging copies для Project Instructions и источника `context.md` |
+| [`extension/extension.js`](./extension/extension.js) | Tampermonkey loader: подключает `features` и `ui-ux` через manifests, запускает кешированные модули и обновляет кеш по версиям. |
+| [`features/alt-enter-publisher.js`](./extension/features/alt-enter-publisher.js) | Публикация текущей записи по `Alt+Enter` через штатную кнопку интерфейса Strapi. |
+| [`features/tools-launcher.js`](./extension/features/tools-launcher.js) | Панель `Alt+P`: читает `manifests/tools.json`, группирует инструменты и загружает JS из GitHub при запуске; защищает от повторного параллельного запуска. |
+| [`ui-ux/sidebar.js`](./extension/ui-ux/sidebar.js) | Группировка коллекций, навигация и поиск в боковой панели Strapi; поддерживает состояние групп и SPA-навигацию. |
+| [`ui-ux/record-list.js`](./extension/ui-ux/record-list.js) | Настройка таблиц Content Manager: компактные локали, переходы в записи и управление отображением строк. |
+| [`ui-ux/entry-relocate.js`](./extension/ui-ux/entry-relocate.js) | Перенос штатных действий записи к информации о Draft/Published, без копирования React-кнопок. |
+| [`ui-ux/product-attributes-navigator.js`](./extension/ui-ux/product-attributes-navigator.js) | Поиск и пагинация торговых предложений в Product; чтение relation `attributes` и переход к нативному управлению связями. |
+| [`ui-ux/product-sections.js`](./extension/ui-ux/product-sections.js) | Разделение Product на вкладки контента, фильтров и системных полей; визуальная группировка без перемещения нативных React-полей. |
 
-## Extension loader
+## Strapi Admin — Tools
 
-В Tampermonkey устанавливается только:
+Инструменты запускаются через Tools Launcher; реестр — `extension/manifests/tools.json` (`file`, `group`).
 
-`extension/extension.js`
+| Скрипт | Функция и архитектура |
+|---|---|
+| [`extractor/brandActiveProducts.js`](./extension/tools/extractor/brandActiveProducts.js) | Читает все Product-связи открытого Brand, отбирает активные товары и выгружает `documentId` в CSV. |
+| [`extractor/categoryTreeProducts.js`](./extension/tools/extractor/categoryTreeProducts.js) | Рекурсивно обходит дочерние Category, собирает уникальные связанные Products и экспортирует CSV. |
+| [`pusher/brandProductsDeactivate.js`](./extension/tools/pusher/brandProductsDeactivate.js) | Выключает `active` у связанных с Brand товаров: проверка, последовательные небольшие батчи Save/Publish, верификация и CSV результата. |
+| [`syncer/categoryGroupForward.js`](./extension/tools/syncer/categoryGroupForward.js) | Переносит недостающие Products из source Category в target по настроенным парам; только `connect`, без удаления существующих связей, с dry-run и проверкой. |
+| [`syncer/categoryGroupMirror.js`](./extension/tools/syncer/categoryGroupMirror.js) | Выравнивает Products внутри именованных групп Category: объединяет множества и добавляет недостающие связи; последовательные группы, проверка и адаптивная параллельность. |
+| [`syncer/categoryRelations.js`](./extension/tools/syncer/categoryRelations.js) | Синхронизирует `parent`, `categories`, `product` RU → KK одной Category; обратные дочерние связи меняет через `child.parent`, пропуски KK отражает в CSV и публикует изменённые KK Category. |
+| [`service/dom.js`](./extension/tools/service/dom.js) | Снимок DOM текущей страницы в буфер обмена, с fallback на стандартное копирование. |
+| [`service/layout.js`](./extension/tools/service/layout.js) | Сопоставляет порядок полей Product в UI с `layouts.edit`; dry-run, подтверждённая запись configuration и GET-проверка. |
+| [`service/network.js`](./extension/tools/service/network.js) | Перехватывает same-origin `fetch`/XHR между Start и Stop; собирает диагностический JSON запросов и ответов. |
+| [`service/styles.js`](./extension/tools/service/styles.js) | Извлекает вычисленные стили, CSS-правила и токены Strapi; группирует снимки по native/modified/custom и экспортирует JSON. |
 
-Userscript metadata (`==UserScript==`, `@name`, `@version`, `@match` и т.д.) нужна только этому loader. Дочерние extensions и tools загружаются через manifests и не содержат собственные metadata-блоки.
+## Локализация RU → KK
 
-Loader при открытии Strapi:
+| Скрипт | Функция и архитектура |
+|---|---|
+| [`locale/attribute/dry-run.js`](./locale/attribute/dry-run.js) | Без записи сравнивает RU/KK версии одного Attribute, связи и план переноса; результат — диагностический JSON. |
+| [`locale/attribute/preflight.js`](./locale/attribute/preflight.js) | GET-only проверка схемы, четырёх версий Attribute и доступности KK связанных записей; экспорт JSON. |
+| [`locale/category/normalizer.js`](./locale/category/normalizer.js) | Обходит RU Category, создаёт/обновляет KK Draft, дополняет доступные связи и публикует необходимые версии; использует snapshots, IndexedDB journal и проверки записей. |
+| [`locale/product/normalizer.js`](./locale/product/normalizer.js) | Браузерная нормализация Product RU → KK: обход каталога, сохранение KK переводов/медиа, дополнение связей, публикация и проверки с IndexedDB journal. |
+| [`locale/product/localizer.mjs`](./locale/product/localizer.mjs) | Отдельный Node.js localizer с dry-run, backup, checkpoint и recovery старых RU → KK Product операций. |
 
-1. мгновенно запускает последнюю сохранённую копию extensions из кеша;
-2. в фоне загружает корневой `extension/manifests/extensions.json`;
-3. по нему загружает `extension/manifests/ui-ux.json` и `extension/manifests/features.json`;
-4. объединяет и валидирует их как единый registry;
-5. при изменении версий или путей скачивает только изменившиеся файлы и сохраняет новый кеш;
-6. обновлённые extensions применяются после следующей перезагрузки Strapi.
+## Миграция Bitrix ↔ Strapi
 
-Старые отдельные Tampermonkey-скрипты после установки loader нужно отключить или удалить, иначе один функционал будет запускаться дважды.
+Два независимых pipeline: `config` (Strapi) → `matcher` (Bitrix) → `importer` (Node.js).
 
-После переименования установочного файла используйте [`extension/extension.js`](./extension/extension.js), версия `1.3.7`. Старый `extension/loader.js` удалён: ранее установленный Tampermonkey-скрипт с прежним `@updateURL` не сможет обновиться автоматически. Один раз откройте новый URL и установите скрипт в Tampermonkey, затем отключите/удалите старую копию во избежание двойного запуска. После этого перезагрузите страницу Strapi, чтобы loader обновил кеш; ещё одна перезагрузка применит скачанные extensions.
+| Скрипт | Функция и архитектура |
+|---|---|
+| [`migrator/products/config.js`](./migrator/products/config.js) | Извлекает Product из Strapi в CSV для сопоставления: данные записи и связи, с постраничным чтением и диагностикой. |
+| [`migrator/products/matcher.js`](./migrator/products/matcher.js) | Сопоставляет товары с каталогом Bitrix по точному названию и общему штрихкоду; сохраняет CSV и checkpoint. |
+| [`migrator/products/importer.mjs`](./migrator/products/importer.mjs) | По CSV обновляет Product в Strapi: активность, медиа, недостающий контент и категории; dry-run/apply, проверка и журнал. |
+| [`migrator/products/starter.ps1`](./migrator/products/starter.ps1) | PowerShell-обёртка запуска Node.js `importer.mjs --apply` с системным хранилищем сертификатов. |
+| [`migrator/attributes/config.js`](./migrator/attributes/config.js) | Извлекает Attribute и связанные Shade/Volume из Strapi в CSV; чтение всех страниц и справочников. |
+| [`migrator/attributes/matcher.js`](./migrator/attributes/matcher.js) | Сопоставляет Attribute с Bitrix по штрихкоду; готовит CSV для обновления active, Media, Volume и ручного review Shade/Volume. |
+| [`migrator/attributes/importer.mjs`](./migrator/attributes/importer.mjs) | Обновляет Attribute из CSV: active/Media и подтверждённые изменения Volume; защищённая публикация, проверка и отчёты. |
+| [`migrator/attributes/starter.ps1`](./migrator/attributes/starter.ps1) | PowerShell-обёртка запуска Node.js `importer.mjs --apply` с системным хранилищем сертификатов. |
 
-Loader запускается в Strapi Admin на `http://10.10.3.80:1337/admin/*` и `https://strapi.monamie.kz:1337/admin/*` (в `@match` порт не указывается). После перехода на новый домен обновите установленный userscript через Tampermonkey или заново откройте [`extension/extension.js`](https://raw.githubusercontent.com/mbtema/strapi/main/extension/extension.js) для установки версии `1.3.7`; затем перезагрузите вкладку CMS. `@match` действует для пути `/admin/*` и его query-параметров.
+## Helpdesk — n8n workflows
 
-Для ручной проверки обновлений в Console доступна команда `checkUpdates()`. Она проверяет установленную версию loader и все дочерние manifests, скачивает изменившиеся extensions в кеш и сообщает, нужна ли перезагрузка Strapi. Если в repo появилась новая версия самого loader, команда сообщает, что userscript нужно обновить через Tampermonkey.
-
-### Manifest
-
-`extension/manifests/` — единое место для runtime-реестров. `extension/manifests/extensions.json` содержит список extension manifests, сейчас `extension/manifests/features.json` и `extension/manifests/ui-ux.json`. Все manifests используют `schemaVersion: 1`; это версия формата конкретного manifest, а не версия скриптов.
-
-Метаданные конкретных extensions (`id`, `path`, semver `version`, `enabled`) хранятся в `extension/manifests/features.json` и `extension/manifests/ui-ux.json`. При изменении extension увеличивается его `version` в соответствующем manifest. Изменение пути также меняет сигнатуру кеша и заставляет loader скачать файл заново. `enabled: false` оставляет файл в репозитории, но исключает его из загрузки.
-
-Loader валидирует каждый дочерний manifest и итоговый объединённый registry: формат путей, соответствие имени файла `id`, semver и глобальные дубли `id/path`. Если root/child manifest недоступен или некорректен, новый кеш не записывается, а при наличии старого loader продолжает использовать его.
-
-## Features
-
-- `alt-enter-publisher.js` — `Alt+Enter`, публикует текущую запись.
-- `tools-launcher.js` — `Alt+P`, открывает browser tools из `extension/manifests/tools.json` колонками `extractor`, `pusher`, `syncer`, `service`; `group` обязан совпадать с первой папкой в `file`, валидируются path / group и дубли файлов; блокирует повторный параллельный запуск async tool и для GET-запросов автоматически повторяет временные network / `429` / `5xx` ошибки.
-
-## UI/UX
-
-- `sidebar.js` — единый sidebar-модуль: `Alt+S`, поиск, быстрый доступ, группировка Content Manager (`Каталог`, `Справочник`, `Фильтры`, `Главная страница MOBILE`, `Главная страница WEB`, `Другое`), active state и очистка глобальной левой навигации; новые нераспознанные collection types по умолчанию попадают в `Другое`; группы по умолчанию раскрыты, их свернутое/раскрытое состояние сохраняется в `localStorage` и восстанавливается после reload, раскрытие/сворачивание анимировано; состояние всего sidebar скрыт/показан сохраняется на время текущей вкладки браузера.
-- `record-list.js` — единый модуль для списков записей Content Manager: скрывает scrollbar/overflow decoration, скрывает колонку `to be released in`, компактно показывает `Available in` как RU/KK, добавляет рядом с checkbox ссылку открытия записи для Vimium и поддерживает обычный click, Ctrl/Meta-click и middle-click в новую вкладку через реальный `documentId`; при ошибке lookup используется безопасный `row.click()` fallback.
-- `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
-- `product-attributes-navigator.js` — навигация по торговым предложениям в карточке товара: загрузка всех relation `attributes`, поиск, пагинация и прямые ссылки; режим «Управление связями» раскрывает штатный Strapi relation list.
-- `product-sections.js` — разделяет карточку Product на вкладки `Контент`, `Фильтры`, `Системное` и показывает смысловые группы `Парфюмерия`, `Макияж`, `Уход за кожей`, `Уход за волосами`, `Другое`; в `Уход за кожей` входят `usage_time`, `age_group`, `product_segment`, `ingredients`, в `Уход за волосами` — `hair_types`, `is_hypoallergenic`, а `Другое` автоматически собирает остальные поля из `FILTER_FIELDS`. Нативные React-поля не перемещает в DOM; визуальный порядок групп задаётся через CSS `order`, а штатный порядок полей хранится в Strapi `layouts.edit` и при необходимости синхронизируется через `service/layout.js`.
-
-## Версионирование extensions
-
-- patch (`1.3.1`) — небольшой фикс, доработка или оптимизация существующего поведения;
-- minor (`1.4`) — заметное новое поведение;
-- major (`2.0`) — крупная переработка.
-
-Версия extension независима от версии loader. Единственный источник версии для extension — его запись в `extension/manifests/features.json` или `extension/manifests/ui-ux.json`; отдельные metadata-блоки и `@version` внутри этих файлов не используются.
-
-## Tools
-
-Browser tools запускаются через `Alt+P`. `syncer/` — инструменты синхронизации/изменения данных, `service/` — сервисные инструменты для диагностики и настройки интерфейса CMS, `extractor/` — экспорт данных в CSV, `pusher/` — контролируемые массовые изменения. Массовые tools проходят данные постранично, показывают progress/counters и при необходимости автоматически скачивают CSV. Для длительных tools реализована одинаковая плавающая панель прогресса внутри CMS с мягкой остановкой; массовые независимые задания адаптируют параллельность, последовательные UI/DOM-операции сохраняют исходный порядок. Кнопка Stop не отменяет уже начатые операции записи, а дожидается завершения текущей группы с её проверкой. При запуске через Tools Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация tool (`file`, `group`) хранится в `extension/manifests/tools.json`; отдельная `version` не требуется, код инструмента при запуске запрашивается заново с отключённым кешированием. Metadata-блоки внутри tool-файлов не используются.
-
-- `extractor/brandActiveProducts.js` — на открытой карточке Brand читает все страницы relation `products` (RU Draft), проверяет `active=true` у каждого Product и скачивает `brand-active-products.csv` с одним столбцом `productDocumentId`. Запускается из `Alt+P` → `extractor` на открытой карточке Brand.
-- `extractor/categoryTreeProducts.js` — от открытой категории обходит всё поддерево вниз по `categories`, собирает relation `product` на каждом уровне и скачивает `catalog-tree-products.csv` с одной колонкой `documentId`; товары не фильтруются по active/draft/published.
-- `pusher/brandProductsDeactivate.js` — на открытой карточке Brand читает все страницы `Brand.products` (RU Draft), без общего сканирования Products; после подтверждения выполняет контрольный Product и далее батчи по 4: Save `active=false` → GET verify Draft → Publish RU → GET verify Published. При ошибке записи останавливает выдачу новых Product, сохраняет CSV `brand-products-deactivate.csv` с этапом/статусом; без автоматического повтора PUT/POST. Stop: `window.brandProductsDeactivateStop = true`.
-- `syncer/categoryGroupMirror.js` — зеркально синхронизирует Products внутри настроенных групп из 2+ categories (`MIRROR_SYNC_GROUPS`: `name` + `categories`): для каждой группы строит union Products, одним `actions/publish` добавляет Product все недостающие categories этой группы, обрабатывает группы последовательно с live re-check/verify, использует throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
-- `syncer/categoryGroupForward.js` — односторонне синхронизирует Products по настроенным группам `source → target`: добавляет в target только отсутствующие там Products из source, обратно из target в source ничего не добавляет, выполняет общий dry-run, live re-check/verify по группам, использует тот же throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
-- `service/dom.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
-- `service/network.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
-- `service/styles.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
-- `syncer/categoryRelations.js` — синхронизирует `parent`, `categories`, `product` из RU Draft в KK Draft одной открытой Category: добавляет отсутствующие и удаляет лишние связи; `categories` обновляет через `KK child.parent`. Для недоступных KK-локалей связанных записей пропускает только соответствующие связи и формирует `category-relations-missing-kk.csv`, а при отсутствии KK у текущей Category останавливается без записей. После подтверждения публикует KK текущей и изменённых дочерних Category (RU не публикует), выполняет GET-проверки записей. Результат — `window.categoryRelationsReport`; запись не повторяется автоматически. Запуск: Category → `Alt+P` → `syncer`.
-- `service/layout.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, во вкладке `Фильтры` учитывает порядок смысловых групп, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
-- `extension/manifests/tools.json` — runtime-источник `file` и `group` для Tools Launcher; `file` хранит путь относительно `extension/tools/`, а `group` обязан совпадать с первой папкой пути (`extractor`, `pusher`, `syncer`, `service`).
-
-Для нового tool добавь файл в подходящую подпапку `extension/tools/` (`extractor/`, `pusher/`, `syncer/` или `service/`) и зарегистрируй его в `extension/manifests/tools.json` через `file` и `group`. Внутри tool-файла собственные metadata-блоки не нужны.
-
-Рабочие группы: `extractor`, `pusher`, `syncer`, `service`.
-
-## Locale
-
-- [`dry-run.js`](./locale/attribute/dry-run.js) — GET-only dry-run для одной открытой RU-карточки Attribute: повторно читает RU/KK Draft/Published, проверяет все root relations, показывает потенциальные Save/Connect/Publish payload без выполнения записей, экспортирует `attribute-kk-dry-run-<documentId>.json`. `shade` и `volume` общие, не требуют KK; недоступное поле `shopwareId` исключается из payload и блокирует готовность к apply, пока не обеспечена проверка его сохранности. `readyToApply` — только оценка, не команда на запись; контракт Attribute PUT/POST ещё не подтверждён через живой Network. Вставлять полный JS прямо в Console открытой RU-карточки, без `eval`/динамической вставки `<script>` (CSP).
-
-- [`preflight.js`](./locale/attribute/preflight.js) — read-only диагностика одной RU-карточки Attribute перед созданием KK: live-схема, четыре версии RU/KK Draft/Published, все root relations с полной пагинацией и доступность KK связанных записей. Автоматически выгружает `attribute-kk-preflight-<documentId>.json`; никакие данные в Strapi не изменяет. Создание/публикация KK — отдельный этап после анализа JSON.
-
-- [`normalizer.js`](./locale/category/normalizer.js) — **единый production-механизм для всех RU Category → KK**, независимо от бренда. Запускать весь JS в Console на [общем списке Category RU](https://strapi.monamie.kz:1337/admin/content-manager/collection-types/api::category.category?page=1&pageSize=100&sort=id%3AASC&plugins%5Bi18n%5D%5Blocale%5D=ru&_q=). Получает все `documentId` из Content Manager API `/content-manager/collection-types/api::category.category?locale=ru&status=draft&page=N&pageSize=100&sort=id:ASC`, читает **все страницы**, сверяет total, id:ASC и уникальность; количества категорий заранее не ограничивает. **Всегда production, без dry-run и флагов**. Проходит три этапа: создание/обновление KK Draft с сохранением локализованных KK переводов/Media; добавление отсутствующих `parent`/`brand`/`product` только через `connect` пачками до 20, без `disconnect`; проверка и Publish RU/KK только при необходимости. Product/Brand и другие связанные сущности отдельно не меняет/не публикует, `key/code/slug` не нормализует, защищает от непредусмотренных изменений. При неподдерживаемых relations или недостающем KK Draft target — фиксирует проблему конкретной Category; пустой RU `key` не блокирует синхронизацию, значение `key` не записывается и защищено проверками; при drift после записи — глобальная остановка. Строго последовательные PUT/POST, prewrite и postflight snapshot; при подтверждённой потере только RU Draft scalar/media значения после KK PUT автоматически пытается восстановить их **одним отдельным RU PUT** из сохранённого IndexedDB-снимка, после повторно сверяет обе локали. Восстановление заранее журналируется и **никогда не повторяется автоматически**; при дополнительных/небезопасных отличиях останавливается с сохранением pending. Индексированный журнал `tm-category-normalizer-production-v1`, прогресс/counters и `restorations` в JSON. При восстановлении старого pending допускается подтверждение через GET **позднее опубликованной KK**, если до операции KK Published отсутствовала и текущие KK Draft/Published полностью совпадают, а исходный content write проходит все остальные проверки; это не вызывает PUT/POST. При неподтверждённом pending в JSON автоматически добавляется `pendingDiagnostic` с точными отличиями полей и связей всех RU/KK версий. Если нового KK ещё нет, а RU содержит непустой общий `code`, создание KK блокируется до безопасного подтверждённого способа сохранения поля (инцидент обнуления RU Draft.code). Остановка между операциями `window.tmCategoryNormalizerStop=true`. Автоскачивание `category-normalization-production-YYYY-MM-DD.json` и `category-normalization-production-results.csv`. **Нет независимого DB backup:** запуск JS может выполнить реальные записи, браузерный журнал не заменяет backup.
-- [`normalizer.js`](./locale/product/normalizer.js) — **новый браузерный production-механизм Product RU → KK** на базе подтверждённого Category workflow. Запускать полный JS в Console на [общем списке Product RU](https://strapi.monamie.kz:1337/admin/content-manager/collection-types/api::product.product?page=1&pageSize=100&sort=id%3AASC&plugins%5Bi18n%5D%5Blocale%5D=ru&_q=). Без dry-run и флагов: читает все страницы RU Product через внутренний Content Manager API, проверяет count/порядок/дубли и в трёх последовательных этапах дополняет KK Draft, root relations и KK Published. Выполняет PUT/POST **только при найденных расхождениях**, не публикует RU или связанные Category/Attribute/Brand. Сохраняет существующие KK переводы, изображения и **уникальный `KK.key`**, поле `InStock` исключено из нормализации; `name` и допустимые boolean — из RU. Root relation записывает только отсутствующие связи через `connect` по KK `documentId`/`id` пачками до 20, без `disconnect`; недоступные KK targets и неподдерживаемые inverse/legacy links фиксирует как блокировки. **Для Product Published требуется точный состав root relations**, в том числе `attributes`: потерю связей не считать успешной публикацией. Неопубликованные KK dependencies блокируют Publish Product, но самостоятельно не публикуются. Перед каждым write IndexedDB `tm-product-normalizer-production-v1` хранит pending/snapshot; после — сверка всех четырёх версий и завершение журнала. Нет автоповтора PUT/POST; мягкая остановка `window.tmProductNormalizerStop=true`. Выход: `product-normalization-production-YYYY-MM-DD.json` и `product-normalization-production-results.csv`.
-  
-  **Статус внедрения:** синтаксис и mock-тесты выполнены (205 Product/3 страницы без записей, а также 3 Product с созданием KK, сохранением перевода/медиа, 5 PUT и 2 POST; негативные проверки `key` и пропажи Published relation). **Live Product Strapi browser PUT/POST ещё не проверены**. Прежде чем запускать полный каталог, необходимо разобраться со старыми незавершёнными Product backup — браузерный IndexedDB их не видит. Создание отсутствующей Product KK через Content Manager PUT тоже не подтверждено live; при несоответствии key/fields postflight останавливает дальнейшие записи. Серверного DB backup нет.
-- [`localizer.mjs`](./locale/product/localizer.mjs) — **сохранён для legacy recovery**, не удалять до завершения старых `product-kk-backups/` и журнала `product-kk-apply-progress.jsonl`. Этот Node.js 20+ инструмент запускается из `Desktop/Product-Localizer/` в PowerShell; его checkpoint, backups и специальные recovery-операции **несовместимы** с новым браузерным `normalizer.js`. Проверка старых pending без записи: `node localizer.mjs --recover-pending --dry-run`; адресный recovery — только по существующему сохранённому плану и отдельному подтверждению, без слепых retries. Не запускать оба механизма одновременно над одними Product.
-
-## Migrator
-
-Pipeline разделены по типу записей и не используют общие конфиги. `products/` содержит существующий pipeline для товаров; все его CSV, media checkpoint, journal и отчёты теперь используют префикс `products-` вместо `migration-`. При переходе не смешивать новые файлы со старыми checkpoint. `attributes/` предназначен для торговых предложений (`api::attribute.attribute`, Bitrix `IBLOCK_ID=2`). Новые данные shade/volume включены в Config существующего `attributes/`, отдельного pipeline нет.
-
-### Attributes — `migrator/attributes/`
-
-1. **Config** — [`config.js`](./migrator/attributes/config.js) запускается в Console Strapi Admin. Только GET: все Attribute локали `ru` (включая draft, неактивные и пустой barcode), без Product. Результат `attributes-config.csv` (10 колонок): `documentId;barcode;active;hasDetailPicture;shade;shadeDocumentId;volume;volumeDocumentId;shadeHex;volumeValue`. Предыдущие 8 полей сохранены; `shadeHex` читает `shade.hexes[].hex` (если цветов несколько — значения объединены через `|` в порядке массива), `volumeValue` читает числовое/текстовое `volume.value` без единиц измерения и без преобразования в name. Пустой relation даёт пустые поля; связанный shade с пустым `hexes` или volume с `value:null` сохраняет `documentId`, но соответствующий `shadeHex`/`volumeValue` пуст. Сначала читает все предложения с точным populate `detail_picture.id`, `shade.name`, `volume.name` и native fallback для relations. Дополнительно **постранично загружает справочники** `api::shade.shade` (`populate[hexes][fields][0]=hex`) и `api::volume.volume` (`fields[0]=value`) и сопоставляет по `documentId`, а отдельный GET target detail использует только если поле отсутствует в list API. Изображения, `active`, баркоды не меняет; GET с ограниченной параллельностью, прогресс/счётчики и без частичного CSV при ошибке. Счётчики `shadeHexVolumeValue.missingValues` и `missingValueSamples` показывают существующие связи без заполненного HEX/value. Если target detail отвечает 404, Config сохраняет ID связи и пустое HEX/value, отражая проблему в `shadeHexVolumeValue.inaccessibleTargets` и `inaccessibleSamples`; иные ошибки API не маскируются. Мягкая остановка: `window.attributesConfigStop = true`. **Текущий Matcher принимает этот 10-колоночный Config и выдаёт 11-колоночный matched для текущего Importer.**
-2. **Matcher** — [`matcher.js`](./migrator/attributes/matcher.js) запускается в Console Bitrix Admin с 10-колоночным `attributes-config.csv`. Последовательно читает весь grid `IBLOCK_ID=2` по ID ASC, только GET, без открытия карточек; обязательные колонки `PROPERTY_19` (штрихкод), `ACTIVE`, `DETAIL_PICTURE`, `PROPERTY_202` (объём), `PROPERTY_271` (текст-подсказка) и ID. Сверяет предложения по точному уникальному barcode, сохраняет ранее проверенные механизмы active/Media и checkpoint `v6-volume-review`. **Volume** в Bitrix отображается как `100 [62913]`; число извлекается из текста ячейки, а ID проверяется по ссылке на справочник `IBLOCK_ID=12`. Числовое значение сравнивается с `volumeValue` Strapi: совпало — ничего не менять независимо от `name`; отличается — добавить/заменить; действительно пустое в Bitrix — удалить существующую relation. **Нестандартное значение** (`2х5 [107307]`, `2x5` и др.) не преобразуется в число и не считается пустым: идёт в `attributes-volume-review.csv` для ручной проверки, автоматическая запись Volume запрещена, но active/Media для того же предложения продолжают обрабатываться независимо. В `attributes-matched.csv` (11 колонок) добавлен явный `bitrixVolumeStatus=known|empty|manual`, чтобы Importer различал подтверждённый пустой Volume и неизвестный формат. **Shade**: только заполненное `PROPERTY_271` при отсутствии `shadeDocumentId` в Strapi → `attributes-shade-review.csv`; если Shade уже есть — не проверять и не менять. Одна запись может присутствовать и в matched, и в ручной очереди. Выгрузки: `attributes-matched.csv` (`documentId;barcode;active;hasDetailPicture;bitrixId;bitrixActive;pictureUrl;volumeDocumentId;volumeValue;bitrixVolumeValue;bitrixVolumeStatus`), `attributes-shade-review.csv`, `attributes-volume-review.csv` (`documentId;barcode;bitrixId;bitrixVolumeRaw;bitrixVolumeRefId;strapiVolumeDocumentId;strapiVolumeValue;bitrixCardUrl`) и `attributes-unmatched.csv` (если есть исключения barcode). При неоднозначных ID/ссылках, ошибках пагинации или сортировки — STOP без итоговых файлов; нестандартный **подтверждённый** Volume не останавливает обход. `window.bitrixAttributesMatchStop = true` — мягкая остановка и повторный запуск. Большой checkpoint `v6-volume-review` сохраняется **в IndexedDB**, без лимита `localStorage`; уже сохранённый старый checkpoint из `localStorage` автоматически проверяется и переносится в IndexedDB без потери успешно обработанных страниц. Запуск с тем же исходным CSV продолжит обход с последней сохранённой страницы. Версия в Console: `v5.3-indexeddb-checkpoint`. Новый `attributes-matched.csv` (11 колонок) поддерживается текущим Importer.
-3. **Importer** — [`importer.mjs`](./migrator/attributes/importer.mjs) (Node.js 20+, без npm) читает **только 11-колоночный** `attributes-matched.csv`: `documentId;barcode;active;hasDetailPicture;bitrixId;bitrixActive;pictureUrl;volumeDocumentId;volumeValue;bitrixVolumeValue;bitrixVolumeStatus`. Перед записью сверяет live Attribute по `documentId` + точному `barcode` и его to-one relation Volume через подтверждённый Content Manager GET `/content-manager/relations/api::attribute.attribute/<documentId>/volume?locale=ru&pageSize=5&page=1`. Справочник `api::volume.volume` читает один раз постранично; выбранный target перед первым подключением дополнительно проверяет через подтверждённый GET его карточки (для корректного числового `id` версии документа); для **добавления или замены** нужна запись с числовым `value=bitrixVolumeValue` и `name`, равным самому числу (допускается десятичная запятая вместо точки, но не `МЛ`, `ГР` или иной суффикс). Если совпадений **несколько**, выбрать первую по `id:ASC` (минимальный `id` из списка), проверить карточку выбранного target и назначить relation; выбор фиксируется в `attributes-import-report.csv` и отдельном `attributes-import-volume-duplicates.csv` для последующей ручной нормализации. Если совпадений **нет** → пропуск Volume и `attributes-import-volume-review.csv`, без создания справочника; остальные `active`/Media могут обновляться независимо. Если текущий Volume имеет совпадающий **value**, его relation сохраняется даже при нормализованном `name`. `bitrixVolumeStatus=known` → добавить/заменить, `empty` → удалить текущую relation, `manual` → никогда не изменять Volume. Shade не изменяет.
-
-**Network-подтверждение 2026-11-09:** реальная замена Volume прошла HTTP 200 через `POST /content-manager/collection-types/api::attribute.attribute/<documentId>/actions/publish?locale=ru` с полным телом Attribute и `volume: {connect:[{id,documentId,isTemporary:true}],disconnect:[{id,documentId}]}`. Для Volume Importer отправляет только подтверждённый Publish payload; PUT выполняется отдельно **только для active/detail_picture**, если требуется, и после него проверяется, что Volume не изменился. Другие relations передаются с пустыми `connect/disconnect`, как в записанном Network-запросе. Изображение загружается из публичного оригинала Bitrix, без Cookie. После любой операции — GET/verify сохранённой и опубликованной ru-версии и целевого Volume documentId. Если запись могла выполниться, но результат не подтверждён, **весь импорт останавливается**; журнал защищает от повторных неопределённых записей. Не считать статус `modified` или существующий draft признаком чужих изменений. Мягкая остановка `Ctrl+C` после текущей записи; последовательная обработка с паузой по умолчанию 150 мс. Версия Console: `v2.1-volume-first-duplicate`.
-
-**Запуск на Windows:** скопируй свежий `importer.mjs` на Desktop как `importer.mjs` и `attributes-matched.csv` из Matcher; в локальном файле укажи `AUTH.jwtToken`, не коммить токен. PowerShell: `node --use-system-ca "$env:USERPROFILE\Desktop\importer.mjs" --apply --only=DOCUMENT_ID` — **реальный пилот одной записи, без dry-run**; затем `--apply --limit=20` — следующая пачка, `--apply` — весь оставшийся CSV. Параметры `--limit`, `--only`, `--pause-ms`, `--retry-errors`; без `--apply` доступен dry-run, но он не обязателен. `--probe-media --only=DOCUMENT_ID` проверяет публичное изображение без записи. На Desktop создаются `attributes-import-report.csv`, `attributes-import-volume-review.csv` (отсутствующий Volume), `attributes-import-volume-duplicates.csv` (выбранные при дублях relation) и `attributes-import-journal-<hash>.jsonl`. Файл с тем же хешем безопасно продолжает прежний журнал, обработанные и требующие ручной проверки записи повторно не записываются. **Перед тысячами операций обязательно проверить одну фактическую запись после пилота в Strapi**, особенно удаление Volume. Предыдущая версия `v2-volume-publish` уже прошла массовый запуск; для текущей `v2.1-volume-first-duplicate` реальный прогон новой логики выбора дубликатов пока не подтверждён. CSV не пересохранять через Excel, чтобы не испортить ведущие нули barcode.
-
-
-### Products — `migrator/products/`
-
-1. **Config** — [`config.js`](./migrator/products/config.js) запускается в Console Strapi Admin. Read-only экспорт всех Product `ru`, независимо от `newFrom1C` и `active`. Итог `products-config.csv` (12 колонок): `documentId;name;name1;name2;detail_picture;preview_picture;pictures;active;newFrom1C;attributes;categories;detail_text`. Флаги Media и `detail_text` показывают заполненность; `attributes` — штрихкоды через `|`, `categories` — `bitrix_id` только категорий `custom=false` через `|`. CSV не открывать/пересохранять в Excel, чтобы не повредить штрихкоды и названия. Config обрабатывает до 12 Product одновременно с общим лимитом **8 HTTP GET**, повторяет временные GET-сбои (429/5xx/сеть) и сохраняет checkpoint в IndexedDB каждые 50 Product. После ошибки повторный запуск с тем же составом `documentId` восстанавливает завершённые записи; строки с проблемными связями перепроверяются. Ошибка данных отдельной Attribute/Category (например, `custom=false` без `bitrix_id`) не останавливает сбор: дефектная связь пропускается, создаётся `products-config-issues.csv`; **до Matcher требуется разобрать этот отчёт**, иначе категории или штрихкоды соответствующих товаров могут быть неполными. Ошибки Product, структуры ответов и постоянные HTTP-сбои остаются критичными; при полном успешном экспорте checkpoint очищается.
-2. **Matcher** — [`matcher.js`](./migrator/products/matcher.js) запускается в Console Bitrix Admin и читает исходный `products-config.csv`. Находит **одно строгое** совпадение названия (`NAME === name`, с учётом регистра и пробелов) и подтверждает хотя бы один общий штрихкод. Читает из карточки Bitrix `name1`, `name2`, `detail_text`, `ACTIVE`, `SECTION_ID`; оригинальные публичные URL `preview_picture`, `detail_picture` получает **только если соответствующее Media в Strapi пусто**, а `pictures` проверяет только при пустой галерее Strapi (тогда передаёт все доступные оригиналы в исходном порядке). Сравнивает **заполненность**, не текстовые значения; уже заполненные поля Strapi не перезаписываются. Matcher отбирает различия контента, галереи, категории и `active`, а также все записи с `newFrom1C=true/null` без расчёта целевого значения флага: **только Importer** после сохранения определяет `newFrom1C` по пяти обязательным полям и хотя бы одной категории. Итоговый `products-matched.csv` содержит 12 исходных колонок плюс 10 полей Bitrix: `bitrixId;matchedBarcode;bitrixActive;bitrixSectionId;bitrixName1;bitrixName2;bitrixDetailText;bitrixPreviewPictureUrl;bitrixDetailPictureUrl;bitrixPicturesJson`. Попадают товары с необходимыми изменениями либо с `newFrom1C=true/null` для итоговой проверки Importer. Диагностика — `products-unmatched.csv`; если у **необходимого для переноса** Media нет достоверного оригинального URL, либо нельзя определить `SECTION_ID`, товар целиком исключается. Заполненное Media Strapi не блокирует импорт при проблемном URL Bitrix. Сначала **одним проходом** обходит страницы каталога Bitrix (`IBLOCK_ID=1`, `GET`, `by=id&order=asc`) и составляет индекс по исходным названиям, как в `attributes/matcher.js`; проверяет total, количество строк, сортировку и уникальность ID. Это заменяет нестабильный `main.ui.filter`, который при отсутствующем товаре возвращал весь каталог. Из индекса берутся только строго равные `NAME` (без изменения регистра/пробелов); затем один точный кандидат подтверждается общим штрихкодом из карточки. Отсутствующие в Bitrix товары попадают в `products-unmatched.csv` со статусом `NAME_NOT_FOUND`. Одновременное чтение карточек ограничено тремя запросами. Checkpoint `v5-media-flag` хранится в IndexedDB по хешу CSV; **старые `v3-content` и `v4-catalog-index` не переиспользуются**, поэтому первый запуск обновлённого Matcher пересопоставляет товары заново. Сканирование Bitrix-каталога повторяется при каждом запуске, checkpoint сохраняет результаты проверки товаров, но не индекс каталога. **Частичных CSV нет** — файлы скачиваются только после полного успешного прогона.
-3. **Importer** — [`importer.mjs`](./migrator/products/importer.mjs) — Node.js 20+ **без npm-зависимостей**. Читает только `products-matched.csv`, **не запрашивает Bitrix Admin и не требует Bitrix Cookie**; медиа скачивает по публичным URL оригиналов из CSV и загружает через Strapi `/upload`. Укажи `AUTH.strapiJwt` в локальной копии файла. Перед изменением проверяет текущее состояние товара и нужную категорию Strapi по `bitrix_id=bitrixSectionId`. Если категории нет, товар целиком пропускается до любых записей и включается в `products-category-not-found.csv`. Existing relations сохраняются, добавляются только недостающие; заполненные контентные поля не меняются. `active` приводится к Bitrix; `newFrom1C` выставляется по результату проверки пяти обязательных полей и категории (галерея может быть пустой в обеих CMS). После Save/Verify выполняется Publish ru/Verify; при неизвестном исходе записи требуется ручная проверка.
-
-**Запуск Products Importer из PowerShell:** помести `importer.mjs` и `products-matched.csv` на рабочий стол; `node --use-system-ca "$env:USERPROFILE\Desktop\importer.mjs"` — dry-run всех кандидатов с `products-import-plan.csv`; добавь `--apply` только после пилотной проверки для записи в Strapi. Обработка последовательная без обязательной паузы (по умолчанию `--pause-ms=0`); при необходимости можно задать `--pause-ms=N` до 60000 мс. `--confirm=<BitrixID>` разрешён только для входного CSV с одной записью. Результаты: `products-import-report.csv`, при отсутствии категорий — `products-category-not-found.csv`, журнал `products-import-journal-<hash>.jsonl`, Media checkpoint `products-media-checkpoint.json`. Для повтора используй тот же CSV: завершённые записи пропускаются, `--retry-errors` позволяет повторить ошибки чтения, `--retry-partial` — неполные карточки; статусы `review` не повторяются без ручной проверки.
-
-
-
-## Helpdesk
-
-`helpdesk/workflow.json` — основной n8n workflow Telegram-бота MonAmie Helpdesk: регистрация сотрудника, создание обращения одним сообщением, загрузка медиа и создание карточки в Notion. После нажатия `Создать обращение` сотрудник отправляет текст или медиа с подписью; текст обязателен, медиа опционально, отдельной кнопки отправки нет.
-
-`helpdesk/notifications.json` — отдельный outbound workflow Notion → n8n → Telegram для уведомлений по статусам `В работе`, `Решено` и `Не по адресу`. Он принимает webhook от Notion, собирает текст уведомления из `Обращение`, `Статус`, `Ответ` и `Telegram chat ID`, затем отправляет сообщение через тот же Telegram credential. Webhook настроен на Header Auth; секрет хранится только в n8n credential и Notion custom header, не в repo.
-
-Raw URL для импорта:
-
-`https://raw.githubusercontent.com/mbtema/strapi/main/helpdesk/workflow.json`
-
-`https://raw.githubusercontent.com/mbtema/strapi/main/helpdesk/notifications.json`
-
-После обновления workflow в n8n экспорт заменяется в соответствующем файле, чтобы raw URL оставался постоянным.
-
-## Translator
-
-- `translator/full.md` — полный source of truth для RU → KK перевода: без искусственной экономии символов, с подробными правилами, приоритетами, глоссарием и самопроверкой.
-- `translator/compressed.md` — поведенчески эквивалентная сжатая версия для ChatGPT Project Instructions; должна оставаться не длиннее 8000 символов. Правила и приоритеты те же, сокращаются объяснения и примеры, а не логика.
-- `translator/extractor.md` — служебный prompt для анализа review-таблиц и накопленного translation context перед merge подтверждённых правил.
-
-При изменении translation logic сначала обновляется `full.md`, затем те же правила синхронизируются в `compressed.md` и проверяется лимит 8000 символов. `compressed.md` не должен иметь самостоятельную терминологию, расходящуюся с `full.md`.
-
-## Project
-
-`project/` не участвует в runtime.
-
-- `project/instruction.md` — готовый текст для поля Project Instructions; operational rules, приоритеты и формат работы.
-- `project/context.md` — готовый knowledge source для загрузки в ChatGPT Project: устойчивые факты, CANONICAL workflows, решения, доменная память, history/experiments.
-
-Эти файлы используются как sync/staging copies: при плановой консолидации они обновляются и проверяются в repo, после чего пользователь вручную переносит `instruction.md` в Project Instructions и загружает `context.md` как источник. В обычной работе активными источниками остаются версии внутри ChatGPT Project.
-
-Текущее code/version/manifest/Issue состояние берётся из live GitHub/API/Network/UI, а не из `context.md`.
-
-README обновляется, когда меняются структура, назначение, установка, использование или перечень основных инструментов репозитория.
-
-## Дерево
-
-```text
-.
-├── extension/
-│   ├── extension.js
-│   ├── manifests/
-│   │   ├── extensions.json
-│   │   ├── features.json
-│   │   ├── ui-ux.json
-│   │   └── tools.json
-│   ├── features/
-│   │   ├── alt-enter-publisher.js
-│   │   └── tools-launcher.js
-│   ├── ui-ux/
-│   │   ├── entry-relocate.js
-│   │   ├── product-attributes-navigator.js
-│   │   ├── product-sections.js
-│   │   ├── record-list.js
-│   │   └── sidebar.js
-│   └── tools/
-│       ├── extractor/
-│       │   ├── brandActiveProducts.js
-│       │   └── categoryTreeProducts.js
-│       ├── pusher/
-│       │   └── brandProductsDeactivate.js
-│       ├── syncer/
-│       │   ├── categoryRelations.js
-│       │   ├── categoryGroupForward.js
-│       │   └── categoryGroupMirror.js
-│       └── service/
-│           ├── dom.js
-│           ├── layout.js
-│           ├── network.js
-│           └── styles.js
-├── migrator/
-│   ├── products/
-│   │   ├── config.js
-│   │   ├── matcher.js
-│   │   ├── importer.mjs
-│   │   └── starter.ps1
-│   └── attributes/
-│       ├── config.js
-│       ├── matcher.js
-│       ├── importer.mjs
-│       └── starter.ps1
-├── locale/
-│   └── category/
-│       └── normalizer.js
-│   └── product/
-│       ├── normalizer.js
-│       └── localizer.mjs
-├── helpdesk/
-│   ├── workflow.json
-│   └── notifications.json
-├── translator/
-│   ├── full.md
-│   ├── compressed.md
-│   └── extractor.md
-├── project/
-│   ├── context.md
-│   └── instruction.md
-└── README.md
-```
+| Workflow | Функция и архитектура |
+|---|---|
+| [`helpdesk/workflow.json`](./helpdesk/workflow.json) | Telegram → n8n → Notion: регистрация сотрудника, приём обращения с текстом/медиа и создание карточки обращения. |
+| [`helpdesk/notifications.json`](./helpdesk/notifications.json) | Notion → webhook n8n → Telegram: отправляет уведомления об изменении статусов обращения. |
