@@ -221,6 +221,8 @@ Tools Launcher получает registry из `extension/manifests/tools.json`, 
 
 Физическая структура tools:
 - `extension/tools/audits/` — массовые проверки и отчёты;
+- `extension/tools/extractor/` — выгрузки и извлечение данных;
+- `extension/tools/pusher/` — контролируемые массовые записи;
 - `extension/tools/sync/` — синхронизации и управляемые write-инструменты;
 - `extension/tools/diagnostics/` — диагностические utilities.
 
@@ -232,11 +234,20 @@ semver version
 group
 ```
 
-`group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `audits`, `sync`, `diagnostics`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
+`group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `audits`, `extractor`, `pusher`, `sync`, `diagnostics`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
 
 Tool-файлы не содержат собственные metadata-блоки. Runtime-регистрация и версия (`file`, `version`, `group`) задаются только в `extension/manifests/tools.json`. Userscript metadata используется только в `extension/extension.js`, потому что только loader устанавливается напрямую в Tampermonkey.
 
 Managed regular tools получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
+
+## CANONICAL — pusher отключения Product по карточке Brand (2026-11-23, mock)
+
+- Активный путь `extension/tools/pusher/brandProductsDeactivate.js` вместо удалённого `extension/tools/audits/lux-normalizer.js`. Запуск из карточки Brand в Strapi Admin, `documentId` бренда берётся из URL. Нет фиксированного списка брендов и глобального обхода Product.
+- Источник: полный paginated `GET /content-manager/relations/api::brand.brand/{brandDocumentId}/products?locale=ru&status=draft&page=N&pageSize=100`; строгие total, pageCount, documentId и отсутствие дублей. Все полученные Product включаются независимо от собственного active/published; не выполнять per-Product GET relation brand.
+- После dry-run-count и подтверждения — один контрольный Product, затем партии до 4 одновременно: `PUT /content-manager/collection-types/api::product.product/{id}?locale=ru` body `{active:false}` → GET Draft verify `active=false` → `POST .../{id}/actions/publish?locale=ru` body `{}` → GET Published verify `active=false` и `publishedAt`. PUT/POST никогда не повторять автоматически; при ошибке pilot/batch остановить выдачу новых Product и сохранить review, не считать неопределённый HTTP результат успехом. При Stop завершать начатую партию.
+- Выход `brand-products-deactivate.csv`: `documentId;brandDocumentId;stage;result;error`, отдельно `window.brandProductsDeactivateReport` и флаг `window.brandProductsDeactivateStop`. Проверка mocked run: 2 Product успешно, 101 Product только read/cancel (2 GET), ошибка verify пилота не вызывает Publish/следующие PUT. **Нет подтверждённого live Save/Publish нового pusher**, не называть production-verified до первого реального пилота.
+- Отдельный extractor дерева категорий переименован в `extension/tools/extractor/categoryTreeProducts.js` (прежний singular path удалён). Контракт CSV остался `catalog-tree-products.csv`, одна колонка `documentId`, уникальные товары всего поддерева.
+
 
 
 ## CANONICAL — Network Recorder
