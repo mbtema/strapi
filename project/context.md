@@ -960,7 +960,7 @@ shareUrl
 
 ### CANONICAL — Product card layout + sections
 
-`extension/ui-ux/product-sections.js` отвечает только за вкладки `Контент / Фильтры / Системное`, show/hide полей и смысловые заголовки групп. Нативные React fields не перемещать между DOM-контейнерами: это конфликтует с внутренним SPA/focus Strapi. Для временного визуального порядка групп допустим CSS `order` на существующих top-level rows (без reparent): после этого `layout-sync.js` переносит тот же порядок в штатный `layouts.edit`.
+`extension/ui-ux/product-sections.js` отвечает только за вкладки `Контент / Фильтры / Системное`, show/hide полей и смысловые заголовки групп. Нативные React fields не перемещать между DOM-контейнерами: это конфликтует с внутренним SPA/focus Strapi. Для временного визуального порядка групп допустим CSS `order` на существующих top-level rows (без reparent): после этого `service/layout.js` переносит тот же порядок в штатный `layouts.edit`.
 
 Штатный порядок карточки хранится в Content Manager configuration:
 
@@ -968,7 +968,7 @@ shareUrl
 GET/PUT /content-manager/content-types/api::product.product/configuration
 ```
 
-Source of truth для физического порядка — `layouts.edit`. Service `extension/tools/syncer/layout-sync.js` используется после layout-изменений: читает текущий UI; для вкладки `Фильтры` учитывает `data-tm-product-filter-group-order`, выставленный `product-sections`, поэтому смысловые группы сохраняются в заданном порядке; делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
+Source of truth для физического порядка — `layouts.edit`. Service `extension/tools/service/layout.js` используется после layout-изменений: читает текущий UI; для вкладки `Фильтры` учитывает `data-tm-product-filter-group-order`, выставленный `product-sections`, поэтому смысловые группы сохраняются в заданном порядке; делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
 
 ## Styles service UI origin semantics
 

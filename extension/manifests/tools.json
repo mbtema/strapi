@@ -22,11 +22,6 @@
       "group": "syncer"
     },
     {
-      "file": "syncer/layout-sync.js",
-      "version": "1.2.1",
-      "group": "syncer"
-    },
-    {
       "file": "syncer/products-category-forward-sync.js",
       "version": "1.1.2",
       "group": "syncer"
@@ -39,6 +34,11 @@
     {
       "file": "service/dom.js",
       "version": "1.0.2",
+      "group": "service"
+    },
+    {
+      "file": "service/layout.js",
+      "version": "1.2.2",
       "group": "service"
     },
     {

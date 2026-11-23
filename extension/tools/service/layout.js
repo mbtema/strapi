@@ -3,7 +3,7 @@
   const __tm=(()=>{
     const box=document.createElement('div');
     Object.assign(box.style,{position:'fixed',right:'24px',bottom:'24px',width:'370px',padding:'18px',background:'#171923',color:'#fff',border:'1px solid #4945ff',borderRadius:'12px',boxShadow:'0 8px 35px #0008',font:'13px system-ui,sans-serif',zIndex:'2147483647'});
-    box.innerHTML='<div style="display:flex;justify-content:space-between"><b>layout-sync.js</b><button data-stop style="background:#4945ff;color:#fff;border:0;border-radius:5px;padding:6px 10px;cursor:pointer">Стоп</button></div><div data-phase style="margin-top:14px">Подготовка</div><div style="height:10px;background:#363846;border-radius:8px;margin-top:9px;overflow:hidden"><div data-bar style="background:#7b79ff;width:0%;height:100%;transition:width .2s"></div></div><div data-progress style="margin-top:8px">0 / ?</div><div data-speed style="margin-top:8px;color:#b8bacb">—</div><div data-metrics style="margin-top:5px;color:#b8bacb">—</div><div data-eta style="margin-top:5px;color:#b8bacb">—</div>';
+    box.innerHTML='<div style="display:flex;justify-content:space-between"><b>layout.js</b><button data-stop style="background:#4945ff;color:#fff;border:0;border-radius:5px;padding:6px 10px;cursor:pointer">Стоп</button></div><div data-phase style="margin-top:14px">Подготовка</div><div style="height:10px;background:#363846;border-radius:8px;margin-top:9px;overflow:hidden"><div data-bar style="background:#7b79ff;width:0%;height:100%;transition:width .2s"></div></div><div data-progress style="margin-top:8px">0 / ?</div><div data-speed style="margin-top:8px;color:#b8bacb">—</div><div data-metrics style="margin-top:5px;color:#b8bacb">—</div><div data-eta style="margin-top:5px;color:#b8bacb">—</div>';
     document.body.appendChild(box);const el=k=>box.querySelector('[data-'+k+']');
     const st={stop:false,done:0,total:0,phase:'Подготовка',start:performance.now(),phaseStart:performance.now(),failed:0,concurrency:null,best:null};
     el('stop').onclick=()=>{st.stop=true;el('stop').textContent='Остановка…';el('stop').disabled=true;};
@@ -29,7 +29,7 @@
 
   if (!entryMatch || entryMatch[1] === 'configurations') {
     throw new Error(
-      '[layout-sync] Открой обычную карточку Product, где уже работает product-sections'
+      '[layout] Открой обычную карточку Product, где уже работает product-sections'
     );
   }
 
@@ -38,7 +38,7 @@
 
   if (!root || !panel) {
     throw new Error(
-      '[layout-sync] Не найден product-sections. Обнови страницу и проверь extensions'
+      '[layout] Не найден product-sections. Обнови страницу и проверь extensions'
     );
   }
 
@@ -57,7 +57,7 @@
   const adminToken = getAdminToken();
 
   if (!adminToken) {
-    throw new Error('[layout-sync] Не найден jwtToken в LocalStorage');
+    throw new Error('[layout] Не найден jwtToken в LocalStorage');
   }
 
   const headers = {
@@ -287,7 +287,7 @@
     );
 
     if (!button) {
-      throw new Error('[layout-sync] Не найдена вкладка ' + key);
+      throw new Error('[layout] Не найдена вкладка ' + key);
     }
 
     if (button.getAttribute('aria-selected') !== 'true') {
@@ -479,7 +479,7 @@
   }
 
   function printLayout(label, layout) {
-    console.log('[layout-sync] ' + label);
+    console.log('[layout] ' + label);
 
     console.table(
       layout.map((row, index) => ({
@@ -491,8 +491,8 @@
   }
 
   __tm.phase('Синхронизация layout',5);
-  console.log('[layout-sync] start');
-  console.log('[layout-sync] Читаю штатную configuration...');
+  console.log('[layout] start');
+  console.log('[layout] Читаю штатную configuration...');
 
   const configuration = await getConfiguration('GET configuration');
   __tm.step();if(__tm.st.stop){__tm.finish('Остановлено');return;}
@@ -510,7 +510,7 @@
 
   if (!stack) {
     throw new Error(
-      '[layout-sync] Не удалось определить общий контейнер полей Product'
+      '[layout] Не удалось определить общий контейнер полей Product'
     );
   }
 
@@ -567,14 +567,14 @@
 
   if (unexpected.length) {
     throw new Error(
-      '[layout-sync] Найдены неизвестные поля: ' + unexpected.join(', ')
+      '[layout] Найдены неизвестные поля: ' + unexpected.join(', ')
     );
   }
 
   if (missing.length) {
-    console.warn('[layout-sync] Не удалось найти поля:', missing);
+    console.warn('[layout] Не удалось найти поля:', missing);
     throw new Error(
-      '[layout-sync] Dry-run остановлен: не найдено ' +
+      '[layout] Dry-run остановлен: не найдено ' +
       missing.length + ' полей из штатного layout'
     );
   }
@@ -586,7 +586,7 @@
     new Set(desiredNames).size !== fieldNames.length
   ) {
     throw new Error(
-      '[layout-sync] Dry-run остановлен: количество/уникальность полей не совпадает'
+      '[layout] Dry-run остановлен: количество/уникальность полей не совпадает'
     );
   }
 
@@ -597,12 +597,12 @@
 
   __tm.step();if(__tm.st.stop){__tm.finish('Остановлено');return;}
   if (!diff.length && sameLayout(currentLayout, desiredLayout)) {__tm.finish();
-    console.log('[layout-sync] Layout уже синхронизирован. Запись не нужна.');
+    console.log('[layout] Layout уже синхронизирован. Запись не нужна.');
     return;
   }
 
   console.log(
-    '[layout-sync] Dry-run: ' +
+    '[layout] Dry-run: ' +
     currentLayout.length + ' → ' + desiredLayout.length +
     ' строк | перемещений: ' + diff.length
   );
@@ -619,7 +619,7 @@
   );
 
   if (!approved || __tm.st.stop) {__tm.finish(__tm.st.stop?'Остановлено':'Отменено');
-    console.log('[layout-sync] Отменено. Был выполнен только dry-run.');
+    console.log('[layout] Отменено. Был выполнен только dry-run.');
     return;
   }
 
@@ -632,7 +632,7 @@
 
   if (forbiddenListMainFields.length) {
     throw new Error(
-      '[layout-sync] Preflight: list.mainField не очищен у ' +
+      '[layout] Preflight: list.mainField не очищен у ' +
       forbiddenListMainFields.join(', ')
     );
   }
@@ -647,28 +647,28 @@
   };
 
   console.log(
-    '[layout-sync] PUT preflight OK | metadatas: ' +
+    '[layout] PUT preflight OK | metadatas: ' +
     Object.keys(sanitizedMetadatas).length
   );
-  console.log('[layout-sync] Записываю configuration...');
+  console.log('[layout] Записываю configuration...');
   await putConfiguration(payload);
   __tm.step();
 
-  console.log('[layout-sync] Проверяю результат...');
+  console.log('[layout] Проверяю результат...');
   const verified = await getConfiguration('VERIFY configuration');
 
   if (!sameLayout(verified.layouts.edit, desiredLayout)) {
-    console.error('[layout-sync] VERIFY failed', {
+    console.error('[layout] VERIFY failed', {
       expected: desiredLayout,
       actual: verified.layouts.edit
     });
     throw new Error(
-      '[layout-sync] PUT прошёл, но GET verify вернул другой layouts.edit'
+      '[layout] PUT прошёл, но GET verify вернул другой layouts.edit'
     );
   }
 
   __tm.step();__tm.finish();
   console.log(
-    '[layout-sync] Готово: layouts.edit синхронизирован. Перезагрузи карточку Product.'
+    '[layout] Готово: layouts.edit синхронизирован. Перезагрузи карточку Product.'
   );
 })();

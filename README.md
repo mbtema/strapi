@@ -55,7 +55,7 @@ Loader валидирует каждый дочерний manifest и итого
 - `record-list.js` — единый модуль для списков записей Content Manager: скрывает scrollbar/overflow decoration, скрывает колонку `to be released in`, компактно показывает `Available in` как RU/KK, добавляет рядом с checkbox ссылку открытия записи для Vimium и поддерживает обычный click, Ctrl/Meta-click и middle-click в новую вкладку через реальный `documentId`; при ошибке lookup используется безопасный `row.click()` fallback.
 - `entry-relocate.js` — переносит действия Entry в строку с Draft / Published и освобождает ширину формы.
 - `product-attributes-navigator.js` — навигация по торговым предложениям в карточке товара: загрузка всех relation `attributes`, поиск, пагинация и прямые ссылки; режим «Управление связями» раскрывает штатный Strapi relation list.
-- `product-sections.js` — разделяет карточку Product на вкладки `Контент`, `Фильтры`, `Системное` и показывает смысловые группы `Парфюмерия`, `Макияж`, `Уход за кожей`, `Уход за волосами`, `Другое`; в `Уход за кожей` входят `usage_time`, `age_group`, `product_segment`, `ingredients`, в `Уход за волосами` — `hair_types`, `is_hypoallergenic`, а `Другое` автоматически собирает остальные поля из `FILTER_FIELDS`. Нативные React-поля не перемещает в DOM; визуальный порядок групп задаётся через CSS `order`, а штатный порядок полей хранится в Strapi `layouts.edit` и при необходимости синхронизируется через `layout-sync.js`.
+- `product-sections.js` — разделяет карточку Product на вкладки `Контент`, `Фильтры`, `Системное` и показывает смысловые группы `Парфюмерия`, `Макияж`, `Уход за кожей`, `Уход за волосами`, `Другое`; в `Уход за кожей` входят `usage_time`, `age_group`, `product_segment`, `ingredients`, в `Уход за волосами` — `hair_types`, `is_hypoallergenic`, а `Другое` автоматически собирает остальные поля из `FILTER_FIELDS`. Нативные React-поля не перемещает в DOM; визуальный порядок групп задаётся через CSS `order`, а штатный порядок полей хранится в Strapi `layouts.edit` и при необходимости синхронизируется через `service/layout.js`.
 
 ## Версионирование extensions
 
@@ -67,7 +67,7 @@ Loader валидирует каждый дочерний manifest и итого
 
 ## Tools
 
-Browser tools запускаются через `Alt+P`. `syncer/` — инструменты синхронизации/изменения данных, `service/` — сервисные инструменты для сбора DOM, Network и стилей CMS, `extractor/` — экспорт данных в CSV, `pusher/` — контролируемые массовые изменения. Массовые tools проходят данные постранично, показывают progress/counters и при необходимости автоматически скачивают CSV. Для длительных tools реализована одинаковая плавающая панель прогресса внутри CMS с мягкой остановкой; массовые независимые задания адаптируют параллельность, последовательные UI/DOM-операции сохраняют исходный порядок. Кнопка Stop не отменяет уже начатые операции записи, а дожидается завершения текущей группы с её проверкой. При запуске через Tools Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация tool и его версия (`file`, semver `version`, `group`) хранятся только в `extension/manifests/tools.json`; metadata-блоки внутри tool-файлов не используются.
+Browser tools запускаются через `Alt+P`. `syncer/` — инструменты синхронизации/изменения данных, `service/` — сервисные инструменты для диагностики и настройки интерфейса CMS, `extractor/` — экспорт данных в CSV, `pusher/` — контролируемые массовые изменения. Массовые tools проходят данные постранично, показывают progress/counters и при необходимости автоматически скачивают CSV. Для длительных tools реализована одинаковая плавающая панель прогресса внутри CMS с мягкой остановкой; массовые независимые задания адаптируют параллельность, последовательные UI/DOM-операции сохраняют исходный порядок. Кнопка Stop не отменяет уже начатые операции записи, а дожидается завершения текущей группы с её проверкой. При запуске через Tools Launcher временные ошибки чтения автоматически повторяются; постоянные `4xx` не ретраятся. Регистрация tool и его версия (`file`, semver `version`, `group`) хранятся только в `extension/manifests/tools.json`; metadata-блоки внутри tool-файлов не используются.
 
 - `extractor/brandActiveProducts.js` — на открытой карточке Brand читает все страницы relation `products` (RU Draft), проверяет `active=true` у каждого Product и скачивает `brand-active-products.csv` с одним столбцом `productDocumentId`. Запускается из `Alt+P` → `extractor` на открытой карточке Brand.
 - `extractor/categoryTreeProducts.js` — от открытой категории обходит всё поддерево вниз по `categories`, собирает relation `product` на каждом уровне и скачивает `catalog-tree-products.csv` с одной колонкой `documentId`; товары не фильтруются по active/draft/published.
@@ -78,7 +78,7 @@ Browser tools запускаются через `Alt+P`. `syncer/` — инст�
 - `service/network.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
 - `service/styles.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
 - `syncer/categoryRelations.js` — синхронизирует `parent`, `categories`, `product` из RU Draft в KK Draft одной открытой Category: добавляет отсутствующие и удаляет лишние связи; `categories` обновляет через `KK child.parent`. Для недоступных KK-локалей связанных записей пропускает только соответствующие связи и формирует `category-relations-missing-kk.csv`, а при отсутствии KK у текущей Category останавливается без записей. После подтверждения публикует KK текущей и изменённых дочерних Category (RU не публикует), выполняет GET-проверки записей. Результат — `window.categoryRelationsReport`; запись не повторяется автоматически. Запуск: Category → `Alt+P` → `syncer`.
-- `syncer/layout-sync.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, во вкладке `Фильтры` учитывает порядок смысловых групп, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
+- `service/layout.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, во вкладке `Фильтры` учитывает порядок смысловых групп, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
 - `extension/manifests/tools.json` — runtime-источник `file`, semver `version` и `group` для Tools Launcher; `file` хранит путь относительно `extension/tools/`, а `group` обязан совпадать с первой папкой пути (`extractor`, `pusher`, `syncer`, `service`).
 
 Для нового tool добавь файл в подходящую подпапку `extension/tools/` (`extractor/`, `pusher/`, `syncer/` или `service/`) и зарегистрируй его в `extension/manifests/tools.json` через `file`, `version` и `group`. `version` и `group` внутри tool-файла не дублируются.
@@ -185,11 +185,11 @@ README обновляется, когда меняются структура, �
 │       │   └── brandProductsDeactivate.js
 │       ├── syncer/
 │       │   ├── categoryRelations.js
-│       │   ├── layout-sync.js
 │       │   ├── products-category-forward-sync.js
 │       │   └── products-category-mirror-sync.js
 │       └── service/
 │           ├── dom.js
+│           ├── layout.js
 │           ├── network.js
 │           └── styles.js
 ├── migrator/
