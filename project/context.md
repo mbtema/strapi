@@ -1226,7 +1226,7 @@ Outbound contract:
 
 ## CANONICAL — зеркальная синхронизация категорий Products
 
-Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser tool `extension/tools/syncer/categoryGroupMirror.js` через `MIRROR_SYNC_GROUPS`; рабочая locale только `ru`.
+Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser tool `extension/tools/syncer/categoryGroupMirror.js` через `MIRROR_SYNC_GROUPS` как `{ name: 'Название', categories: ['documentIdA', 'documentIdB'] }`; `name` восстановлен из подписей исторической версии перед удалением комментариев, порядок и состав групп не менялись; рабочая locale только `ru`.
 
 Бизнес-правило для одной mirror group:
 - собрать union Products всех Category группы;

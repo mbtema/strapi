@@ -22,110 +22,184 @@
   const PAGE_SIZE = 100;
 
   const MIRROR_SYNC_GROUPS = [
-    [
-      'yiydsm3f7bh2pfxh18jhnwr5',
-      'ojpi51144amf8wfk2fj85go9'
-    ],
-    [
-      'k37blstm44sz9x1pib51b4s6',
-      'pybua20raonlmbtk8grtc81p',
-      'v08z42zs9vwx8dxx3kzkr93o'
-    ],
-    [
-      'z6any10eysps8lq87zi41kuv',
-      'xknqvho95grwz8g8oq2knqie'
-    ],
-    [
-      'cs1pn1fsfgnccbzeybf6m93b',
-      'dkt914987gaoa4k85ro5nqub',
-      'bk1oxriqa9uv9ayztf96xh0g'
-    ],
-    [
-      'rcdjq59axctxbwlgxonekvsl',
-      's9s5o9pc2grmazelvp9t4lol'
-    ],
-    [
-      'tpu6an49hhza41r6nf8v1ozb',
-      'q3dy0xlgvxqq0ag2rah2ar8h'
-    ],
-    [
-      'i54m20lo1pumrx32he9856c7',
-      'lyw5la9cjdmqua8blaxmjp4l'
-    ],
-    [
-      'zkxi0kay7okxiifqewspza06',
-      'v0w0bfafqb57ccdj2dzcbilj'
-    ],
-    [
-      'pwvwb9fs0hrnw4j2zm58jg17',
-      'myskvjdzzdf9uw5xwrqrougm'
-    ],
-    [
-      'rssbmhycuxxf2lptllo4wmgw',
-      's9gy1g4fjfnclh4g5bonstka',
-      'o2rh7h558cshdud8vipu39tl'
-    ],
-    [
-      'q9sj5patwtfwqyxvqdh60xr9',
-      'k9v6199z48mqux3urhk3slwr'
-    ],
-    [
-      'kz95bqjiih1wez27az8c9h7j',
-      'v7dxsm3b1gqvc27e6yxq0qwh'
-    ],
-    [
-      'rcvdcahqvj9r2zc8n5yyzmcp',
-      'xz5onwixhlsxycob2gavl7f4'
-    ],
-    [
-      'r80pm3gk1n5a9panxahra78r',
-      'guuddnd684zilyxygrbnz6zx'
-    ],
-    [
-      'uenx7ueeq7pebj1c4m2xr7dj',
-      'urr31xq3jdt7tkcfnchkowke'
-    ],
-    [
-      'p4mlbvnmv54t13yhmuhz2qwa',
-      'zf9c9knukrboxq5wqbtzsp99'
-    ],
-    [
-      'sj4ug9485b1it7ccxs8grfva',
-      'bml9vy58rjoekruo3kel9wie'
-    ],
-    [
-      'nrbgr3jjygcwpsswf4u276u4',
-      'xtunbkgbi1yaihwm3mvi5ifq'
-    ],
-    [
-      'kqxpeb7abzyhlle224w3jfdw',
-      'w5oulzst4bv7kxnktfdo3znu'
-    ],
-    [
-      'ppg02oir0j3m82nt44xte6zv',
-      'jj4kjryw9a80emyhsmc8enyd'
-    ],
-    [
-      'z20lqspttx2u4bp8z4ryocpc',
-      'ce192gec9vkw4c4t7baallyq'
-    ],
-    [ 
-      'i3ndqp4iok0ph0d1gjybx4hm',
-      'v0nwhgahn9x6f51vxrujpay7'
-    ],
-    [
-      'k856h9iqhsq9n8rlds8w8hj8',
-      'qjk230tz6sg5dzdlwn0osb28'
-    ],
-    [
-      'c9a05whhgl73nhozy5h8e8sv',
-      'phqd42665omyvh3k8sjb6cda'
-    ],
-    [
-      'x6gzlcr5cwqi16zsj9s36ou7',
-      'tgf1oz0q21j9lektdyxapwzc'
-    ],
-
+    {
+      name: 'Парфюмерные наборы для нее',
+      categories: [
+        'yiydsm3f7bh2pfxh18jhnwr5',
+        'ojpi51144amf8wfk2fj85go9'
+      ]
+    },
+    {
+      name: 'Парфюмерные наборы для него',
+      categories: [
+        'k37blstm44sz9x1pib51b4s6',
+        'pybua20raonlmbtk8grtc81p',
+        'v08z42zs9vwx8dxx3kzkr93o'
+      ]
+    },
+    {
+      name: 'Мужские ароматы',
+      categories: [
+        'z6any10eysps8lq87zi41kuv',
+        'xknqvho95grwz8g8oq2knqie'
+      ]
+    },
+    {
+      name: 'Накладные ресницы',
+      categories: [
+        'cs1pn1fsfgnccbzeybf6m93b',
+        'dkt914987gaoa4k85ro5nqub',
+        'bk1oxriqa9uv9ayztf96xh0g'
+      ]
+    },
+    {
+      name: 'BB CC крема',
+      categories: [
+        'rcdjq59axctxbwlgxonekvsl',
+        's9s5o9pc2grmazelvp9t4lol'
+      ]
+    },
+    {
+      name: 'Декоративные наборы',
+      categories: [
+        'tpu6an49hhza41r6nf8v1ozb',
+        'q3dy0xlgvxqq0ag2rah2ar8h'
+      ]
+    },
+    {
+      name: 'Зеркала',
+      categories: [
+        'i54m20lo1pumrx32he9856c7',
+        'lyw5la9cjdmqua8blaxmjp4l'
+      ]
+    },
+    {
+      name: 'Кисти и аппликаторы',
+      categories: [
+        'zkxi0kay7okxiifqewspza06',
+        'v0w0bfafqb57ccdj2dzcbilj'
+      ]
+    },
+    {
+      name: 'Пинцеты',
+      categories: [
+        'pwvwb9fs0hrnw4j2zm58jg17',
+        'myskvjdzzdf9uw5xwrqrougm'
+      ]
+    },
+    {
+      name: 'Прочее',
+      categories: [
+        'rssbmhycuxxf2lptllo4wmgw',
+        's9gy1g4fjfnclh4g5bonstka',
+        'o2rh7h558cshdud8vipu39tl'
+      ]
+    },
+    {
+      name: 'Спонжи и пуфы',
+      categories: [
+        'q9sj5patwtfwqyxvqdh60xr9',
+        'k9v6199z48mqux3urhk3slwr'
+      ]
+    },
+    {
+      name: 'Точилки',
+      categories: [
+        'kz95bqjiih1wez27az8c9h7j',
+        'v7dxsm3b1gqvc27e6yxq0qwh'
+      ]
+    },
+    {
+      name: 'Щипцы для завивки',
+      categories: [
+        'rcvdcahqvj9r2zc8n5yyzmcp',
+        'xz5onwixhlsxycob2gavl7f4'
+      ]
+    },
+    {
+      name: 'Наборы по уходу за лицом (М)',
+      categories: [
+        'r80pm3gk1n5a9panxahra78r',
+        'guuddnd684zilyxygrbnz6zx'
+      ]
+    },
+    {
+      name: 'Наборы по уходу за телом (М)',
+      categories: [
+        'uenx7ueeq7pebj1c4m2xr7dj',
+        'urr31xq3jdt7tkcfnchkowke'
+      ]
+    },
+    {
+      name: 'Наборы для бритья',
+      categories: [
+        'p4mlbvnmv54t13yhmuhz2qwa',
+        'zf9c9knukrboxq5wqbtzsp99'
+      ]
+    },
+    {
+      name: 'Наборы по уходу за волосами (М)',
+      categories: [
+        'sj4ug9485b1it7ccxs8grfva',
+        'bml9vy58rjoekruo3kel9wie'
+      ]
+    },
+    {
+      name: 'Наборы по уходу за лицом (Ж)',
+      categories: [
+        'nrbgr3jjygcwpsswf4u276u4',
+        'xtunbkgbi1yaihwm3mvi5ifq'
+      ]
+    },
+    {
+      name: 'Наборы по уходу за телом (Ж)',
+      categories: [
+        'kqxpeb7abzyhlle224w3jfdw',
+        'w5oulzst4bv7kxnktfdo3znu'
+      ]
+    },
+    {
+      name: 'Расчески',
+      categories: [
+        'ppg02oir0j3m82nt44xte6zv',
+        'jj4kjryw9a80emyhsmc8enyd'
+      ]
+    },
+    {
+      name: 'Наборы по уходу за волосами (Ж)',
+      categories: [
+        'z20lqspttx2u4bp8z4ryocpc',
+        'ce192gec9vkw4c4t7baallyq'
+      ]
+    },
+    {
+      name: 'Заколки',
+      categories: [
+        'i3ndqp4iok0ph0d1gjybx4hm',
+        'v0nwhgahn9x6f51vxrujpay7'
+      ]
+    },
+    {
+      name: 'Наборы для ногтей',
+      categories: [
+        'k856h9iqhsq9n8rlds8w8hj8',
+        'qjk230tz6sg5dzdlwn0osb28'
+      ]
+    },
+    {
+      name: 'Ободки',
+      categories: [
+        'c9a05whhgl73nhozy5h8e8sv',
+        'phqd42665omyvh3k8sjb6cda'
+      ]
+    },
+    {
+      name: 'Резинки',
+      categories: [
+        'x6gzlcr5cwqi16zsj9s36ou7',
+        'tgf1oz0q21j9lektdyxapwzc'
+      ]
+    }
   ];
 
   const ADAPTIVE = {
@@ -310,20 +384,25 @@
 
     MIRROR_SYNC_GROUPS.forEach((group, index) => {
       if (
-        !Array.isArray(group) ||
-        group.length < 2 ||
-        group.some(value =>
+        !group ||
+        typeof group !== 'object' ||
+        Array.isArray(group) ||
+        typeof group.name !== 'string' ||
+        !group.name.trim() ||
+        !Array.isArray(group.categories) ||
+        group.categories.length < 2 ||
+        group.categories.some(value =>
           typeof value !== 'string' || !value.trim()
         )
       ) {
         throw new Error(
           '[products-category-mirror-sync] Некорректная группа #' +
           (index + 1) +
-          ': нужно минимум 2 category documentId'
+          ': нужны name и categories (минимум 2 category documentId)'
         );
       }
 
-      if (new Set(group).size !== group.length) {
+      if (new Set(group.categories).size !== group.categories.length) {
         throw new Error(
           '[products-category-mirror-sync] Группа #' +
           (index + 1) +
@@ -335,7 +414,7 @@
 
   async function resolveCategories() {
     const uniqueDocumentIds = [
-      ...new Set(MIRROR_SYNC_GROUPS.flat())
+      ...new Set(MIRROR_SYNC_GROUPS.flatMap(group => group.categories))
     ];
 
     const entries = await Promise.all(
@@ -376,7 +455,7 @@
   }
 
   function buildGroupInfo(group, groupIndex, categories) {
-    const groupCategories = group.map(documentId =>
+    const groupCategories = group.categories.map(documentId =>
       categories.get(documentId)
     );
 
@@ -384,9 +463,11 @@
       index: groupIndex,
       number: groupIndex + 1,
       key: 'group-' + (groupIndex + 1),
+      name: group.name.trim(),
       categories: groupCategories,
       label:
         '#' + (groupIndex + 1) + ' ' +
+        group.name.trim() + ' | ' +
         groupCategories
           .map(category => category.label)
           .join(' ↔ ')
@@ -472,6 +553,7 @@
 
     return {
       group: analysis.groupInfo.number,
+      name: analysis.groupInfo.name,
       categories: analysis.groupInfo.categories.length,
       products: counts,
       union: analysis.unionIds.size,
