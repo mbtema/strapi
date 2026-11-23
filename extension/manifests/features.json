@@ -10,7 +10,7 @@
     {
       "id": "tools-launcher",
       "path": "features/tools-launcher.js",
-      "version": "1.9.0",
+      "version": "1.10.0",
       "enabled": true
     }
   ]
