@@ -1,17 +1,12 @@
-// Этап 1: Strapi Admin -> Console -> products-config.csv
-// Только GET. Все товары локали ru без фильтра newFrom1C/active/контента.
-// Полный снимок Product + barcodes из attributes + bitrix_id категорий custom=false.
-// Незначительные ошибки в данных связей пишем в отдельный issues CSV.
-// Checkpoint IndexedDB позволяет продолжить после ошибки или закрытия вкладки.
 (async () => {
   'use strict';
 
   const CFG = {
     locale: 'ru',
     pageSize: 100,
-    concurrency: 12,      // Товары в работе; это НЕ число одновременных GET.
-    httpConcurrency: 8,   // Не больше прежнего пика (4 worker × 2 relations).
-    maxAttempts: 4,       // Повторяем только безопасные GET.
+    concurrency: 12,
+    httpConcurrency: 8,
+    maxAttempts: 4,
     checkpointEvery: 50,
     filename: 'products-config.csv',
     issuesFilename: 'products-config-issues.csv'
@@ -61,8 +56,6 @@
   const normalizeBarcode = value =>
     String(value ?? '').replace(/\s+/g, '').trim();
 
-  // Общий лимит GET для всех worker и дополнительных запросов справочников.
-  // Удерживаем слот во время backoff, чтобы не создавать шквал повторов.
   let activeHttp = 0;
   const httpQueue = [];
   let requestCount = 0;
@@ -133,7 +126,6 @@
     return matches[0];
   }
 
-  // Кешируем именно Promise: параллельные товары не читают одну связь повторно.
   const attributeCache = new Map();
   const categoryCache = new Map();
   function relatedDetail(uid, documentId) {
@@ -229,7 +221,6 @@
       ', pagination.total=' + expectedTotal);
   }
 
-  // Отпечаток полного списка ID: checkpoint не смешивает разные составы каталога.
   function catalogFingerprint(values) {
     let hash = 2166136261;
     for (const value of values) {
@@ -384,9 +375,8 @@
             issue('categories', relation.documentId, 'CATEGORY_CUSTOM_UNKNOWN');
             continue;
           }
-          if (category.custom) continue; // custom=true полностью игнорируем.
+          if (category.custom) continue;
           if (category.bitrix_id == null || !String(category.bitrix_id).trim()) {
-            // Поле может отсутствовать в сокращённом ответе relations.
             category = await relatedDetail(CATEGORY_UID, relation.documentId);
           }
           if (category.bitrix_id == null || !String(category.bitrix_id).trim()) {
@@ -441,7 +431,6 @@
     }
   }
 
-  // При ошибке дожидаемся остальных начатых GET и не скачиваем неполный CSV.
   await Promise.all(Array.from({
     length: Math.min(CFG.concurrency, ids.length)
   }, worker));
@@ -485,8 +474,6 @@
     setTimeout(() => downloadCsv(CFG.issuesFilename,
       ['documentId','relation','relatedDocumentId','code'], issues), 750);
   }
-  // После полного экспорта checkpoint больше не нужен — следующий запуск
-  // создаст свежий snapshot даже при неизменном списке documentId.
   await checkpoint.clear();
 
   console.log('[Config] Итог:');
