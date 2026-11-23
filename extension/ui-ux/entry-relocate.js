@@ -500,8 +500,6 @@
 
         const state = ensureCurrentState(layout);
 
-        // Layout is fixed as soon as Strapi renders the document columns.
-        // Buttons can arrive later without keeping the Entry column visible.
         applyLayout(state, layout);
 
         if (!tabList) return;
