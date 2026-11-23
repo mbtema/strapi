@@ -72,8 +72,8 @@ Browser tools запускаются через `Alt+P`. `audits/` содерж�
 - `audits/products-missing-content.js` — проверяет критичные контентные поля активных товаров с учётом `categories.active`: товары только в отключённых категориях пропускаются, а товары без categories или со смешанными active/inactive categories всегда попадают в отчёт как edge cases.
 - `audits/lux-normalizer.js` — одноразовый инструмент отключения Products двух заданных брендов в `ru`: проверяет все товары и relation `brand` через Content Manager, показывает dry-run, после подтверждения сохраняет `active=false`, публикует, проверяет published state и скачивает CSV. Запуск через `Alt+P`; остановка из Console: `window.brandDisableStop = true`.
 - `audits/products-wrong-variants.js` — проверяет варианты `shade`/`volume` у attributes активных товаров и формирует компактный отчёт `documentId` + `errorType`.
-- `audits/catalog-tree-products.js` — от открытой категории обходит всё поддерево вниз по `categories`, собирает relation `product` на каждом уровне и скачивает CSV с одной колонкой `documentId`; товары не фильтруются по active/draft/published.
 - `extractor/brandActiveProducts.js` — на открытой карточке Brand читает все страницы relation `products` (RU Draft), проверяет `active=true` у каждого Product и скачивает `brand-active-products.csv` с одним столбцом `productDocumentId`. Запускается из `Alt+P` → `extractor` на открытой карточке Brand.
+- `extractor/categoryTreeProduct.js` — от открытой категории обходит всё поддерево вниз по `categories`, собирает relation `product` на каждом уровне и скачивает `catalog-tree-products.csv` с одной колонкой `documentId`; товары не фильтруются по active/draft/published.
 - `sync/products-category-mirror-sync.js` — зеркально синхронизирует Products внутри настроенных групп из 2+ categories: для каждой группы строит union Products, одним `actions/publish` добавляет Product все недостающие categories этой группы, обрабатывает группы последовательно с live re-check/verify, использует throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
 - `sync/products-category-forward-sync.js` — односторонне синхронизирует Products по настроенным группам `source → target`: добавляет в target только отсутствующие там Products из source, обратно из target в source ничего не добавляет, выполняет общий dry-run, live re-check/verify по группам, использует тот же throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
 - `diagnostics/dom-stealer.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
@@ -181,11 +181,13 @@ README обновляется, когда меняются структура, �
 │   │   └── sidebar.js
 │   └── tools/
 │       ├── audits/
-│       │   ├── catalog-tree-products.js
 │       │   ├── lux-normalizer.js
 │       │   ├── products-attributes-locale-audit.js
 │       │   ├── products-missing-content.js
 │       │   └── products-wrong-variants.js
+│       ├── extractor/
+│       │   ├── brandActiveProducts.js
+│       │   └── categoryTreeProduct.js
 │       ├── sync/
 │       │   ├── layout-sync.js
 │       │   ├── products-category-forward-sync.js
