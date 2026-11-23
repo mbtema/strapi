@@ -23,140 +23,109 @@
 
   const MIRROR_SYNC_GROUPS = [
     [
-      // Группа: Парфюмерные наборы для нее
       'yiydsm3f7bh2pfxh18jhnwr5',
       'ojpi51144amf8wfk2fj85go9'
     ],
     [
-      // Группа: Парфюмерные наборы для него
       'k37blstm44sz9x1pib51b4s6',
       'pybua20raonlmbtk8grtc81p',
       'v08z42zs9vwx8dxx3kzkr93o'
     ],
     [
-      // Группа: Мужские ароматы
       'z6any10eysps8lq87zi41kuv',
       'xknqvho95grwz8g8oq2knqie'
     ],
     [
-      // Группа: Накладные ресницы
       'cs1pn1fsfgnccbzeybf6m93b',
       'dkt914987gaoa4k85ro5nqub',
       'bk1oxriqa9uv9ayztf96xh0g'
     ],
     [
-      // Группа: BB CC крема
       'rcdjq59axctxbwlgxonekvsl',
       's9s5o9pc2grmazelvp9t4lol'
     ],
     [
-      // Группа: Декоративные наборы
       'tpu6an49hhza41r6nf8v1ozb',
       'q3dy0xlgvxqq0ag2rah2ar8h'
     ],
     [
-      // Группа: Зеркала
       'i54m20lo1pumrx32he9856c7',
       'lyw5la9cjdmqua8blaxmjp4l'
     ],
     [
-      // Группа: Кисти и аппликаторы
       'zkxi0kay7okxiifqewspza06',
       'v0w0bfafqb57ccdj2dzcbilj'
     ],
     [
-      // Группа: Пинцеты
       'pwvwb9fs0hrnw4j2zm58jg17',
       'myskvjdzzdf9uw5xwrqrougm'
     ],
     [
-      // Группа: Прочее
       'rssbmhycuxxf2lptllo4wmgw',
       's9gy1g4fjfnclh4g5bonstka',
       'o2rh7h558cshdud8vipu39tl'
     ],
     [
-      // Группа: Спонжи и пуфы
       'q9sj5patwtfwqyxvqdh60xr9',
       'k9v6199z48mqux3urhk3slwr'
     ],
     [
-      // Группа: Точилки
       'kz95bqjiih1wez27az8c9h7j',
       'v7dxsm3b1gqvc27e6yxq0qwh'
     ],
     [
-      // Группа: Щипцы для завивки
       'rcvdcahqvj9r2zc8n5yyzmcp',
       'xz5onwixhlsxycob2gavl7f4'
     ],
     [
-      // Группа: Наборы по уходу за лицом (М)
       'r80pm3gk1n5a9panxahra78r',
       'guuddnd684zilyxygrbnz6zx'
     ],
     [
-      // Группа: Наборы по уходу за телом (М)
       'uenx7ueeq7pebj1c4m2xr7dj',
       'urr31xq3jdt7tkcfnchkowke'
     ],
     [
-      // Группа: Наборы для бритья
       'p4mlbvnmv54t13yhmuhz2qwa',
       'zf9c9knukrboxq5wqbtzsp99'
     ],
     [
-      // Группа: Наборы по уходу за волосами (М)
       'sj4ug9485b1it7ccxs8grfva',
       'bml9vy58rjoekruo3kel9wie'
     ],
     [
-      // Группа: Наборы по уходу за лицом (Ж)
       'nrbgr3jjygcwpsswf4u276u4',
       'xtunbkgbi1yaihwm3mvi5ifq'
     ],
     [
-      // Группа: Наборы по уходу за телом (Ж)
       'kqxpeb7abzyhlle224w3jfdw',
       'w5oulzst4bv7kxnktfdo3znu'
     ],
     [
-      // Группа: Расчески
       'ppg02oir0j3m82nt44xte6zv',
       'jj4kjryw9a80emyhsmc8enyd'
     ],
     [
-      // Группа: Наборы по уходу за волосами (Ж)
       'z20lqspttx2u4bp8z4ryocpc',
       'ce192gec9vkw4c4t7baallyq'
     ],
     [ 
-      //  Группа: Заколки
       'i3ndqp4iok0ph0d1gjybx4hm',
       'v0nwhgahn9x6f51vxrujpay7'
     ],
     [
-      // Группа: Наборы для ногтей
       'k856h9iqhsq9n8rlds8w8hj8',
       'qjk230tz6sg5dzdlwn0osb28'
     ],
     [
-      // Группа: Ободки
       'c9a05whhgl73nhozy5h8e8sv',
       'phqd42665omyvh3k8sjb6cda'
     ],
     [
-      // Группа: Резинки
       'x6gzlcr5cwqi16zsj9s36ou7',
       'tgf1oz0q21j9lektdyxapwzc'
     ],
 
-    // Добавляй следующие группы сюда по тому же принципу:
-    // [
-    //   // Группа: Название группы
-    //   'categoryDocumentIdA',
-    //   'categoryDocumentIdB'
-    // ]
   ];
 
   const ADAPTIVE = {
