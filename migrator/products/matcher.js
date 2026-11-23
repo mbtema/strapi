@@ -1,8 +1,3 @@
-// Этап 2: Bitrix Admin -> Console. Только чтение Bitrix.
-// Вход: products-config.csv (12 колонок Config, все товары Strapi ru).
-// Выход: products-matched.csv (Config + данные Bitrix, только необходимые изменения)
-// и products-unmatched.csv (ошибки сопоставления/проверки).
-// Checkpoint: IndexedDB, по хешу входного CSV и версии; неполные CSV не экспортируются.
 (async () => {
   'use strict';
 
@@ -71,7 +66,6 @@
     return response.text();
   }
 
-  // CSV с разделителем ;, кавычками, экранированием и переносами строк.
   function parseCsv(input) {
     const source = input.replace(/^\uFEFF/, '');
     const output = [];
@@ -202,7 +196,6 @@
   }
 
   function parseBitrixContent(doc, bitrixId, product) {
-    // URL нужны только для пустых Media Strapi; заполненные поля не переносим.
     const needPreview = !hasStrapiContent(product, 'preview_picture');
     const needDetail = !hasStrapiContent(product, 'detail_picture');
     const needPictures = !hasStrapiContent(product, 'pictures');
@@ -287,8 +280,6 @@
     const needGallery = row.pictures === 'false' && bitrix.pictures.length > 0;
     const needCategory = !row.categories.split('|').includes(bitrix.sectionId);
     const needActive = row.active !== String(bitrix.active);
-    // Matcher не определяет целевой newFrom1C: после Save это делает Importer.
-    // true/null передаём даже без контентных изменений для нормализации флага.
     const needFlagReview = row.newFrom1C === 'true' || row.newFrom1C === 'null';
     return { needed: needContent || needGallery || needCategory ||
       needActive || needFlagReview };
@@ -386,10 +377,6 @@
     console.log('[Matcher] Всего: ' + products.length + ', из checkpoint: ' + completed.size);
     const startedAt = performance.now();
 
-    // Bitrix main.ui.filter иногда возвращает весь каталог вместо нулевого
-    // результата. Поэтому используем проверенный в attributes/matcher.js
-    // путь: один read-only обход всех страниц по ID ASC, далее точное
-    // сопоставление NAME на клиенте и обязательная проверка ШК по карточке.
     async function indexBitrixCatalog() {
       const names = new Set(products.map(row => row.name));
       const index = new Map();
@@ -406,8 +393,6 @@
           find_el_y: 'Y', apply_filter: 'Y',
           by: 'id', order: 'asc'
         };
-        // Очищаем старый фильтр только на первой странице.
-        // На остальных — та же пагинация, что в attributes/matcher.js.
         if (page === 1) params.clear_filter = 'Y';
         else params.PAGEN_1 = String(page);
         return makeUrl(LIST_PATH, params);
@@ -465,7 +450,6 @@
             });
           if (links.length !== 1) throw Error('Страница ' + page +
             ': нет однозначной ссылки NAME для ID ' + id);
-          // Без trim/clean и без изменения регистра или пробелов.
           return {id, name:links[0].textContent};
         });
         const rawTotal = doc.querySelector(
@@ -695,7 +679,6 @@
           });
           continue;
         }
-        // Пустые/некорректные ШК сразу в диагностику, без Bitrix-запроса.
         const barcodes = product.attributes.split('|').map(normalizeBarcode).filter(Boolean);
         if (!barcodes.length || barcodes.some(x => !/^\d{8,18}$/.test(x))) {
           recordResult(product, {status:barcodes.length ? 'BARCODE_INVALID':'BARCODE_MISSING',
