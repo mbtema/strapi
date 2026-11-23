@@ -1,16 +1,9 @@
-// Этап 2: Bitrix Admin -> Console -> attributes-matched.csv
-// Вход: attributes-config.csv, 10 колонок (включая shadeHex и volumeValue).
-// Выход: attributes-matched.csv (кандидаты importer по active/Media/volume),
-//        attributes-shade-review.csv (отсутствующий shade),
-//        attributes-volume-review.csv (нестандартные значения Bitrix, без автозаписи Volume).
-// Чтение IBLOCK_ID=2 / PROPERTY_19, PROPERTY_202, PROPERTY_271, ACTIVE, DETAIL_PICTURE. Только GET.
 (async () => {
   'use strict';
 
   const CFG = {
     iblockId: '2',
     locale: 'ru',
-    // Bitrix Admin хранит состояние навигации в сессии: не запрашивать страницы параллельно.
     pageConcurrency: 1,
     maxPages: 4000,
     matchedFile: 'attributes-matched.csv',
@@ -20,8 +13,6 @@
     checkpointVersion: 'v6-volume-review'
   };
   const AUTH = {
-    // В DevTools браузер отправляет Bitrix Cookie сам (credentials: include).
-    // Заголовок Cookie нельзя установить вручную через browser fetch.
     bitrixCookies: ''
   };
   const LOG = '[Attributes matcher]';
@@ -43,11 +34,8 @@
   const trim = x => String(x ?? '').replace(/^\uFEFF/, '').trim();
   const quote = x => '"' + String(x ?? '').replace(/"/g, '""') + '"';
 
-  // Точное сопоставление строк. Только trim по краям; ведущие нули и регистр не меняем.
   const barcodeOf = x => String(x ?? '').trim();
 
-  // Сравнение по числу: "050", "50.0" и "50,00" = 50.
-  // Названия "50МЛ", "50ГР" здесь намеренно не используются.
   function volumeNumber(value, context) {
     const raw = trim(value);
     if (!raw) return '';
@@ -66,8 +54,6 @@
     const anchors = [...content.querySelectorAll('a[href]')];
     if (!anchors.length) {
       if (!rawText) return { status: 'empty', value: '', raw: '', refId: '' };
-      // Не принимаем текст без подтверждённого ID за пустую relation:
-      // иначе будущий Importer удалит Volume в Strapi.
       return { status: 'manual', value: '', raw: rawText, refId: '' };
     }
     if (anchors.length !== 1) throw Error(context + ': неоднозначные ссылки Volume');
@@ -81,8 +67,6 @@
         trim(anchors[0].textContent) !== refId) {
       throw Error(context + ': ссылка не указывает на ожидаемый справочник Volume');
     }
-    // Пример: "100 [62913]" или нестандартное значение "2х5 [107307]".
-    // Строго подтверждаем ID по ссылке, но не пытаемся преобразовать 2х5 в 10.
     const display = /^(.+?)\s*\[\s*(\d+)\s*\]$/.exec(rawText);
     if (!display || display[2] !== refId) {
       throw Error(context + ': ID в ячейке не совпадает со ссылкой или формат повреждён: ' +
@@ -180,8 +164,6 @@
     u.searchParams.set('lang', CFG.locale);
     u.searchParams.set('find_el_y', 'Y');
     u.searchParams.set('apply_filter', 'Y');
-    // Подтверждено Network: сортировка Bitrix main.ui.grid — by=id&order=asc.
-    // Применяем к КАЖДОЙ странице, а не полагаемся только на состояние сессии.
     u.searchParams.set('by', 'id');
     u.searchParams.set('order', 'asc');
     if (page === 1) u.searchParams.set('clear_filter', 'Y');
@@ -230,8 +212,6 @@
   }
 
   function originalImageUrl(cell, page, id) {
-    // В Bitrix в <a href> — оригинал, в <img src> — resize_cache (миниатюра).
-    // Только публичный оригинал /upload/iblock/; не читаем никакие карточки.
     const anchors = [...cell.querySelectorAll('a[href]')];
     const originals = new Set();
     for (const anchor of anchors) {
@@ -302,9 +282,6 @@
       throw Error('Страница ' + page + ': в таблице нет заголовка ID');
     }
 
-    // В Bitrix grid есть скрытая служебная строка main-grid-not-count
-    // с data-id="template_0": это шаблон редактора, а не предложение.
-    // Пропускаем ТОЛЬКО явно опознанные шаблоны, чтобы не скрыть ошибки данных.
     const bodyRows = [...table.querySelectorAll('tbody > tr.main-grid-row-body[data-id]')]
       .filter(tr => !(
         tr.classList.contains('main-grid-not-count') &&
@@ -319,7 +296,6 @@
           id + ' (cells=' + cells.length + ', headers=' + heads.length + ')');
       }
 
-      // Известный шаблон карточки проверяем по реальным ссылкам строки, если они есть.
       const cardLinks = [...tr.querySelectorAll('a[href]')].map(a => {
         try { return new URL(a.getAttribute('href'), location.origin); }
         catch { return null; }
@@ -332,8 +308,6 @@
         throw Error('Страница ' + page + ': ID ссылки не совпадает с ID строки ' + id);
       }
       const barcode = barcodeOf(cells[barcodeIndex].textContent);
-      // Для проверки уникальности учитываем весь Bitrix, а ACTIVE читаем только
-      // для barcode из Strapi, иначе неизвестная разметка чужих строк остановит аудит.
       if (!target.has(barcode)) return { id, barcode, active: null, pictureUrl: '' };
       const activeCell = cells[activeIndex];
       const content = activeCell?.querySelector('.main-grid-cell-content') ?? activeCell;
@@ -354,7 +328,6 @@
           ': не удалось прочитать ACTIVE (значение: ' +
           JSON.stringify(value.slice(0, 70)) + '). Нужен HTML ячейки ACTIVE.');
       }
-      // Ссылки не сохраняем для записей, где Strapi Media уже существует.
       const pictureUrl = pictureWanted.has(barcode)
         ? originalImageUrl(cells[pictureIndex], page, id)
         : '';
@@ -374,9 +347,6 @@
     return { rows, total: parseTotal(totalText), totalText: trim(totalText) };
   }
 
-  // Не полагаемся на видимую стрелку в браузере: каждый ответ GET обязан
-  // содержать строго возрастающие ID, включая переход между страницами.
-  // BigInt исключает ошибки числового округления больших идентификаторов.
   function ascendingIssue(rows, previousId) {
     let prev = previousId == null ? null : BigInt(previousId);
     for (const row of rows) {
@@ -395,8 +365,6 @@
         .map(b => b.toString(16).padStart(2, '0')).join(''));
   }
 
-  // IndexedDB хранит большой checkpoint без жёсткого лимита localStorage.
-  // Объект state сохраняем атомарно по ключу версии + хешу исходного CSV.
   function openCheckpointDb() {
     if (!window.indexedDB) {
       throw Error('Для checkpoint требуется IndexedDB. Проверь доступ к хранилищу браузера.');
@@ -428,7 +396,6 @@
     return new Promise((resolve, reject) => {
       const tx = db.transaction('checkpoints', 'readwrite');
       tx.objectStore('checkpoints').put(state, key);
-      // Считаем страницу сохранённой только после commit всей транзакции.
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(Error('Не удалось сохранить checkpoint в IndexedDB: ' +
         (tx.error?.message ?? 'ошибка хранилища')));
@@ -533,8 +500,6 @@
     }
     const firstSignature = await digest(JSON.stringify(first.rows));
     const checkpointKey = 'tm:attributes-matcher:' + CFG.checkpointVersion + ':' + inputHash;
-    // Совместимость: сохранённый checkpoint v6 из localStorage автоматически
-    // переносится в IndexedDB после обычных проверок целостности.
     checkpointDb = await openCheckpointDb();
     let state = await readCheckpoint(checkpointDb, checkpointKey);
     let fromLegacyStorage = false;
@@ -654,7 +619,6 @@
         results.push({ page, data: validData });
       }
 
-      // Сначала валидируем ВСЮ группу, потом меняем checkpoint.
       const batchIds = new Set();
       for (const { page, data } of results) {
         const expected = page < pageCount ? size : total - size * (pageCount - 1);
@@ -727,8 +691,6 @@
         } else {
           hit = ids[0];
 
-          // Shade: текст-подсказка — единственный подтверждённый признак в Bitrix.
-          // Не сопоставляем с HEX; в importer Shade не передаём.
           if (hit.shadeHint.trim()) {
             if (row.shadeDocumentId) {
               summary.shadeAlreadyLinked++;
@@ -750,8 +712,6 @@
           const activeDiffers = row.active !== hit.active;
           const needsPicture = !row.hasDetailPicture && Boolean(hit.pictureUrl);
 
-          // Нестандартный объём (например 2х5): ручная проверка.
-          // Не записываем и не удаляем Volume, но active/Media обрабатываем независимо.
           if (hit.volumeStatus === 'manual') {
             summary.volumeManualReview++;
             const bitrixCardUrl = new URL(CARD_PATH, location.origin);
@@ -767,8 +727,6 @@
               bitrixCardUrl: bitrixCardUrl.href
             });
           }
-          // Только подтверждённые числовые или действительно пустые Bitrix values.
-          // Ручная нормализация name в Strapi сохраняется при совпадении value.
           const needsVolume = hit.volumeStatus === 'manual' ? false :
             hit.volumeStatus === 'known'
               ? row.volumeValue !== hit.volumeValue
@@ -837,7 +795,6 @@
     };
     window.bitrixAttributesMatchExport();
     await deleteCheckpoint(checkpointDb, checkpointKey);
-    // Если миграция из localStorage не понадобилась, старых данных здесь нет.
     localStorage.removeItem(checkpointKey);
 
     console.table([summary]);
