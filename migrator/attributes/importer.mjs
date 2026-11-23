@@ -1,7 +1,3 @@
-// Attributes: CSV из Bitrix Matcher -> Strapi api::attribute.attribute (locale=ru).
-// Node.js 20+ без npm-зависимостей: --apply для записи, иначе dry-run.
-// Только публичное скачивание картинок Bitrix: без Cookie и чтения админ-карточек.
-// Рабочие CSV, журнал и отчёты — на рабочем столе Windows.
 import { readFile, writeFile, rename, appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -19,7 +15,6 @@ const CFG = {
 };
 const AUTH = {
   jwtToken: 'ВСТАВЬ_JWT_STRAPI',
-  // Cookie Bitrix больше не требуются.
 };
 const DESKTOP = resolve(process.env.USERPROFILE || homedir(), 'Desktop');
 process.chdir(DESKTOP);
@@ -95,8 +90,6 @@ function parseCsv(input) {
   return rows.filter(r => r.some(x => x !== ''));
 }
 
-// Одинаковое числовое значение в двух CMS, независимо от запятой/точки.
-// Название Volume должно быть СТРОГО числовым, без «МЛ»/«ГР».
 function quantity(value, context) {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -106,8 +99,6 @@ function quantity(value, context) {
   const fraction = (match[2] ?? '').replace(/0+$/, '');
   return whole + (fraction ? '.' + fraction : '');
 }
-// «50» → value=50 + name «50»; «50МЛ» не подходит.
-// Для десятичных чисел «0,1» и «0.1» считаются одинаковой цифровой записью.
 function exactVolumeName(name, normalized) {
   const raw = String(name ?? '').trim();
   return raw === normalized || (normalized.includes('.') && raw === normalized.replace('.', ','));
@@ -229,8 +220,6 @@ async function http(url, options = {}, allowReadRetry = false) {
       await sleep(400 * attempt);
       continue;
     }
-    // При ограничении или истечении сессии Bitrix — немедленно стоп.
-    // Не делаем retry и не переходим к тысячам следующих карточек.
     if (fromBitrix && ([401, 403, 429].includes(response.status) || response.status >= 500)) {
       await response.body?.cancel().catch(() => {});
       throw bitrixBlocked('Bitrix вернул HTTP ' + response.status + ' для ' +
@@ -262,8 +251,6 @@ async function http(url, options = {}, allowReadRetry = false) {
   }
 }
 const sHeaders = () => ({ Authorization: 'Bearer ' + AUTH.jwtToken, Accept: 'application/json' });
-// Оригиналы /upload/iblock скачиваем как публичные файлы, без сессии Bitrix.
-// При отказе доступа не подставляем Cookie автоматически.
 const publicImageHeaders = () => ({
   Accept: 'image/*',
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/143.0 Safari/537.36'
@@ -285,8 +272,6 @@ async function readStrapi(id, status, expectedBarcode) {
   if (value.active !== true && value.active !== false && value.active !== null) {
     throw Error('Strapi ' + id + ': неподдерживаемое значение active');
   }
-  // CSV — снимок на момент matcher. Перед любыми изменениями и после Publish
-  // barcode Strapi должен по-прежнему совпадать с исходным точным значением.
   if (expectedBarcode !== undefined &&
       (typeof value.barcode !== 'string' || value.barcode !== expectedBarcode)) {
     throw Error('Strapi ' + id + ': barcode изменился относительно исходного CSV');
@@ -312,7 +297,6 @@ function snapshot(item, volume) {
   });
 }
 
-// Подтверждено Network: native GET relations Attribute/volume с locale=ru.
 async function readVolumeRelation(documentId) {
   const query = new URLSearchParams({ locale: CFG.locale, pageSize: '5', page: '1' });
   const path = '/content-manager/relations/' + UID + '/' +
@@ -342,7 +326,6 @@ function unwrapRecord(value) {
   return value;
 }
 
-// 447 Volume в справочнике: постранично загружаем ОДИН раз до любых записей.
 async function readVolumeCatalog() {
   const byId = new Map();
   const byNumber = new Map();
@@ -383,11 +366,9 @@ async function readVolumeCatalog() {
       const entry = { id: item.id, documentId: item.documentId, name: item.name, value: item.value };
       byId.set(entry.documentId, entry);
       if (entry.value != null && entry.value !== '') {
-        // Справочник может содержать вручную нормализованные/нечисловые значения.
-        // Они не подходят для автоматического выбора, но не блокируют остальные записи.
         let value = '';
         try { value = quantity(entry.value, 'Volume ' + entry.documentId); }
-        catch { /* только ручная обработка такого Volume */ }
+        catch {  }
         if (value && exactVolumeName(entry.name, value)) {
           const options = byNumber.get(value) ?? [];
           options.push(entry);
@@ -433,7 +414,6 @@ async function currentVolumeValue(relation, catalog) {
   if (!relation) return '';
   let entry = catalog.byId.get(relation.documentId);
   if (!entry) {
-    // Для существующего отношения, отсутствующего в list, читаем target напрямую.
     const path = '/content-manager/collection-types/' + VOLUME_UID + '/' +
       encodeURIComponent(relation.documentId) + '?locale=' + CFG.locale;
     const json = await (await http(strapiUrl(path), { headers: sHeaders() }, true)).json();
@@ -445,15 +425,10 @@ async function currentVolumeValue(relation, catalog) {
     }
     catalog.byId.set(entry.documentId, entry);
   }
-  // Числовые ID разных версий документа могут различаться. Сравниваем
-  // значение по стабильному documentId; для disconnect используем id relation.
   return entry.value == null || entry.value === '' ? '' :
     quantity(entry.value, 'Volume ' + relation.documentId);
 }
 
-// Network 2026-11-09: Content Manager отправляет full data + delta relations
-// в POST /actions/publish, не PUT. Передаём только поля, которые UI отправил
-// в подтверждённом запросе; неизвестные/служебные поля не перезаписываем.
 const PUBLISH_FIELDS = [
   'name','barcode','bitrix_id','xml_id','price','product_number','code_1c',
   'label_new','label_hit','home_new_priority','home_hit_priority','label_sales',
@@ -470,7 +445,6 @@ function publishWithVolumePayload(item, action) {
   }
   payload.detail_picture = item.detail_picture;
   for (const name of ['product','shade','color_variant1C','filtry']) {
-    // Структура подтверждена запросом Publish; не трогаем другие relations.
     payload[name] = { connect: [], disconnect: [] };
   }
   payload.volume = {
@@ -536,7 +510,6 @@ function reportCsv(rows, items) {
   ].join('\r\n');
 }
 
-// Отдельный результат ручной проверки Volume — без фильтрации общего отчёта.
 function volumeManualCsv(rows, items) {
   const fields = ['documentId','barcode','bitrixId','bitrixVolumeValue',
     'volumeDocumentId','volumeValue','status','reason'];
@@ -555,8 +528,6 @@ function volumeManualCsv(rows, items) {
   ].join('\r\n');
 }
 
-// Назначенные Volume, для которых в справочнике есть несколько эквивалентных записей.
-// Используется после импорта для ручной нормализации без задержки автоматической записи.
 function volumeDuplicatesCsv(rows, items) {
   const fields = ['documentId', 'barcode', 'bitrixId', 'bitrixVolumeValue',
     'volumeCandidateCount', 'volumeSelectedDocumentId', 'volumeSelectedId',
@@ -576,7 +547,6 @@ function volumeDuplicatesCsv(rows, items) {
 async function downloadOriginal(image, trace) {
   const url = validatedImageUrl(image.url);
   trace('MEDIA_DOWNLOAD_PUBLIC: GET оригинала без Cookie Bitrix');
-  // Без retry: если сервер ограничивает доступ, не увеличиваем нагрузку.
   let response;
   try {
     response = await http(url, { headers: publicImageHeaders() });
@@ -650,12 +620,9 @@ async function migrateOne(row, catalog, markWrite, markMediaUploaded, trace) {
       const targets = catalog.byNumber.get(row.bitrixVolumeValue) ?? [];
       volumeCandidateCount = targets.length;
       if (!targets.length) {
-        // Новые значения справочника не создаём автоматически.
         volumeReviewMessage = 'Volume для Bitrix ' + row.bitrixVolumeValue +
           ': нет подходящей пары name=value в Strapi; проверить вручную';
       } else {
-        // При дублях договорились выбирать первую запись по id ASC.
-        // Явная сортировка делает выбор одинаковым при любой пагинации.
         const chosen = [...targets].sort((a, b) =>
           a.id - b.id || a.documentId.localeCompare(b.documentId))[0];
         const confirmedTarget = await confirmedTargetVolume(chosen, catalog);
@@ -677,7 +644,6 @@ async function migrateOne(row, catalog, markWrite, markMediaUploaded, trace) {
   } else if (row.bitrixVolumeStatus === 'empty' && initialVolume) {
     volumeAction = { type: 'remove', target: null, previous: initialVolume };
   }
-  // status=manual: не изменяем Volume, даже если bitrixVolumeValue пуст.
   const base = {
     activeStrapi: String(initial.active),
     activeBitrix: String(row.bitrixActive),
@@ -715,7 +681,6 @@ async function migrateOne(row, catalog, markWrite, markMediaUploaded, trace) {
     published: false, message: 'Только план; изменений нет'
   };
 
-  // При повторном чтении подтверждаем и поля, и live relation.
   trace('VERIFY_BEFORE_SAVE: повторное чтение Attribute и Volume');
   const [fresh, freshVolume] = await Promise.all([
     readStrapi(row.documentId, null, row.barcode),
@@ -736,7 +701,6 @@ async function migrateOne(row, catalog, markWrite, markMediaUploaded, trace) {
 
   let saved = fresh, savedVolume = freshVolume;
   if (Object.keys(payload).length) {
-    // Существующий подтверждённый PUT используем только для active/detail_picture.
     const [beforePut, beforePutVolume] = await Promise.all([
       readStrapi(row.documentId, null, row.barcode),
       readVolumeRelation(row.documentId)
@@ -781,8 +745,6 @@ async function migrateOne(row, catalog, markWrite, markMediaUploaded, trace) {
     throw Error('Strapi изменился перед Publish; запись отменена');
   }
 
-  // Именно POST Publish с full-body relation connect/disconnect подтверждён
-  // Network от 2026-11-09. Для active/media без Volume оставляем старый {}.
   const publishBody = volumeAction
     ? publishWithVolumePayload(beforePublish, volumeAction)
     : {};
@@ -825,8 +787,6 @@ async function migrateOne(row, catalog, markWrite, markMediaUploaded, trace) {
   };
 }
 
-// Статистика собирается из текущих результатов + checkpoint, а не только из этой сессии.
-// Поэтому после перезапуска обработанные записи не начинают счётчик заново.
 function getProgress(selected, items) {
   const stats = {
     processed: 0, updated: 0, unchanged: 0, uploaded: 0,
@@ -845,7 +805,6 @@ function getProgress(selected, items) {
     else if (status === 'error') stats.errors++;
     else if (status === 'review') stats.review++;
     else if (status === 'dry_run') stats.planned++;
-    // Совместимость с журналами до появления отдельного Media-счётчика.
     if (item.uploadedMediaId > 0 ||
         (status === 'done' && String(item.changes ?? '').split('|').includes('detail_picture'))) {
       stats.uploaded++;
@@ -866,9 +825,6 @@ function formatSeconds(ms) {
   return seconds + 'с';
 }
 const count = n => Number(n).toLocaleString('ru-RU');
-// После каждого RESULT показываем счётчик без пересчёта всех строк CSV.
-// Полная сводка и прогресс-бар строятся только при старте, каждые 100 записей
-// и в конце. Скорость/ETA считают только работу текущего запуска, без checkpoint.
 function progressMetrics(total, completed, attempted, startedAt) {
   const elapsed = Math.max(0, Date.now() - startedAt);
   const fraction = total ? Math.min(1, completed / total) : 1;
@@ -909,7 +865,6 @@ async function main() {
   log('Версия:', BUILD, '| записываю Volume только через подтверждённый POST Publish');
   const { rows, hash } = await inputRows();
   if (PROBE_MEDIA) {
-    // Ровно один публичный GET Media из CSV, без чтения Bitrix Admin и без Strapi POST/PUT.
     const row = rows.find(item => item.documentId === ONLY);
     if (!row?.pictureUrl) throw Error('--only: в CSV для этой записи нет pictureUrl');
     log('PROBE_MEDIA: проверяю публичную картинку без Cookie, Strapi не изменяется:', row.documentId);
@@ -918,15 +873,12 @@ async function main() {
       '| Bitrix ID', row.bitrixId, '| Strapi не менялся.');
     return;
   }
-  // Загружаем весь справочник до первой записи: никакого угадывания Volume ID.
   const catalog = await readVolumeCatalog();
   const journal = await readJournal(hash);
   const reportPath = resolve(APPLY ? 'attributes-import-report.csv' : 'attributes-import-plan.csv');
   const manualPath = resolve('attributes-import-volume-review.csv');
   const duplicatePath = resolve('attributes-import-volume-duplicates.csv');
   const items = APPLY ? journal.items : new Map();
-  // --limit=N выбирает не более N ещё не обработанных строк в порядке CSV.
-  // После пилота checkpoint сохранится; массовый запуск с тем же CSV продолжит.
   const eligible = rows.filter(row => (!ONLY || row.documentId === ONLY));
   const selected = LIMIT === null ? eligible : eligible.filter(row => {
     const old = journal.items.get(row.documentId);
@@ -954,7 +906,6 @@ async function main() {
   for (const [index, row] of selected.entries()) {
     if (requestedStop) break;
     const old = items.get(row.documentId);
-    // Сомнительный исход записи нельзя повторять автоматически.
     const prefix = '[' + (index + 1) + '/' + selected.length + '] ' +
       (row.bitrixId || 'без Bitrix ID') + ' → ' + row.documentId + ':';
     const trace = (...message) => log(prefix, ...message);
@@ -1015,8 +966,6 @@ async function main() {
       showProgress(selected, items, completed, attempted, startedAt);
     }
     if (attempted % 100 === 0 || attempted === selected.length) {
-      // Полный CSV пересоздаём раз в 100 записей, а не после каждой:
-      // на больших входных файлах это устраняет квадратичные дисковые записи.
       await atomicWrite(reportPath, reportCsv(rows, items));
       await atomicWrite(manualPath, volumeManualCsv(rows, items));
       await atomicWrite(duplicatePath, volumeDuplicatesCsv(rows, items));
