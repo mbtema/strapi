@@ -6,12 +6,11 @@
   const TOOLS_BASE = `${RAW_ROOT}tools/`;
   const MANIFEST_URL = `${RAW_ROOT}manifests/tools.json`;
   const OVERLAY_ID = 'tm-tools-launcher-overlay';
-  const TOOL_PATH_RE = /^(?:audits|sync|diagnostics|extractor|pusher)\/[a-z][a-zA-Z0-9-]*\.js$/;
+  const TOOL_PATH_RE = /^(?:sync|diagnostics|extractor|pusher)\/[a-z][a-zA-Z0-9-]*\.js$/;
   const VERSION_RE = /^\d+\.\d+\.\d+$/;
   const ACTIVE_RUNS_KEY = '__tmToolsLauncherActiveRuns';
 
   const TOOL_GROUPS = [
-    { id: 'audits', title: 'audits' },
     { id: 'extractor', title: 'extractor' },
     { id: 'pusher', title: 'pusher' },
     { id: 'sync', title: 'sync' },
