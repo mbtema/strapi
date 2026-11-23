@@ -17,8 +17,8 @@
       "group": "pusher"
     },
     {
-      "file": "syncer/category-relations-ru-kk-sync.js",
-      "version": "1.0.3",
+      "file": "syncer/categoryRelations.js",
+      "version": "2.0.0",
       "group": "syncer"
     },
     {

@@ -1,0 +1,567 @@
+(async () => {
+  'use strict';
+
+  const TAG = '[categoryRelations]';
+  const UID = 'api::category.category';
+  const PRODUCT_UID = 'api::product.product';
+  const FIELDS = ['parent', 'categories', 'product'];
+  const PAGE_SIZE = 100;
+  const CHUNK_SIZE = 20;
+  const RUN_KEY = '__tmCategoryRelationsRunning';
+  const route = '/admin/content-manager/collection-types/' + UID + '/';
+  const pathname = location.pathname;
+  const categoryId = pathname.startsWith(route)
+    ? decodeURIComponent(pathname.slice(route.length))
+    : '';
+
+  if (!categoryId || categoryId.includes('/')) {
+    console.error(TAG, 'Открой запись Category в Strapi Admin');
+    return;
+  }
+  if (window[RUN_KEY]) {
+    console.warn(TAG, 'Уже выполняется');
+    return;
+  }
+
+  window[RUN_KEY] = true;
+  delete window.categoryRelationsStop;
+  const report = {
+    categoryId,
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    plan: {},
+    skipped: [],
+    operations: [],
+    published: [],
+    errors: [],
+    counters: { GET: 0, PUT: 0, POST: 0, retries: 0 },
+    pending: null
+  };
+  window.categoryRelationsReport = report;
+
+  const seenSkips = new Set();
+  const schemas = new Map();
+  const components = new Map();
+  const targetCache = new Map();
+  let categorySchema;
+
+  function ensure(condition, reason) {
+    if (!condition) throw Error(reason);
+  }
+
+  function token() {
+    let value = localStorage.getItem('jwtToken');
+    try { value = JSON.parse(value); } catch {}
+    ensure(typeof value === 'string' && value.trim(), 'Нет Admin jwtToken');
+    return value.trim().replace(/^Bearer\s+/i, '');
+  }
+
+  function stopCheck() {
+    ensure(window.categoryRelationsStop !== true, 'Остановлено пользователем');
+  }
+
+  function same(a, b) {
+    const normalize = value => JSON.stringify(value, (_, current) =>
+      current && typeof current === 'object' && !Array.isArray(current)
+        ? Object.fromEntries(Object.keys(current).sort().map(key => [key, current[key]]))
+        : current);
+    return normalize(a) === normalize(b);
+  }
+
+  const idsOf = rows => rows.map(row => row.documentId).sort();
+  const names = rows => new Set(idsOf(rows));
+  const sortUnique = values => [...new Set(values)].sort();
+  const entryPath = (uid, id, locale, status = 'draft') =>
+    '/content-manager/collection-types/' + uid + '/' + encodeURIComponent(id) +
+    '?locale=' + locale + '&status=' + status;
+
+  async function request(method, path, payload, allow404 = false) {
+    const attempts = method === 'GET' ? 3 : 1;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      report.counters[method]++;
+      let response, body;
+      try {
+        response = await fetch(path, {
+          method,
+          credentials: 'include',
+          cache: 'no-store',
+          headers: {
+            Authorization: 'Bearer ' + token(),
+            Accept: 'application/json',
+            ...(payload === undefined ? {} : { 'Content-Type': 'application/json' })
+          },
+          ...(payload === undefined ? {} : { body: JSON.stringify(payload) })
+        });
+        body = await response.text();
+      } catch (error) {
+        if (method !== 'GET' || attempt === attempts)
+          throw Error(method + ' network ' + path + ': ' + error.message);
+        report.counters.retries++;
+        await new Promise(resolve => setTimeout(resolve, attempt * 450));
+        continue;
+      }
+
+      if (response.status === 404 && allow404) return null;
+      let data;
+      try { data = body ? JSON.parse(body) : null; }
+      catch { throw Error('Некорректный JSON: ' + method + ' ' + path); }
+      if (response.ok) return data;
+      if (method === 'GET' && attempt < attempts &&
+          [408, 429, 500, 502, 503, 504].includes(response.status)) {
+        report.counters.retries++;
+        await new Promise(resolve => setTimeout(resolve, attempt * 600));
+        continue;
+      }
+      throw Error(method + ' HTTP ' + response.status + ' ' + path + ': ' +
+        (data?.error?.message || body.slice(0, 180)));
+    }
+  }
+
+  async function detail(uid, id, locale = 'kk', status = 'draft', optional = false) {
+    const data = await request('GET', entryPath(uid, id, locale, status), undefined, optional);
+    if (data === null) return null;
+    const row = data?.data;
+    if (optional && (!row || !Object.keys(row).length)) return null;
+    ensure(row && row.documentId === id && row.locale === locale,
+      'Неверный ответ ' + uid + '/' + id + '/' + locale + '/' + status);
+    if (status === 'published' && !row.publishedAt) return null;
+    return row;
+  }
+
+  async function relations(uid, id, field, locale, count) {
+    if (count === 0) return [];
+    const base = '/content-manager/relations/' + uid + '/' +
+      encodeURIComponent(id) + '/' + field;
+    const result = [];
+    const unique = new Set();
+    let total = null, pageCount = null;
+    for (let page = 1; page <= 10000; page++) {
+      const params = new URLSearchParams({
+        locale, status: 'draft', page: String(page), pageSize: String(PAGE_SIZE)
+      });
+      const data = await request('GET', base + '?' + params);
+      const pagination = data?.pagination;
+      ensure(Array.isArray(data?.results) &&
+        Number.isSafeInteger(pagination?.total) && pagination.total >= 0 &&
+        Number.isSafeInteger(pagination?.pageCount) && pagination.pageCount >= 0,
+        'Некорректная пагинация ' + field + '/' + id);
+      if (total === null) {
+        total = pagination.total;
+        pageCount = pagination.pageCount;
+      }
+      ensure(total === pagination.total && pageCount === pagination.pageCount,
+        'Пагинация изменилась ' + field + '/' + id);
+      for (const item of data.results) {
+        ensure(typeof item?.documentId === 'string' && item.documentId &&
+          Number.isSafeInteger(item.id) && item.id > 0 &&
+          !unique.has(item.documentId), 'Некорректная связь ' + field + '/' + id);
+        unique.add(item.documentId);
+        result.push({ documentId: item.documentId, id: item.id, locale });
+      }
+      if (page >= pageCount) break;
+      ensure(data.results.length > 0, 'Пустая промежуточная страница ' + field);
+    }
+    ensure(result.length === total && (count == null || result.length === count),
+      'Неполный набор связей ' + field + '/' + id);
+    return result.sort((a, b) => a.documentId.localeCompare(b.documentId));
+  }
+
+  async function links(uid, id, field, locale = 'kk', knownRow = null) {
+    const row = knownRow || await detail(uid, id, locale);
+    const count = row[field]?.count;
+    ensure(Number.isSafeInteger(count) && count >= 0,
+      'Нет точного count ' + uid + '/' + id + '/' + field + '/' + locale);
+    return relations(uid, id, field, locale, count);
+  }
+
+  async function rootSnapshot() {
+    const ru = await detail(UID, categoryId, 'ru');
+    const kk = await detail(UID, categoryId, 'kk', 'draft', true);
+    ensure(kk, 'У Category ' + categoryId + ' отсутствует KK-локаль. Синхронизация остановлена без записей');
+    const ruLinks = {}, kkLinks = {};
+    for (const field of FIELDS) {
+      ruLinks[field] = await links(UID, categoryId, field, 'ru', ru);
+      kkLinks[field] = await links(UID, categoryId, field, 'kk', kk);
+    }
+    return { ru, kk, ruLinks, kkLinks };
+  }
+
+  async function target(uid, id) {
+    const key = uid + '/' + id;
+    if (!targetCache.has(key)) {
+      const row = await detail(uid, id, 'kk', 'draft', true);
+      targetCache.set(key, row
+        ? { id: row.id, documentId: id, locale: 'kk' }
+        : null);
+    }
+    return targetCache.get(key);
+  }
+
+  function skip(field, id) {
+    const key = field + '/' + id;
+    if (seenSkips.has(key)) return;
+    seenSkips.add(key);
+    report.skipped.push({
+      field,
+      documentId: id,
+      reason: 'Отсутствует KK-локаль связанной записи'
+    });
+  }
+
+  const system = new Set([
+    'id', 'documentId', 'locale', 'status', 'createdAt', 'updatedAt',
+    'publishedAt', 'createdBy', 'updatedBy', 'localizations', '__pivot'
+  ]);
+
+  function normalizeField(def, raw, label) {
+    ensure(raw !== undefined, 'Нет поля ' + label + ' в CMS');
+    if (raw === null) return null;
+    if (def.type === 'media') {
+      const mediaId = item => {
+        const id = Number.isSafeInteger(item) ? item : item?.id;
+        ensure(Number.isSafeInteger(id) && id > 0, 'Нет media id ' + label);
+        return id;
+      };
+      if (!def.multiple) return mediaId(raw);
+      ensure(Array.isArray(raw), 'Неверный media list ' + label);
+      return raw.map(mediaId);
+    }
+    if (def.type === 'component') {
+      const convert = (item, name) => normalizeComponent(def.component, item, name);
+      if (def.repeatable) {
+        ensure(Array.isArray(raw), 'Неверный component list ' + label);
+        return raw.map((item, index) => convert(item, label + '[' + index + ']'));
+      }
+      return convert(raw, label);
+    }
+    if (def.type === 'dynamiczone') {
+      ensure(Array.isArray(raw), 'Неверная dynamic zone ' + label);
+      return raw.map((item, index) => {
+        ensure(def.components?.includes(item?.__component),
+          'Неизвестный компонент ' + label);
+        return {
+          __component: item.__component,
+          ...normalizeComponent(item.__component, item, label + '[' + index + ']')
+        };
+      });
+    }
+    if (def.type === 'relation') {
+      const count = raw?.count ?? (Array.isArray(raw) ? raw.length : raw?.documentId ? 1 : 0);
+      ensure(count === 0, 'Неподдерживаемая вложенная связь ' + label);
+      return { connect: [], disconnect: [] };
+    }
+    ensure([
+      'string', 'text', 'richtext', 'email', 'enumeration', 'json',
+      'blocks', 'integer', 'biginteger', 'float', 'decimal', 'boolean',
+      'date', 'time', 'datetime', 'uid', 'password'
+    ].includes(def.type), 'Неизвестный тип поля ' + label + ': ' + def.type);
+    return raw;
+  }
+
+  function normalizeComponent(uid, raw, label) {
+    if (raw == null) return null;
+    const component = components.get(uid);
+    ensure(component?.attributes, 'Нет схемы компонента ' + uid);
+    const result = {};
+    for (const [name, def] of Object.entries(component.attributes)) {
+      if (system.has(name)) continue;
+      result[name] = normalizeField(def, raw[name], label + '.' + name);
+    }
+    return result;
+  }
+
+  function fields(row) {
+    const result = {};
+    for (const [name, def] of Object.entries(categorySchema.attributes)) {
+      if (system.has(name) || def.type === 'relation') continue;
+      result[name] = normalizeField(def, row[name], name);
+    }
+    return result;
+  }
+
+  function publishPayload(row) {
+    const payload = { locale: 'kk' };
+    for (const [name, def] of Object.entries(categorySchema.attributes)) {
+      if (system.has(name)) continue;
+      payload[name] = def.type === 'relation'
+        ? { connect: [], disconnect: [] }
+        : normalizeField(def, row[name], name);
+    }
+    return payload;
+  }
+
+  async function schemaCheck() {
+    const [types, parts] = await Promise.all([
+      request('GET', '/content-manager/content-types'),
+      request('GET', '/content-manager/components')
+    ]);
+    ensure(Array.isArray(types?.data) && Array.isArray(parts?.data),
+      'Не удалось прочитать схемы CMS');
+    for (const type of types.data) schemas.set(type.uid, type);
+    for (const part of parts.data) components.set(part.uid, part);
+    categorySchema = schemas.get(UID);
+    ensure(categorySchema?.attributes, 'Нет схемы Category');
+    ensure(categorySchema.attributes.parent?.target === UID &&
+      categorySchema.attributes.categories?.mappedBy === 'parent' &&
+      categorySchema.attributes.product?.target === PRODUCT_UID &&
+      categorySchema.attributes.product?.mappedBy === 'categories',
+      'Изменилась схема связей Category');
+  }
+
+  async function writeRelation(id, field, connect, disconnect, expected) {
+    stopCheck();
+    const beforeRU = await detail(UID, id, 'ru');
+    const beforeKK = await detail(UID, id, 'kk');
+    const ruFields = fields(beforeRU);
+    const kkFields = fields(beforeKK);
+    const previous = await links(UID, id, field, 'kk', beforeKK);
+    const nextIds = sortUnique([
+      ...previous.filter(item =>
+        !disconnect.some(removed => removed.documentId === item.documentId))
+        .map(item => item.documentId),
+      ...connect.map(item => item.documentId)
+    ]);
+    ensure(same(nextIds, sortUnique(expected)),
+      'План изменился перед записью ' + id + '/' + field);
+    const path = '/content-manager/collection-types/' + UID + '/' +
+      encodeURIComponent(id) + '?locale=kk';
+    const payload = {
+      locale: 'kk',
+      [field]: { connect, disconnect }
+    };
+    report.pending = { stage: 'save', id, field, expected: nextIds };
+    let writeError = null;
+    try { await request('PUT', path, payload); }
+    catch (error) { writeError = error; }
+    const afterRU = await detail(UID, id, 'ru');
+    const afterKK = await detail(UID, id, 'kk');
+    ensure(same(fields(afterRU), ruFields) && same(fields(afterKK), kkFields),
+      'ПОСЛЕ ЗАПИСИ изменились поля RU или KK: ' + id + '/' + field +
+      '. Остановлено, проверь исходные значения в CMS');
+    const actual = idsOf(await links(UID, id, field, 'kk', afterKK));
+    ensure(same(actual, nextIds),
+      'Связь ' + id + '/' + field + ' не совпала после PUT' +
+      (writeError ? ': ' + writeError.message : ''));
+    if (writeError) console.warn(TAG, 'PUT вернул ошибку, но GET подтвердил изменение', id, field);
+    report.operations.push({
+      documentId: id, field, connect: connect.length,
+      disconnect: disconnect.length, verified: true
+    });
+    report.pending = null;
+    console.log(TAG, 'Сохранено', id, field, '+' + connect.length, '-' + disconnect.length);
+  }
+
+  async function publish(id, changedFields) {
+    stopCheck();
+    const previousPublished = await detail(UID, id, 'kk', 'published', true);
+    const row = await detail(UID, id, 'kk');
+    const beforeRU = await detail(UID, id, 'ru');
+    const beforeFields = fields(row);
+    const ruFields = fields(beforeRU);
+    const payload = publishPayload(row);
+    const path = '/content-manager/collection-types/' + UID + '/' +
+      encodeURIComponent(id) + '/actions/publish?locale=kk';
+    report.pending = { stage: 'publish', id, changedFields };
+    let writeError = null;
+    try { await request('POST', path, payload); }
+    catch (error) { writeError = error; }
+    const draft = await detail(UID, id, 'kk');
+    const ruAfter = await detail(UID, id, 'ru');
+    const published = await detail(UID, id, 'kk', 'published', true);
+    ensure(published?.publishedAt && published.publishedAt !== previousPublished?.publishedAt,
+      'Не удалось подтвердить новую KK Published версию: ' + id +
+      (writeError ? ': ' + writeError.message : ''));
+    ensure(same(fields(draft), beforeFields) && same(fields(ruAfter), ruFields),
+      'Publish изменил поля RU/KK: ' + id);
+    for (const field of changedFields) {
+      const actual = idsOf(await links(UID, id, field, 'kk', draft));
+      const targetIds = idsOf(await links(UID, id, field, 'kk', row));
+      ensure(same(actual, targetIds), 'Draft связи изменились при Publish: ' + id + '/' + field);
+    }
+    report.published.push(id);
+    report.pending = null;
+    if (writeError) console.warn(TAG, 'POST вернул ошибку, но Published подтверждён', id);
+    console.log(TAG, 'Опубликована KK Category', id);
+  }
+
+  function outputSkips() {
+    report.skipped.sort((a, b) =>
+      a.field.localeCompare(b.field) || a.documentId.localeCompare(b.documentId));
+    if (!report.skipped.length) {
+      console.log(TAG, 'Пропущенных связей без KK-локали: 0');
+      return;
+    }
+    console.warn(TAG, 'Пропущены связи без KK-локали: ' + report.skipped.length);
+    console.table(report.skipped);
+    const columns = ['field', 'documentId', 'reason'];
+    const csv = '\uFEFF' + columns.join(';') + '\n' +
+      report.skipped.map(row => columns.map(key =>
+        '"' + String(row[key]).replace(/"/g, '""') + '"').join(';')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = 'category-relations-missing-kk.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+  }
+
+  try {
+    stopCheck();
+    await schemaCheck();
+    const root = await rootSnapshot();
+    const rootId = { id: root.kk.id, documentId: categoryId, locale: 'kk' };
+    ensure(Number.isSafeInteger(rootId.id) && rootId.id > 0, 'Нет numeric id текущей KK Category');
+
+    const desired = {};
+    for (const field of FIELDS) {
+      desired[field] = [];
+      const targetUid = field === 'product' ? PRODUCT_UID : UID;
+      const current = names(root.kkLinks[field]);
+      for (const item of root.ruLinks[field]) {
+        if (current.has(item.documentId)) {
+          desired[field].push(item.documentId);
+          continue;
+        }
+        const match = await target(targetUid, item.documentId);
+        if (match) desired[field].push(item.documentId);
+        else skip(field, item.documentId);
+      }
+      desired[field] = sortUnique(desired[field]);
+      const old = idsOf(root.kkLinks[field]);
+      report.plan[field] = {
+        ru: root.ruLinks[field].length,
+        kk: old.length,
+        add: desired[field].filter(id => !old.includes(id)).length,
+        disconnect: old.filter(id => !desired[field].includes(id)).length
+      };
+    }
+
+    const parentAdd = desired.parent.filter(id =>
+      !names(root.kkLinks.parent).has(id));
+    const parentRemove = root.kkLinks.parent.filter(row =>
+      !desired.parent.includes(row.documentId));
+    const productAdd = desired.product.filter(id =>
+      !names(root.kkLinks.product).has(id));
+    const productRemove = root.kkLinks.product.filter(row =>
+      !desired.product.includes(row.documentId));
+    const categoryAdd = desired.categories.filter(id =>
+      !names(root.kkLinks.categories).has(id));
+    const categoryRemove = root.kkLinks.categories.filter(row =>
+      !desired.categories.includes(row.documentId));
+
+    const childChanges = [];
+    for (const id of categoryAdd) childChanges.push({ id, added: true });
+    for (const row of categoryRemove) childChanges.push({ id: row.documentId, added: false });
+    childChanges.sort((a, b) => a.id.localeCompare(b.id));
+
+    for (const change of childChanges) {
+      const childRU = await detail(UID, change.id, 'ru');
+      const childKK = await detail(UID, change.id, 'kk');
+      const sourceParents = idsOf(await links(UID, change.id, 'parent', 'ru', childRU));
+      const targetParents = await links(UID, change.id, 'parent', 'kk', childKK);
+      if (change.added) {
+        ensure(sourceParents.includes(categoryId),
+          'RU child.parent не указывает на текущую Category: ' + change.id);
+      } else {
+        ensure(targetParents.some(row => row.documentId === categoryId),
+          'KK child.parent изменился до preflight: ' + change.id);
+      }
+      change.previous = targetParents;
+    }
+
+    console.table(Object.entries(report.plan).map(([field, values]) => ({
+      field, ...values
+    })));
+    if (report.skipped.length) console.table(report.skipped);
+
+    const changes = Object.values(report.plan)
+      .reduce((total, item) => total + item.add + item.disconnect, 0);
+    const existingPublication = await detail(UID, categoryId, 'kk', 'published', true);
+    if (!changes && existingPublication && root.kk.status !== 'modified') {
+      report.status = report.skipped.length ? 'partial' : 'completed';
+    } else if (!confirm(
+      'Category ' + categoryId + '\n' +
+      'RU → KK: parent, categories, product\n' +
+      'Добавить: ' + Object.values(report.plan).reduce((n, v) => n + v.add, 0) +
+      ', удалить лишних: ' +
+      Object.values(report.plan).reduce((n, v) => n + v.disconnect, 0) +
+      '\nПропустить без KK: ' + report.skipped.length +
+      '\nОпубликовать текущую и изменённые дочерние KK-категории?'
+    )) {
+      report.status = 'cancelled';
+    } else {
+      if (parentAdd.length || parentRemove.length) {
+        const connect = [];
+        for (const id of parentAdd) connect.push(await target(UID, id));
+        await writeRelation(categoryId, 'parent', connect, parentRemove, desired.parent);
+      }
+
+      if (productAdd.length || productRemove.length) {
+        const operations = [
+          ...productRemove.map(value => ({ type: 'disconnect', value })),
+          ...await Promise.all(productAdd.map(async id => ({
+            type: 'connect', value: await target(PRODUCT_UID, id)
+          })))
+        ];
+        let updated = idsOf(root.kkLinks.product);
+        for (let index = 0; index < operations.length; index += CHUNK_SIZE) {
+          const batch = operations.slice(index, index + CHUNK_SIZE);
+          const connect = batch.filter(item => item.type === 'connect').map(item => item.value);
+          const disconnect = batch.filter(item => item.type === 'disconnect').map(item => item.value);
+          updated = sortUnique([
+            ...updated.filter(id => !disconnect.some(item => item.documentId === id)),
+            ...connect.map(item => item.documentId)
+          ]);
+          await writeRelation(categoryId, 'product', connect, disconnect, updated);
+        }
+      }
+
+      for (const child of childChanges) {
+        stopCheck();
+        const row = await detail(UID, child.id, 'kk');
+        const previous = await links(UID, child.id, 'parent', 'kk', row);
+        const expected = child.added ? [categoryId] : [];
+        const connect = child.added ? [rootId] : [];
+        if (same(idsOf(previous), expected)) continue;
+        await writeRelation(child.id, 'parent', connect, previous, expected);
+        const actual = idsOf(await links(UID, categoryId, 'categories', 'kk'));
+        ensure(actual.includes(child.id) === child.added,
+          'Обратная связь categories не обновилась: ' + child.id);
+        await publish(child.id, ['parent']);
+      }
+
+      const finalLinks = {};
+      for (const field of FIELDS)
+        finalLinks[field] = idsOf(await links(UID, categoryId, field, 'kk'));
+      for (const field of FIELDS)
+        ensure(same(finalLinks[field], desired[field]),
+          'Итоговая KK связь ' + field + ' не совпала с планом');
+
+      const updatedRoot = await detail(UID, categoryId, 'kk');
+      if (changes || !existingPublication || updatedRoot.status === 'modified')
+        await publish(categoryId, FIELDS);
+
+      for (const field of FIELDS) {
+        const finalIds = idsOf(await links(UID, categoryId, field, 'kk'));
+        ensure(same(finalIds, desired[field]), 'Проверка после Publish: ' + field);
+      }
+      report.status = report.skipped.length ? 'partial' : 'completed';
+    }
+  } catch (error) {
+    report.status = 'stopped';
+    report.errors.push(error.message);
+    console.error(TAG, 'ОСТАНОВЛЕНО:', error.message, 'documentId:', categoryId);
+  } finally {
+    report.finishedAt = new Date().toISOString();
+    try { outputSkips(); }
+    catch (error) { console.error(TAG, 'Ошибка экспорта CSV:', error.message); }
+    window[RUN_KEY] = false;
+    console.log(TAG, 'Итог:', report.status, report.counters,
+      'пропущено:', report.skipped.length, 'опубликовано:', report.published.length);
+    console.log(TAG, 'Детали: window.categoryRelationsReport');
+  }
+})();

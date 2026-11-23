@@ -241,6 +241,16 @@ Tool-файлы не содержат собственные metadata-блоки
 
 Managed regular tools получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
 
+## CANONICAL — categoryRelations: синхронизация связей одной Category RU → KK (2026-11-23)
+
+- Runtime: `extension/tools/syncer/categoryRelations.js`; запуск из карточки конкретной Category, `documentId` из URL. Нет обхода каталога и создания локалей.
+- Scope: `parent`, `categories`, `product`. RU Draft — источник; KK Draft той же Category — цель. Diff по `documentId`: `connect` недостающих доступных и `disconnect` лишних. Остальные поля не изменяются.
+- `categories` — обратная `mappedBy=parent`: добавление/удаление требует `PUT parent` только непосредственно затронутых KK child Category. `product` — `mappedBy=Product.categories`, записывается в Category `product` через прежний Content Manager PUT; требуется GET verify результата, неподтверждённое изменение останавливает процесс.
+- Если у RU relation target нет KK Draft, пропустить только эту связь, продолжить остальные, статус `partial`, `console.table` и CSV `category-relations-missing-kk.csv` (field;documentId;reason), `window.categoryRelationsReport`. Если у текущей Category нет KK Draft — `console.error` и остановка без записей.
+- После `confirm` — только необходимые PUT; публикация изменённой KK child Category после обновления `parent`, затем текущей KK Category; RU не публикуется, дочерние локали и Product не создаются. GET verify после каждого write; нет auto-retry PUT/POST; при неожиданном изменении RU/KK полей остановка, данные о последней операции — `report.pending`.
+- Подтверждены только mock-сценарии: add/disconnect/skip, публикация изменённых child, отсутствие собственной KK (0 writes), неудача Publish, фиксация RU field drift. Live CMS Save/Publish новой реализации пока не подтверждён; нужен контрольный запуск на одной Category.
+
+
 Группа `diagnostics` переименована в `service` 2026-11-23 без изменения функций инструментов: `service/dom.js` копирует DOM, `service/network.js` записывает Network fetch/XHR, `service/styles.js` формирует design snapshot. Сервисные tools служат для передачи предметного контекста CMS. Существующие fallback-имена JSON (`network-recorder.json`, `style-stealer.json`) и структура выходных данных сохранены.
 
 ## CANONICAL — pusher отключения Product по карточке Brand (2026-11-23, mock)

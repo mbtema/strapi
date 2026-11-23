@@ -77,7 +77,7 @@ Browser tools запускаются через `Alt+P`. `syncer/` — инст�
 - `service/dom.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `service/network.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
 - `service/styles.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
-- `syncer/category-relations-ru-kk-sync.js` — на открытой карточке Category сравнивает `parent`, `categories`, `product` в RU/KK Draft по `documentId`; после preflight и подтверждения добавляет недостающие KK связи (без disconnect), обратные `categories` восстанавливает через `KK child.parent`, затем публикует RU и KK текущей категории через Strapi Admin. Не создаёт KK локали и не публикует Product/дочерние категории. Проверяет результаты и сохраняет IndexedDB pending-journal; при неподтверждённом write останавливается без повторного запроса, выводит план и итог в Console без скачивания файлов. KK Published может скрывать Draft-only Product. Запуск из открытой карточки `Category` → `Alt+P` → `syncer`.
+- `syncer/categoryRelations.js` — синхронизирует `parent`, `categories`, `product` из RU Draft в KK Draft одной открытой Category: добавляет отсутствующие и удаляет лишние связи; `categories` обновляет через `KK child.parent`. Для недоступных KK-локалей связанных записей пропускает только соответствующие связи и формирует `category-relations-missing-kk.csv`, а при отсутствии KK у текущей Category останавливается без записей. После подтверждения публикует KK текущей и изменённых дочерних Category (RU не публикует), выполняет GET-проверки записей. Результат — `window.categoryRelationsReport`; запись не повторяется автоматически. Запуск: Category → `Alt+P` → `syncer`.
 - `syncer/layout-sync.js` — service dry-run для Product: читает фактический порядок и строки полей из UI после `product-sections`, во вкладке `Фильтры` учитывает порядок смысловых групп, сохраняет текущий `size` каждого поля, показывает diff и только после подтверждения записывает `layouts.edit` через штатный Content Manager configuration API с последующим GET verify.
 - `extension/manifests/tools.json` — runtime-источник `file`, semver `version` и `group` для Tools Launcher; `file` хранит путь относительно `extension/tools/`, а `group` обязан совпадать с первой папкой пути (`extractor`, `pusher`, `syncer`, `service`).
 
@@ -184,6 +184,7 @@ README обновляется, когда меняются структура, �
 │       ├── pusher/
 │       │   └── brandProductsDeactivate.js
 │       ├── syncer/
+│       │   ├── categoryRelations.js
 │       │   ├── layout-sync.js
 │       │   ├── products-category-forward-sync.js
 │       │   └── products-category-mirror-sync.js
