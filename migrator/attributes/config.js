@@ -1,9 +1,3 @@
-// Этап 1: Strapi Admin -> Console -> attributes-config.csv
-// Только GET. Все торговые предложения locale=ru, без фильтров active/published.
-// CSV: documentId;barcode;active;hasDetailPicture;shade;shadeDocumentId;volume;volumeDocumentId;shadeHex;volumeValue.
-// shade/volume — name связанных записей (может отсутствовать); *DocumentId — их идентификаторы Strapi.
-// Если имя целевой записи недоступно, сохраняем её documentId и фиксируем случай в отчёте.
-// Только GET, без привязки к Product.
 (async () => {
   'use strict';
 
@@ -18,7 +12,6 @@
     maxPages: 10000
   };
   const AUTH = {
-    // Необязательно: вставь JWT вручную. Если пусто, берётся jwtToken из localStorage Strapi Admin.
     jwtToken: ''
   };
   const UID = 'api::attribute.attribute';
@@ -98,8 +91,6 @@
         sort: 'barcode:ASC',
         locale: CFG.locale
       });
-      // Для массового экспорта явно запрашиваем только ID медиа, а не весь файл.
-      // Если Content Manager не вернёт поле, экспорт остановится без CSV.
       params.append('populate[detail_picture][fields][0]', 'id');
       params.append('populate[shade][fields][0]', 'name');
       params.append('populate[volume][fields][0]', 'name');
@@ -117,8 +108,6 @@
 
     const pages = new Array(Math.max(pageCount, 1));
 
-    // Наличие Media подтверждаем по реальному ID. Не считаем любой непустой
-    // объект медиа: таблица может возвращать служебную структуру без файла.
     function hasDetailPicture(raw, docId) {
       const value = raw && typeof raw === 'object' && 'data' in raw ? raw.data : raw;
       if (value == null || value === '') return false;
@@ -222,10 +211,8 @@
     }
     const duplicateBarcodes = [...barcodeCounts.values()].filter(n => n > 1).length;
 
-    // Сначала используем явный populate из списка. Если он неполный,
-    // обращаемся к native relations API, не считая {count:...} значением.
     function relationValue(raw, context) {
-      if (raw === undefined) return null; // Поле не пришло: нужен отдельный GET.
+      if (raw === undefined) return null;
       let data = raw && typeof raw === 'object' && own(raw, 'data') ? raw.data : raw;
       if (data == null || data === '') return { name: '', documentId: '' };
       if (Array.isArray(data)) {
@@ -236,8 +223,6 @@
       const item = unwrap(data);
       if (item && typeof item === 'object' &&
           typeof item.documentId === 'string' && item.documentId.trim()) {
-        // В Content Manager для отдельных связей name отсутствует или заменяется ID.
-        // Это не делает существующий relation пустым.
         return {
           name: typeof item.name === 'string' ? item.name : '',
           documentId: item.documentId
@@ -271,8 +256,6 @@
             }
             return typeof item.name === 'string' ? item.name : '';
           } catch (error) {
-            // Полное значение relation уже известно по documentId.
-            // Ошибка чтения только его подписи не должна отменять весь экспорт.
             nameLookupFailures++;
             return '';
           }
@@ -382,9 +365,6 @@
     }
 
 
-    // Справочники загружаем один раз, а не делаем GET для каждого Attribute:
-    // shade.hexes[].hex (может быть несколько HEX), volume.value (число).
-    // Не запрашиваем offers и не открываем карточки Product.
     const SHADE_UID = 'api::shade.shade';
     const VOLUME_UID = 'api::volume.volume';
     const dictionaryStats = {
@@ -400,7 +380,7 @@
 
     function targetValue(item, field, context) {
       if (field === 'shade') {
-        if (!own(item, 'hexes')) return undefined; // Неполный list API.
+        if (!own(item, 'hexes')) return undefined;
         const raw = item.hexes && typeof item.hexes === 'object' &&
           own(item.hexes, 'data') ? item.hexes.data : item.hexes;
         if (raw == null) return '';
@@ -515,7 +495,6 @@
         if (value !== undefined) values.set(item.documentId, value);
       }
 
-      // Точечно читаем только те целевые записи, которые list API не раскрыл.
       const pending = [...wanted].filter(id => !values.has(id));
       let next = 0, resolved = 0, failed = null;
       const uid = field === 'shade' ? SHADE_UID : VOLUME_UID;
@@ -546,7 +525,6 @@
             }
           } catch (e) {
             if (/\bHTTP 404\b/.test(String(e?.message ?? e))) {
-              // Relation существует, но целевая запись недоступна. Не теряем ID.
               values.set(documentId, '');
               dictionaryStats.inaccessibleTargets[field]++;
               if (dictionaryStats.inaccessibleSamples.length < 10) {
@@ -616,7 +594,6 @@
         dictionaryStats.inaccessibleTargets, dictionaryStats.inaccessibleSamples);
     }
 
-    // CSV без преобразования barcode в число: ведущие нули сохраняются.
     const quote = value => '"' + String(value).replace(/"/g, '""') + '"';
     const csv = '\uFEFF' + [
       'documentId;barcode;active;hasDetailPicture;shade;shadeDocumentId;volume;volumeDocumentId;shadeHex;volumeValue',
