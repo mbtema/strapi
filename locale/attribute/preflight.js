@@ -1,7 +1,6 @@
 (async function attributeKKPreflight() {
   'use strict';
   const UID = 'api::attribute.attribute', TAG = '[Attribute KK Preflight]';
-  // Подтверждённые владельцем коллекции общие справочники: без локализации.
   const NONLOCALIZED_TARGETS = new Set(['api::shade.shade', 'api::volume.volume']);
   const ROOT = '/admin/content-manager/collection-types/' + UID + '/';
   const documentId = location.pathname.startsWith(ROOT)
