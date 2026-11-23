@@ -2,11 +2,6 @@
   "schemaVersion": 1,
   "tools": [
     {
-      "file": "audits/attributes-wrong-prices.js",
-      "version": "1.5.0",
-      "group": "audits"
-    },
-    {
       "file": "audits/products-attributes-locale-audit.js",
       "version": "1.0.0",
       "group": "audits"
