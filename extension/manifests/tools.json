@@ -22,9 +22,9 @@
       "group": "audits"
     },
     {
-      "file": "audits/catalog-tree-products.js",
-      "version": "1.1.0",
-      "group": "audits"
+      "file": "extractor/categoryTreeProduct.js",
+      "version": "1.1.1",
+      "group": "extractor"
     },
     {
       "file": "extractor/brandActiveProducts.js",
