@@ -4,7 +4,16 @@
   const TAG = '[categoryRelations]';
   const UID = 'api::category.category';
   const PRODUCT_UID = 'api::product.product';
-  const FIELDS = ['parent', 'categories', 'product'];
+  const BRAND_UID = 'api::brand.brand';
+  const FIELDS = ['parent', 'categories', 'product', 'products', 'brand', 'top_brands'];
+  const TARGET_UID = {
+    parent: UID,
+    categories: UID,
+    product: PRODUCT_UID,
+    products: PRODUCT_UID,
+    brand: BRAND_UID,
+    top_brands: BRAND_UID
+  };
   const PAGE_SIZE = 100;
   const CHUNK_SIZE = 20;
   const RUN_KEY = '__tmCategoryRelationsRunning';
@@ -271,18 +280,22 @@
     return result;
   }
 
-  function fields(row) {
+  function fields(row, uid = UID) {
+    const schema = schemas.get(uid);
+    ensure(schema?.attributes, 'Нет схемы ' + uid);
     const result = {};
-    for (const [name, def] of Object.entries(categorySchema.attributes)) {
+    for (const [name, def] of Object.entries(schema.attributes)) {
       if (system.has(name) || def.type === 'relation') continue;
       result[name] = normalizeField(def, row[name], name);
     }
     return result;
   }
 
-  function publishPayload(row) {
+  function publishPayload(row, uid = UID) {
+    const schema = schemas.get(uid);
+    ensure(schema?.attributes, 'Нет схемы ' + uid);
     const payload = { locale: 'kk' };
-    for (const [name, def] of Object.entries(categorySchema.attributes)) {
+    for (const [name, def] of Object.entries(schema.attributes)) {
       if (system.has(name)) continue;
       payload[name] = def.type === 'relation'
         ? { connect: [], disconnect: [] }
@@ -302,20 +315,42 @@
     for (const part of parts.data) components.set(part.uid, part);
     categorySchema = schemas.get(UID);
     ensure(categorySchema?.attributes, 'Нет схемы Category');
-    ensure(categorySchema.attributes.parent?.target === UID &&
-      categorySchema.attributes.categories?.mappedBy === 'parent' &&
-      categorySchema.attributes.product?.target === PRODUCT_UID &&
-      categorySchema.attributes.product?.mappedBy === 'categories',
-      'Изменилась схема связей Category');
+    const expected = {
+      parent: ['manyToOne', 'inversedBy', 'categories'],
+      categories: ['oneToMany', 'mappedBy', 'parent'],
+      product: ['manyToMany', 'mappedBy', 'categories'],
+      products: ['oneToMany', 'mappedBy', 'category'],
+      brand: ['manyToOne', 'inversedBy', 'categories'],
+      top_brands: ['oneToMany', 'mappedBy', 'category']
+    };
+    for (const [field, [relation, side, opposite]] of Object.entries(expected)) {
+      const def = categorySchema.attributes[field];
+      ensure(def?.type === 'relation' && def.target === TARGET_UID[field] &&
+        def.relation === relation && def[side] === opposite,
+        'Изменилась схема Category.' + field);
+    }
+    const productSchema = schemas.get(PRODUCT_UID)?.attributes;
+    const brandSchema = schemas.get(BRAND_UID)?.attributes;
+    ensure(productSchema?.category?.relation === 'manyToOne' &&
+      productSchema.category.target === UID &&
+      productSchema.category.inversedBy === 'products' &&
+      productSchema.categories?.inversedBy === 'product' &&
+      brandSchema?.category?.relation === 'manyToOne' &&
+      brandSchema.category.target === UID &&
+      brandSchema.category.inversedBy === 'top_brands' &&
+      brandSchema.categories?.mappedBy === 'brand',
+      'Изменилась обратная схема Product/Brand');
   }
 
-  async function writeRelation(id, field, connect, disconnect, expected) {
+  async function writeRelation(uid, id, field, connect, disconnect, expected) {
     stopCheck();
-    const beforeRU = await detail(UID, id, 'ru');
-    const beforeKK = await detail(UID, id, 'kk');
-    const ruFields = fields(beforeRU);
-    const kkFields = fields(beforeKK);
-    const previous = await links(UID, id, field, 'kk', beforeKK);
+    const beforeRU = await detail(uid, id, 'ru', 'draft', uid !== UID);
+    const beforeKK = await detail(uid, id, 'kk');
+    const ruFields = beforeRU ? fields(beforeRU, uid) : null;
+    const ruRelation = uid !== UID && beforeRU
+      ? idsOf(await links(uid, id, field, 'ru', beforeRU)) : null;
+    const kkFields = fields(beforeKK, uid);
+    const previous = await links(uid, id, field, 'kk', beforeKK);
     const nextIds = sortUnique([
       ...previous.filter(item =>
         !disconnect.some(removed => removed.documentId === item.documentId))
@@ -324,65 +359,83 @@
     ]);
     ensure(same(nextIds, sortUnique(expected)),
       'План изменился перед записью ' + id + '/' + field);
-    const path = '/content-manager/collection-types/' + UID + '/' +
+    const path = '/content-manager/collection-types/' + uid + '/' +
       encodeURIComponent(id) + '?locale=kk';
     const payload = {
       locale: 'kk',
       [field]: { connect, disconnect }
     };
-    report.pending = { stage: 'save', id, field, expected: nextIds };
+    report.pending = { stage: 'save', uid, id, field, expected: nextIds };
     let writeError = null;
     try { await request('PUT', path, payload); }
     catch (error) { writeError = error; }
-    const afterRU = await detail(UID, id, 'ru');
-    const afterKK = await detail(UID, id, 'kk');
-    ensure(same(fields(afterRU), ruFields) && same(fields(afterKK), kkFields),
-      'ПОСЛЕ ЗАПИСИ изменились поля RU или KK: ' + id + '/' + field +
+    const afterRU = await detail(uid, id, 'ru', 'draft', uid !== UID);
+    const afterKK = await detail(uid, id, 'kk');
+    ensure(same(afterRU ? fields(afterRU, uid) : null, ruFields) &&
+      same(fields(afterKK, uid), kkFields),
+      'ПОСЛЕ ЗАПИСИ изменились поля RU или KK: ' + uid + '/' + id + '/' + field +
       '. Остановлено, проверь исходные значения в CMS');
-    const actual = idsOf(await links(UID, id, field, 'kk', afterKK));
+    if (uid !== UID && beforeRU) {
+      const actualRU = idsOf(await links(uid, id, field, 'ru', afterRU));
+      ensure(same(actualRU, ruRelation),
+        'KK Save изменил RU relation ' + uid + '/' + id + '/' + field);
+    }
+    const actual = idsOf(await links(uid, id, field, 'kk', afterKK));
     ensure(same(actual, nextIds),
       'Связь ' + id + '/' + field + ' не совпала после PUT' +
       (writeError ? ': ' + writeError.message : ''));
     if (writeError) console.warn(TAG, 'PUT вернул ошибку, но GET подтвердил изменение', id, field);
     report.operations.push({
-      documentId: id, field, connect: connect.length,
+      uid, documentId: id, field, connect: connect.length,
       disconnect: disconnect.length, verified: true
     });
     report.pending = null;
-    console.log(TAG, 'Сохранено', id, field, '+' + connect.length, '-' + disconnect.length);
+    console.log(TAG, 'Сохранено', uid, id, field, '+' + connect.length, '-' + disconnect.length);
   }
 
-  async function publish(id, changedFields) {
+  async function publish(uid, id, changedFields) {
     stopCheck();
-    const previousPublished = await detail(UID, id, 'kk', 'published', true);
-    const row = await detail(UID, id, 'kk');
-    const beforeRU = await detail(UID, id, 'ru');
-    const beforeFields = fields(row);
-    const ruFields = fields(beforeRU);
-    const payload = publishPayload(row);
-    const path = '/content-manager/collection-types/' + UID + '/' +
+    const previousPublished = await detail(uid, id, 'kk', 'published', true);
+    const row = await detail(uid, id, 'kk');
+    const beforeRU = await detail(uid, id, 'ru', 'draft', uid !== UID);
+    const beforeFields = fields(row, uid);
+    const ruFields = beforeRU ? fields(beforeRU, uid) : null;
+    const ruRelations = uid !== UID && beforeRU
+      ? Object.fromEntries(await Promise.all(changedFields.map(async field =>
+          [field, idsOf(await links(uid, id, field, 'ru', beforeRU))])))
+      : null;
+    const payload = publishPayload(row, uid);
+    const path = '/content-manager/collection-types/' + uid + '/' +
       encodeURIComponent(id) + '/actions/publish?locale=kk';
-    report.pending = { stage: 'publish', id, changedFields };
+    report.pending = { stage: 'publish', uid, id, changedFields };
     let writeError = null;
     try { await request('POST', path, payload); }
     catch (error) { writeError = error; }
-    const draft = await detail(UID, id, 'kk');
-    const ruAfter = await detail(UID, id, 'ru');
-    const published = await detail(UID, id, 'kk', 'published', true);
+    const draft = await detail(uid, id, 'kk');
+    const ruAfter = await detail(uid, id, 'ru', 'draft', uid !== UID);
+    const published = await detail(uid, id, 'kk', 'published', true);
     ensure(published?.publishedAt && published.publishedAt !== previousPublished?.publishedAt,
-      'Не удалось подтвердить новую KK Published версию: ' + id +
+      'Не удалось подтвердить новую KK Published версию: ' + uid + '/' + id +
       (writeError ? ': ' + writeError.message : ''));
-    ensure(same(fields(draft), beforeFields) && same(fields(ruAfter), ruFields),
-      'Publish изменил поля RU/KK: ' + id);
-    for (const field of changedFields) {
-      const actual = idsOf(await links(UID, id, field, 'kk', draft));
-      const targetIds = idsOf(await links(UID, id, field, 'kk', row));
-      ensure(same(actual, targetIds), 'Draft связи изменились при Publish: ' + id + '/' + field);
+    ensure(same(fields(draft, uid), beforeFields) &&
+      same(ruAfter ? fields(ruAfter, uid) : null, ruFields),
+      'Publish изменил поля RU/KK: ' + uid + '/' + id);
+    if (ruRelations) {
+      for (const [field, beforeIds] of Object.entries(ruRelations)) {
+        const afterIds = idsOf(await links(uid, id, field, 'ru', ruAfter));
+        ensure(same(beforeIds, afterIds),
+          'KK Publish изменил RU relation ' + uid + '/' + id + '/' + field);
+      }
     }
-    report.published.push(id);
+    for (const field of changedFields) {
+      const actual = idsOf(await links(uid, id, field, 'kk', draft));
+      const targetIds = idsOf(await links(uid, id, field, 'kk', row));
+      ensure(same(actual, targetIds), 'Draft связи изменились при Publish: ' + uid + '/' + id + '/' + field);
+    }
+    report.published.push({ uid, documentId: id });
     report.pending = null;
-    if (writeError) console.warn(TAG, 'POST вернул ошибку, но Published подтверждён', id);
-    console.log(TAG, 'Опубликована KK Category', id);
+    if (writeError) console.warn(TAG, 'POST вернул ошибку, но Published подтверждён', uid, id);
+    console.log(TAG, 'Опубликовано KK', uid, id);
   }
 
   function outputSkips() {
@@ -419,9 +472,13 @@
     const desired = {};
     for (const field of FIELDS) {
       desired[field] = [];
-      const targetUid = field === 'product' ? PRODUCT_UID : UID;
+      const targetUid = TARGET_UID[field];
       const current = names(root.kkLinks[field]);
-      for (const item of root.ruLinks[field]) {
+      if (field === 'products') {
+        ensure(root.ruLinks.products.length === 0,
+          'RU Category.products не пусто: сначала требуется восстановить legacy-нормализацию RU');
+      }
+      for (const item of field === 'products' ? [] : root.ruLinks[field]) {
         if (current.has(item.documentId)) {
           desired[field].push(item.documentId);
           continue;
@@ -444,6 +501,10 @@
       !names(root.kkLinks.parent).has(id));
     const parentRemove = root.kkLinks.parent.filter(row =>
       !desired.parent.includes(row.documentId));
+    const brandAdd = desired.brand.filter(id =>
+      !names(root.kkLinks.brand).has(id));
+    const brandRemove = root.kkLinks.brand.filter(row =>
+      !desired.brand.includes(row.documentId));
     const productAdd = desired.product.filter(id =>
       !names(root.kkLinks.product).has(id));
     const productRemove = root.kkLinks.product.filter(row =>
@@ -473,6 +534,37 @@
       change.previous = targetParents;
     }
 
+    const inverseChanges = [];
+    for (const [field, uid] of [['products', PRODUCT_UID], ['top_brands', BRAND_UID]]) {
+      const have = new Set(idsOf(root.kkLinks[field]));
+      for (const id of sortUnique([
+        ...desired[field].filter(value => !have.has(value)),
+        ...root.kkLinks[field].map(row => row.documentId)
+          .filter(value => !desired[field].includes(value))
+      ])) {
+        const added = desired[field].includes(id);
+        const row = await detail(uid, id, 'kk');
+        const previous = idsOf(await links(uid, id, 'category', 'kk', row));
+        if (added) {
+          ensure(field === 'top_brands',
+            'Legacy products запрещено добавлять');
+          const ruBrand = await detail(uid, id, 'ru');
+          const source = idsOf(await links(uid, id, 'category', 'ru', ruBrand));
+          ensure(same(source, [categoryId]),
+            'RU Brand.category не указывает на Category ' + categoryId + ': ' + id);
+          ensure(!previous.includes(categoryId),
+            'KK Brand.category уже связан, но Category.top_brands не совпадает: ' + id);
+        } else {
+          ensure(same(previous, [categoryId]),
+            'Обратная KK связь ' + uid + '.category изменилась: ' + id);
+        }
+        publishPayload(row, uid);
+        inverseChanges.push({
+          field, uid, id, added, previous, expected: added ? [categoryId] : []
+        });
+      }
+    }
+
     console.table(Object.entries(report.plan).map(([field, values]) => ({
       field, ...values
     })));
@@ -485,19 +577,20 @@
       report.status = report.skipped.length ? 'partial' : 'completed';
     } else if (!confirm(
       'Category ' + categoryId + '\n' +
-      'RU → KK: parent, categories, product\n' +
+      'RU → KK: ' + FIELDS.join(', ') + '\n' +
       'Добавить: ' + Object.values(report.plan).reduce((n, v) => n + v.add, 0) +
       ', удалить лишних: ' +
       Object.values(report.plan).reduce((n, v) => n + v.disconnect, 0) +
       '\nПропустить без KK: ' + report.skipped.length +
-      '\nОпубликовать текущую и изменённые дочерние KK-категории?'
+      '\nОчистка legacy products и синхронизация Brand могут изменить KK Product/Brand.' +
+      '\nСохранить и опубликовать затронутые KK Product, Brand и Category?'
     )) {
       report.status = 'cancelled';
     } else {
       if (parentAdd.length || parentRemove.length) {
         const connect = [];
         for (const id of parentAdd) connect.push(await target(UID, id));
-        await writeRelation(categoryId, 'parent', connect, parentRemove, desired.parent);
+        await writeRelation(UID, categoryId, 'parent', connect, parentRemove, desired.parent);
       }
 
       if (productAdd.length || productRemove.length) {
@@ -516,8 +609,14 @@
             ...updated.filter(id => !disconnect.some(item => item.documentId === id)),
             ...connect.map(item => item.documentId)
           ]);
-          await writeRelation(categoryId, 'product', connect, disconnect, updated);
+          await writeRelation(UID, categoryId, 'product', connect, disconnect, updated);
         }
+      }
+
+      if (brandAdd.length || brandRemove.length) {
+        const connect = [];
+        for (const id of brandAdd) connect.push(await target(BRAND_UID, id));
+        await writeRelation(UID, categoryId, 'brand', connect, brandRemove, desired.brand);
       }
 
       for (const child of childChanges) {
@@ -527,11 +626,27 @@
         const expected = child.added ? [categoryId] : [];
         const connect = child.added ? [rootId] : [];
         if (same(idsOf(previous), expected)) continue;
-        await writeRelation(child.id, 'parent', connect, previous, expected);
+        await writeRelation(UID, child.id, 'parent', connect, previous, expected);
         const actual = idsOf(await links(UID, categoryId, 'categories', 'kk'));
         ensure(actual.includes(child.id) === child.added,
           'Обратная связь categories не обновилась: ' + child.id);
-        await publish(child.id, ['parent']);
+        await publish(UID, child.id, ['parent']);
+      }
+
+      for (const change of inverseChanges) {
+        stopCheck();
+        const row = await detail(change.uid, change.id, 'kk');
+        const previous = await links(change.uid, change.id, 'category', 'kk', row);
+        ensure(same(idsOf(previous), change.previous),
+          'Обратная KK связь изменилась до записи: ' + change.uid + '/' + change.id);
+        const connect = change.added ? [rootId] : [];
+        const disconnect = previous.filter(item => !change.expected.includes(item.documentId));
+        await writeRelation(change.uid, change.id, 'category',
+          connect, disconnect, change.expected);
+        const actualRoot = idsOf(await links(UID, categoryId, change.field, 'kk'));
+        ensure(actualRoot.includes(change.id) === change.added,
+          'Обратная связь Category.' + change.field + ' не обновилась: ' + change.id);
+        await publish(change.uid, change.id, ['category']);
       }
 
       const finalLinks = {};
@@ -543,7 +658,7 @@
 
       const updatedRoot = await detail(UID, categoryId, 'kk');
       if (changes || !existingPublication || updatedRoot.status === 'modified')
-        await publish(categoryId, FIELDS);
+        await publish(UID, categoryId, FIELDS);
 
       for (const field of FIELDS) {
         const finalIds = idsOf(await links(UID, categoryId, field, 'kk'));
