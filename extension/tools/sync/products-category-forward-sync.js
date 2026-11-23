@@ -93,12 +93,6 @@
       target: 'x7z70pjwjjqmhsql4bsgfkle'
     }
 
-    // Добавляй следующие группы source → target сюда:
-    // {
-    //   name: 'Название группы',
-    //   source: 'asianCareCategoryDocumentId',
-    //   target: 'mainCatalogCategoryDocumentId'
-    // }
   ];
 
   const ADAPTIVE = {
