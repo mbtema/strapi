@@ -72,8 +72,8 @@ Browser tools запускаются через `Alt+P`. `syncer/` — инст�
 - `extractor/brandActiveProducts.js` — на открытой карточке Brand читает все страницы relation `products` (RU Draft), проверяет `active=true` у каждого Product и скачивает `brand-active-products.csv` с одним столбцом `productDocumentId`. Запускается из `Alt+P` → `extractor` на открытой карточке Brand.
 - `extractor/categoryTreeProducts.js` — от открытой категории обходит всё поддерево вниз по `categories`, собирает relation `product` на каждом уровне и скачивает `catalog-tree-products.csv` с одной колонкой `documentId`; товары не фильтруются по active/draft/published.
 - `pusher/brandProductsDeactivate.js` — на открытой карточке Brand читает все страницы `Brand.products` (RU Draft), без общего сканирования Products; после подтверждения выполняет контрольный Product и далее батчи по 4: Save `active=false` → GET verify Draft → Publish RU → GET verify Published. При ошибке записи останавливает выдачу новых Product, сохраняет CSV `brand-products-deactivate.csv` с этапом/статусом; без автоматического повтора PUT/POST. Stop: `window.brandProductsDeactivateStop = true`.
-- `syncer/products-category-mirror-sync.js` — зеркально синхронизирует Products внутри настроенных групп из 2+ categories: для каждой группы строит union Products, одним `actions/publish` добавляет Product все недостающие categories этой группы, обрабатывает группы последовательно с live re-check/verify, использует throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
-- `syncer/products-category-forward-sync.js` — односторонне синхронизирует Products по настроенным группам `source → target`: добавляет в target только отсутствующие там Products из source, обратно из target в source ничего не добавляет, выполняет общий dry-run, live re-check/verify по группам, использует тот же throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
+- `syncer/categoryGroupMirror.js` — зеркально синхронизирует Products внутри настроенных групп из 2+ categories: для каждой группы строит union Products, одним `actions/publish` добавляет Product все недостающие categories этой группы, обрабатывает группы последовательно с live re-check/verify, использует throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
+- `syncer/categoryGroupForward.js` — односторонне синхронизирует Products по настроенным группам `source → target`: добавляет в target только отсутствующие там Products из source, обратно из target в source ничего не добавляет, выполняет общий dry-run, live re-check/verify по группам, использует тот же throughput-aware adaptive concurrency без auto-retry POST и скачивает CSV только при ошибках/расхождениях.
 - `service/dom.js` — копирует текущий DOM страницы в Clipboard для диагностики UI.
 - `service/network.js` — Start/Stop recorder для same-origin Strapi `fetch`/XHR: собирает `/api/...`, `/content-manager/...`, `/upload`, request/response context и на Stop копирует JSON dump в Clipboard.
 - `service/styles.js` — снимает design snapshot текущей страницы Strapi: UI-релевантные computed styles, matched CSS rules, `::before` / `::after`, design tokens и отдельные дедуплицированные профили `native` / `modified` / `custom`; `data-tm-created="<extension-id>"` отмечает созданный extension UI, `data-tm-modified="<extension-id>"` — нативный узел внутри custom-контейнера; показывает progress, копирует JSON в Clipboard или скачивает `style-stealer.json`.
@@ -185,8 +185,8 @@ README обновляется, когда меняются структура, �
 │       │   └── brandProductsDeactivate.js
 │       ├── syncer/
 │       │   ├── categoryRelations.js
-│       │   ├── products-category-forward-sync.js
-│       │   └── products-category-mirror-sync.js
+│       │   ├── categoryGroupForward.js
+│       │   └── categoryGroupMirror.js
 │       └── service/
 │           ├── dom.js
 │           ├── layout.js

@@ -1226,7 +1226,7 @@ Outbound contract:
 
 ## CANONICAL — зеркальная синхронизация категорий Products
 
-Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser tool `extension/tools/syncer/products-category-mirror-sync.js` через `MIRROR_SYNC_GROUPS`; рабочая locale только `ru`.
+Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser tool `extension/tools/syncer/categoryGroupMirror.js` через `MIRROR_SYNC_GROUPS`; рабочая locale только `ru`.
 
 Бизнес-правило для одной mirror group:
 - собрать union Products всех Category группы;
@@ -1295,13 +1295,13 @@ Concurrency:
 
 HISTORICAL live benchmark 2026-10-19 для первой mirror group из двух Category: 308 Products были опубликованы без ошибок, verify дал C1=317/C2=317/missing=0 за 37.7 сек. Throughput вырос до ~9.23 req/s на concurrency 20, а ступени 25–40 не дали улучшения и увеличили latency; это подтвердило throughput-aware rollback вместо роста только по отсутствию ошибок.
 
-Current configured groups не дублировать в context: source of truth — live `MIRROR_SYNC_GROUPS` в `extension/tools/syncer/products-category-mirror-sync.js`.
+Current configured groups не дублировать в context: source of truth — live `MIRROR_SYNC_GROUPS` в `extension/tools/syncer/categoryGroupMirror.js`.
 
 Пересечение Category между разными mirror groups сейчас не запрещается и специально не объединяется. Если реальный каталог выявит пересекающиеся группы, сначала отдельно определить бизнес-семантику такого сценария, затем менять workflow.
 
 ## CANONICAL — односторонняя синхронизация категорий Products
 
-Назначение: поддерживать одностороннее включение Products из настроенной source Category в соответствующую target Category. Runtime tool: `extension/tools/syncer/products-category-forward-sync.js`; рабочая locale только `ru`.
+Назначение: поддерживать одностороннее включение Products из настроенной source Category в соответствующую target Category. Runtime tool: `extension/tools/syncer/categoryGroupForward.js`; рабочая locale только `ru`.
 
 Группы задаются вручную через `FORWARD_SYNC_GROUPS` по контракту:
 
@@ -1345,7 +1345,7 @@ CANONICAL run:
 
 Concurrency полностью наследует подтверждённый throughput-aware adaptive механизм mirror-sync parser: старт 10, шаг 5, min 5, max 40, оценка ступени после 20 успешных requests, новая ступень должна улучшить best throughput минимум на 3%, после двух подряд неулучшающих ступеней rollback/lock на best concurrency; найденный уровень переносится между groups. На `429`/`5xx`/network error concurrency снижается и benchmark перезапускается. `POST actions/publish` автоматически не ретраить.
 
-Current configured forward-sync groups не дублировать в context: source of truth — live `FORWARD_SYNC_GROUPS` в `extension/tools/syncer/products-category-forward-sync.js`.
+Current configured forward-sync groups не дублировать в context: source of truth — live `FORWARD_SYNC_GROUPS` в `extension/tools/syncer/categoryGroupForward.js`.
 
 ---
 
