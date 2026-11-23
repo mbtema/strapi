@@ -37,19 +37,19 @@
       "group": "sync"
     },
     {
-      "file": "diagnostics/dom-stealer.js",
-      "version": "1.0.1",
-      "group": "diagnostics"
-    },
-    {
-      "file": "diagnostics/network-recorder.js",
+      "file": "service/dom.js",
       "version": "1.0.2",
-      "group": "diagnostics"
+      "group": "service"
     },
     {
-      "file": "diagnostics/style-stealer.js",
-      "version": "1.2.0",
-      "group": "diagnostics"
+      "file": "service/network.js",
+      "version": "1.0.3",
+      "group": "service"
+    },
+    {
+      "file": "service/styles.js",
+      "version": "1.2.1",
+      "group": "service"
     }
   ]
 }
