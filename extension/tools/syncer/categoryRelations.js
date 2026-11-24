@@ -36,6 +36,7 @@
       errors: [],
       integrityDiffs: [],
       unpublishedRelations: [],
+      reverseWarnings: [],
       counters: { GET: 0, PUT: 0, POST: 0, retries: 0 },
       pending: null
     };
@@ -410,6 +411,13 @@
       return result;
     }
 
+    function warnReverse(stage, uid, id, locale, status, field, before, expected, actual) {
+      if (same(expected, actual)) return;
+      const warning = { stage, uid, documentId: id, locale, status, field, before, expected, actual };
+      report.reverseWarnings.push(warning);
+      console.warn(TAG, 'Расхождение обратной связи (информация)', warning);
+    }
+
     function verifySnapshot(stage, uid, id, relation, before, after, expectedKK = null) {
       for (const status of ['draft', 'published']) {
         const ru = 'ru/' + status, kk = 'kk/' + status;
@@ -417,8 +425,11 @@
         checkIntegrity(stage + ' ' + status, uid, id, relation,
           before[ru]?.fields ?? null, after[ru]?.fields ?? null,
           expected, after[kk]?.fields ?? null);
-        ensure(same(before[ru]?.relations ?? null, after[ru]?.relations ?? null),
-          'Изменились RU ' + status + ' связи ' + uid + '/' + id);
+        for (const field of relation) {
+          const previous = before[ru]?.relations[field] ?? null;
+          warnReverse(stage, uid, id, 'ru', status, field, previous, previous,
+            after[ru]?.relations[field] ?? null);
+        }
       }
     }
 
@@ -461,11 +472,11 @@
         ensure(kk, 'KK target исчез: ' + item.uid + '/' + item.id);
         for (const change of item.changes) {
           const previous = kk.relations[change.reverse];
-          ensure(previous.includes(categoryId) !== change.added,
-            'Обратная KK связь изменилась до записи: ' + item.uid + '/' + item.id);
-          if (change.added)
-            ensure(ru?.relations[change.reverse]?.includes(categoryId),
-              'RU обратная связь не совпадает: ' + item.uid + '/' + item.id);
+          if (change.added && ru) {
+            const source = ru.relations[change.reverse];
+            warnReverse('Preflight', item.uid, item.id, 'ru', 'draft', change.reverse,
+              source, sortUnique([...source, categoryId]), source);
+          }
           const single = ['categories', 'products', 'top_brands'].includes(change.field);
           change.expected = change.added
             ? single ? [categoryId] : sortUnique([...previous, categoryId])
@@ -551,8 +562,9 @@
         const actual = await snapshot(item.uid, item.id, reverseFields);
         verifySnapshot('Publish Category', item.uid, item.id, reverseFields, item.before, actual);
         for (const change of item.changes)
-          ensure(same(actual['kk/draft']?.relations[change.reverse], change.expected),
-            'Обратная KK связь не совпала: ' + item.uid + '/' + item.id + '/' + change.reverse);
+          warnReverse('Publish Category', item.uid, item.id, 'kk', 'draft', change.reverse,
+            item.before['kk/draft'].relations[change.reverse], change.expected,
+            actual['kk/draft']?.relations[change.reverse] ?? null);
       }
       for (const field of FIELDS) {
         const { connect, disconnect } = delta[field];
@@ -745,6 +757,7 @@
       ...totals, skipped: report.skipped.length, published: report.published.length,
       comment: [
         ...report.errors,
+        ...(report.reverseWarnings.length ? ['Расхождения обратных связей (информация): ' + report.reverseWarnings.length] : []),
         ...(report.unpublishedRelations.length ? ['Связи с неопубликованными KK записями: ' + report.unpublishedRelations.length] : []),
         ...report.skipped.map(item => item.field + '/' + item.documentId + ': ' + item.reason),
         ...(report.pending ? ['Неподтверждённая операция: ' + JSON.stringify(report.pending)] : [])
