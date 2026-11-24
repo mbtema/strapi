@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.3.7
+// @version      1.4.0
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifests
 // @match        http://10.10.3.80:1337/admin/*
 // @match        https://strapi.monamie.kz/admin/*
@@ -307,10 +307,11 @@
 
   async function refreshCache(currentCache, options = {}) {
     const silent = options.silent === true;
+    const force = options.force === true;
     const manifest = await loadManifest();
     const signature = getSignature(manifest);
 
-    if (isCacheCurrent(currentCache, manifest, signature)) {
+    if (!force && isCacheCurrent(currentCache, manifest, signature)) {
       return {
         updated: false,
         manifest,
@@ -328,7 +329,7 @@
     const manifestIds = new Set(manifest.map(item => item.id));
 
     const updatedItems = manifest
-      .filter(item => !matchesManifestItem(cachedById.get(item.id), item))
+      .filter(item => force || !matchesManifestItem(cachedById.get(item.id), item))
       .map(item => ({
         id: item.id,
         from: cachedById.get(item.id)?.version || null,
@@ -347,12 +348,12 @@
     const extensions = await Promise.all(
       manifest.map(async item => {
         const cached = cachedById.get(item.id);
-        if (matchesManifestItem(cached, item)) return cached;
+        if (!force && matchesManifestItem(cached, item)) return cached;
 
-        return {
-          ...item,
-          code: await requestText(RAW_ROOT + item.path)
-        };
+        const code = await requestText(RAW_ROOT + item.path);
+        if (!code.trim()) throw new Error('Empty extension source: ' + item.path);
+
+        return { ...item, code };
       })
     );
 
@@ -387,21 +388,31 @@
   }
 
   let manualCheckPromise = null;
+  let manualCheckForced = false;
 
-  async function checkUpdatesNow() {
+  async function checkUpdatesNow(force = false) {
     if (manualCheckPromise) {
+      if (force && !manualCheckForced) {
+        await manualCheckPromise;
+        return checkUpdatesNow(true);
+      }
+
       console.info('[Extensions] Update check is already running.');
       return manualCheckPromise;
     }
 
+    manualCheckForced = force;
     manualCheckPromise = (async () => {
-      console.info('[Extensions] Checking loader and extension updates...');
+      console.info(force
+        ? '[Extensions] Force downloading all extensions...'
+        : '[Extensions] Checking loader and extension updates...');
 
+      await startupRefresh;
       const currentCache = readCache();
 
       const results = await Promise.allSettled([
         checkLoaderVersion(),
-        refreshCache(currentCache, { silent: true })
+        refreshCache(currentCache, { silent: true, force })
       ]);
 
       const loaderResult = results[0];
@@ -465,8 +476,10 @@
         }
 
         if (info.updated) {
-          console.info(
-            '[Extensions] Extension updates downloaded to cache. Reload Strapi to apply them.'
+          console.info(force
+            ? '[Extensions] All extensions downloaded to cache (' + info.manifest.length +
+              '). Reload Strapi to apply them.'
+            : '[Extensions] Extension updates downloaded to cache. Reload Strapi to apply them.'
           );
         }
       } else {
@@ -496,12 +509,11 @@
       };
     })().finally(() => {
       manualCheckPromise = null;
+      manualCheckForced = false;
     });
 
     return manualCheckPromise;
   }
-
-  unsafeWindow.checkUpdates = () => checkUpdatesNow();
 
   const cache = readCache();
 
@@ -509,7 +521,7 @@
     runExtensions(cache.extensions);
   }
 
-  refreshCache(cache).catch(error => {
+  const startupRefresh = refreshCache(cache).catch(error => {
     if (cache?.extensions?.some(isRunnableItem)) {
       console.warn('[Extensions] GitHub unavailable or manifest invalid, using cache', error);
       return;
@@ -517,4 +529,7 @@
 
     console.error('[Extensions] Failed to load extensions', error);
   });
+
+  unsafeWindow.checkUpdates = () => checkUpdatesNow();
+  unsafeWindow.forceUpdate = () => checkUpdatesNow(true);
 })();
