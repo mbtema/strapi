@@ -35,6 +35,7 @@
       published: [],
       errors: [],
       integrityDiffs: [],
+      unpublishedRelations: [],
       counters: { GET: 0, PUT: 0, POST: 0, retries: 0 },
       pending: null
     };
@@ -473,6 +474,41 @@
       }
     }
 
+    function expectedPublishedFields(before, after) {
+      const expected = { ...before['kk/draft'].fields };
+      const actual = after['kk/published']?.fields;
+      const previousKey = before['kk/published']?.fields.key;
+      const ruKey = before['ru/published']?.fields.key;
+      if (expected.key === null && typeof actual?.key === 'string' && actual.key.trim()) {
+        if (previousKey === actual.key || (previousKey == null && ruKey === actual.key))
+          expected.key = actual.key;
+      }
+      return expected;
+    }
+
+    async function verifyPublishedLinks(actual, desired) {
+      const missingVersions = new Map();
+      for (const field of FIELDS) {
+        const have = actual[field];
+        const want = desired[field];
+        ensure(Array.isArray(have) && have.every(id => want.includes(id)),
+          'Лишние KK published связи: ' + field);
+        for (const id of want.filter(id => !have.includes(id))) {
+          const uid = TARGET_UID[field], key = uid + '/' + id;
+          if (!missingVersions.has(key))
+            missingVersions.set(key, !(await detail(uid, id, 'kk', 'published', true)));
+          ensure(missingVersions.get(key),
+            'Отсутствует связь с опубликованной KK записью: ' + field + '/' + id);
+          report.unpublishedRelations.push({ field, documentId: id });
+        }
+      }
+      if (report.unpublishedRelations.length) {
+        console.log(TAG, 'Связи с неопубликованными KK записями сохранены в Draft:',
+          report.unpublishedRelations.length);
+        console.table(report.unpublishedRelations);
+      }
+    }
+
     async function publishCategory(root, desired, delta, affected) {
       stopCheck();
       const before = await snapshot(UID, categoryId, FIELDS);
@@ -484,7 +520,6 @@
       }
       const kk = before['kk/draft'];
       const payload = { ...publishPayload(kk.row), ...delta };
-      const expectedPublished = kk.fields;
       const path = '/content-manager/collection-types/' + UID + '/' +
         encodeURIComponent(categoryId) + '/actions/publish?locale=kk';
       report.pending = { stage: 'publish', uid: UID, id: categoryId, expected: desired };
@@ -495,7 +530,7 @@
         kk.fields, after['kk/draft']?.fields ?? null);
       checkIntegrity('Publish published', UID, categoryId, FIELDS,
         before['ru/published']?.fields ?? null, after['ru/published']?.fields ?? null,
-        expectedPublished, after['kk/published']?.fields ?? null);
+        expectedPublishedFields(before, after), after['kk/published']?.fields ?? null);
       ensure(after['kk/published']?.row.publishedAt &&
         after['kk/published'].row.publishedAt !== before['kk/published']?.row.publishedAt,
         'Не удалось подтвердить новую KK Published версию');
@@ -503,9 +538,13 @@
         const ru = 'ru/' + status, key = 'kk/' + status;
         ensure(same(before[ru]?.relations ?? null, after[ru]?.relations ?? null),
           'Изменились RU ' + status + ' связи Category');
-        for (const field of FIELDS)
-          ensure(same(after[key]?.relations[field], desired[field]),
-            'Итоговая KK ' + status + ' связь не совпала: ' + field);
+        if (status === 'draft') {
+          for (const field of FIELDS)
+            ensure(same(after[key]?.relations[field], desired[field]),
+              'Итоговая KK draft связь не совпала: ' + field);
+        } else {
+          await verifyPublishedLinks(after[key].relations, desired);
+        }
       }
       for (const item of affected) {
         const reverseFields = sortUnique(item.changes.map(change => change.reverse));
@@ -706,6 +745,7 @@
       ...totals, skipped: report.skipped.length, published: report.published.length,
       comment: [
         ...report.errors,
+        ...(report.unpublishedRelations.length ? ['Связи с неопубликованными KK записями: ' + report.unpublishedRelations.length] : []),
         ...report.skipped.map(item => item.field + '/' + item.documentId + ': ' + item.reason),
         ...(report.pending ? ['Неподтверждённая операция: ' + JSON.stringify(report.pending)] : [])
       ].join(' | ') || (totals.added || totals.removed ? 'Связи обновлены' : 'Изменений связей нет')
