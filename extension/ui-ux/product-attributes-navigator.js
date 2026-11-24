@@ -18,6 +18,7 @@
     const FIELD = 'input[type="relation"][name="attributes"]';
     const API_PAGE_SIZE = 100;
     const UI_PAGE_SIZE = 10;
+    const DETAILS_BATCH_SIZE = 20;
     const RELOAD_DELAY = 500;
     const NATIVE_HEIGHT = 540;
     const NATIVE_WAIT_TIMEOUT = 5000;
@@ -73,6 +74,12 @@
                 text-decoration:none;text-overflow:ellipsis;white-space:nowrap
             }
             [${ROOT}] .tm-pan-link:hover{text-decoration:underline}
+            [${ROOT}] .tm-pan-details{
+                display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;
+                gap:4px 10px;min-width:0;max-width:50%;color:#c0c0cf;
+                font-size:12px;line-height:18px;overflow-wrap:anywhere
+            }
+            [${ROOT}] .tm-pan-detail-empty{color:#a5a5ba}
             [${ROOT}] .tm-pan-status{
                 flex:0 0 auto;padding:3px 7px;border:1px solid #5b5b80;border-radius:5px;
                 color:#dcdce4;font-size:11px;line-height:16px;text-transform:capitalize
@@ -645,7 +652,26 @@
                     item.status || (item.publishedAt ? 'published' : 'draft')
                 );
 
-                row.append(link, status);
+                row.appendChild(link);
+                const details = current.details.get(item.documentId);
+                if (details) {
+                    const info = el('span', 'tm-pan-details');
+                    for (const [field, title] of [['volume', 'Объём'], ['shade', 'Оттенок']]) {
+                        const value = details[field];
+                        if (value) {
+                            const label = el('span', '', value);
+                            label.title = title + ': ' + value;
+                            info.appendChild(label);
+                        }
+                    }
+                    if (details.error) {
+                        const warning = el('span', 'tm-pan-detail-empty', 'Нет данных о связях');
+                        warning.title = details.error;
+                        info.appendChild(warning);
+                    }
+                    if (info.childElementCount) row.appendChild(info);
+                }
+                row.appendChild(status);
                 ui.list.appendChild(row);
             }
         }
@@ -686,6 +712,92 @@
         return response.json();
     }
 
+    function detailName(value, field) {
+        if (value === null) return '';
+        if (typeof value?.name === 'string' && value.name.trim()) return value.name.trim();
+        throw new Error('Не удалось прочитать ' + field);
+    }
+
+    async function fetchDetails(items, locale, signal) {
+        const params = new URLSearchParams({
+            locale,
+            page: '1',
+            pageSize: String(items.length)
+        });
+        items.forEach((item, index) => {
+            params.append('filters[documentId][$in][' + index + ']', item.documentId);
+        });
+        params.append('populate[volume][fields][0]', 'name');
+        params.append('populate[shade][fields][0]', 'name');
+
+        const headers = { Accept: 'application/json' };
+        const token = getToken();
+        if (token) headers.Authorization = 'Bearer ' + token;
+
+        const response = await fetch(
+            '/content-manager/collection-types/' + ATTRIBUTE_UID + '?' + params,
+            { method: 'GET', credentials: 'include', headers, signal }
+        );
+        if (!response.ok) throw new Error('Attribute API: ' + response.status);
+        const data = await response.json();
+        const expected = new Set(items.map(item => item.documentId));
+        if (!Array.isArray(data?.results) ||
+            Number(data.pagination?.total) !== items.length ||
+            Number(data.pagination?.page) !== 1 ||
+            Number(data.pagination?.pageCount) !== 1 ||
+            data.results.length !== items.length ||
+            data.results.some(item => item?.locale !== locale || !expected.has(item.documentId)) ||
+            new Set(data.results.map(item => item.documentId)).size !== items.length) {
+            throw new Error('Неполный или несоответствующий ответ Attribute API');
+        }
+
+        return data.results.map(item => {
+            const result = { volume: '', shade: '', error: '' };
+            const errors = [];
+            for (const field of ['volume', 'shade']) {
+                try {
+                    result[field] = detailName(item[field], field);
+                } catch (error) {
+                    errors.push(error.message);
+                }
+            }
+            result.error = errors.join('; ');
+            return [item.documentId, result];
+        });
+    }
+
+    async function loadDetails(current, signal) {
+        const groups = new Map();
+        for (const item of current.items) {
+            const locale = item.locale || current.context.locale;
+            if (!groups.has(locale)) groups.set(locale, []);
+            groups.get(locale).push(item);
+        }
+
+        for (const [locale, items] of groups) {
+            for (let offset = 0; offset < items.length; offset += DETAILS_BATCH_SIZE) {
+                if (signal.aborted || current !== state) return;
+                const batch = items.slice(offset, offset + DETAILS_BATCH_SIZE);
+                try {
+                    const entries = await fetchDetails(batch, locale, signal);
+                    if (signal.aborted || current !== state) return;
+                    for (const [id, details] of entries) {
+                        current.details.set(id, details);
+                    }
+                } catch (error) {
+                    if (signal.aborted || current !== state) return;
+                    console.warn('[product-attributes-navigator] Attribute details:', error);
+                    for (const item of batch) {
+                        current.details.set(item.documentId, {
+                            error: error?.message || 'Не удалось загрузить volume/shade'
+                        });
+                    }
+                }
+                render(current);
+            }
+        }
+    }
+
     function showItems(current, items, total, complete) {
         if (current !== state) return;
         current.items = alignItemsWithNativeOrder(items, current.root);
@@ -703,6 +815,7 @@
         const signal = current.abortController.signal;
         current.loading = true;
         current.complete = false;
+        current.details.clear();
         current.error = '';
         render(current);
 
@@ -753,6 +866,9 @@
             if (current === state) {
                 current.loading = false;
                 render(current);
+                if (current.items.length && !signal.aborted) {
+                    void loadDetails(current, signal);
+                }
             }
         }
     }
@@ -823,6 +939,7 @@
             root,
             ui,
             items: [],
+            details: new Map(),
             total: null,
             complete: false,
             query: '',
