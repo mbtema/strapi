@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.4.1
+// @version      1.5.0
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifests
 // @match        http://10.10.3.80:1337/admin/*
 // @match        https://strapi.monamie.kz/admin/*
@@ -8,6 +8,7 @@
 // @downloadURL  https://raw.githubusercontent.com/mbtema/strapi/main/extension/extension.js
 // @run-at       document-start
 // @connect      raw.githubusercontent.com
+// @connect      api.github.com
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -18,9 +19,9 @@
 (() => {
   'use strict';
 
-  const RAW_ROOT = 'https://raw.githubusercontent.com/mbtema/strapi/main/extension/';
-  const LOADER_URL = `${RAW_ROOT}extension.js`;
-  const MANIFEST_URL = `${RAW_ROOT}manifests/extensions.json`;
+  const RAW_ROOT = 'https://raw.githubusercontent.com/mbtema/strapi/';
+  const API_ROOT = 'https://api.github.com/repos/mbtema/strapi/';
+  const SHA_RE = /^[0-9a-f]{40}$/;
   const CACHE_KEY = 'tm-strapi-extensions-cache-v1';
   const LOADER_ATTR = 'data-tm-strapi-extensions-loader';
   const EXTENSION_ID_RE = /^[a-z0-9-]+$/i;
@@ -38,6 +39,8 @@
         method: 'GET',
         url: `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`,
         timeout: 15000,
+        nocache: true,
+        headers: { 'Cache-Control': 'no-cache' },
         onload(response) {
           if (response.status >= 200 && response.status < 300) {
             resolve(response.responseText);
@@ -89,7 +92,7 @@
     return 0;
   }
 
-  async function checkLoaderVersion() {
+  function checkLoaderVersion(source) {
     const localVersion = String(
       typeof GM_info !== 'undefined' ? GM_info.script.version : ''
     ).trim();
@@ -98,7 +101,6 @@
       throw new Error('Cannot determine installed loader version');
     }
 
-    const source = await requestText(LOADER_URL);
     const match = source.match(/^\/\/ @version\s+(\d+\.\d+\.\d+)\s*$/m);
 
     if (!match) {
@@ -214,26 +216,88 @@
     return items;
   }
 
-  async function loadManifest() {
-    const rootText = await requestText(MANIFEST_URL);
-    const root = parseJson(rootText, 'manifests/extensions.json');
+  async function getHead() {
+    const data = parseJson(await requestText(API_ROOT + 'git/ref/heads/main'), 'main ref');
+    const commit = data?.object?.sha;
+    if (data?.ref !== 'refs/heads/main' || data?.object?.type !== 'commit' || !SHA_RE.test(commit || '')) {
+      throw new Error('Invalid main commit');
+    }
+    return commit;
+  }
 
+  async function getSnapshot(commit) {
+    const data = parseJson(await requestText(API_ROOT + 'git/trees/' + commit + '?recursive=1'), 'commit tree');
+    if (data?.truncated !== false || !Array.isArray(data.tree)) {
+      throw new Error('Incomplete commit tree: ' + commit);
+    }
+    const files = new Map(data.tree.filter(item => item.type === 'blob' &&
+      SHA_RE.test(item.sha || '') && Number.isSafeInteger(item.size) && item.size >= 0)
+      .map(item => [item.path, item]));
+    return { commit, files };
+  }
+
+  function gitBlobSha(source) {
+    const encoder = new TextEncoder();
+    const body = encoder.encode(source);
+    const header = encoder.encode('blob ' + body.length + '\0');
+    const length = header.length + body.length;
+    const bytes = new Uint8Array(Math.ceil((length + 9) / 64) * 64);
+    bytes.set(header);
+    bytes.set(body, header.length);
+    bytes[length] = 128;
+    const view = new DataView(bytes.buffer);
+    view.setUint32(bytes.length - 8, Math.floor(length / 0x20000000));
+    view.setUint32(bytes.length - 4, (length * 8) >>> 0);
+    const words = new Uint32Array(80);
+    const rol = (value, shift) => (value << shift) | (value >>> (32 - shift));
+    let h0 = 0x67452301, h1 = 0xefcdab89, h2 = 0x98badcfe, h3 = 0x10325476, h4 = 0xc3d2e1f0;
+    for (let offset = 0; offset < bytes.length; offset += 64) {
+      for (let i = 0; i < 16; i++) words[i] = view.getUint32(offset + i * 4);
+      for (let i = 16; i < 80; i++) words[i] = rol(words[i - 3] ^ words[i - 8] ^ words[i - 14] ^ words[i - 16], 1);
+      let a = h0, b = h1, c = h2, d = h3, e = h4;
+      for (let i = 0; i < 80; i++) {
+        let f, k;
+        if (i < 20) { f = (b & c) | (~b & d); k = 0x5a827999; }
+        else if (i < 40) { f = b ^ c ^ d; k = 0x6ed9eba1; }
+        else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8f1bbcdc; }
+        else { f = b ^ c ^ d; k = 0xca62c1d6; }
+        const t = (rol(a, 5) + f + e + k + words[i]) >>> 0;
+        e = d; d = c; c = rol(b, 30); b = a; a = t;
+      }
+      h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0;
+      h3 = (h3 + d) >>> 0; h4 = (h4 + e) >>> 0;
+    }
+    return [h0, h1, h2, h3, h4].map(value => value.toString(16).padStart(8, '0')).join('');
+  }
+
+  function snapshotEntry(snapshot, path) {
+    const entry = snapshot.files.get('extension/' + path);
+    if (!entry) throw new Error('File missing at ' + snapshot.commit + ': ' + path);
+    return entry;
+  }
+
+  async function snapshotText(snapshot, path) {
+    const entry = snapshotEntry(snapshot, path);
+    const source = await requestText(RAW_ROOT + snapshot.commit + '/extension/' + path);
+    if (gitBlobSha(source) !== entry.sha) throw new Error('Git blob SHA mismatch: ' + path);
+    return source;
+  }
+
+  async function loadManifest(snapshot) {
+    const root = parseJson(await snapshotText(snapshot, 'manifests/extensions.json'), 'manifests/extensions.json');
     const manifestPaths = normalizeRootManifest(root);
-
-    const groups = await Promise.all(
-      manifestPaths.map(async path => {
-        const text = await requestText(`${RAW_ROOT}${path}`);
-        const manifest = parseJson(text, path);
-        return normalizeExtensionsManifest(manifest, path);
-      })
-    );
-
-    return validateCombinedManifest(groups.flat());
+    const groups = await Promise.all(manifestPaths.map(async path =>
+      normalizeExtensionsManifest(parseJson(await snapshotText(snapshot, path), path), path)
+    ));
+    return validateCombinedManifest(groups.flat()).map(item => ({
+      ...item,
+      blobSha: snapshotEntry(snapshot, item.path).sha
+    }));
   }
 
   function getSignature(items) {
     return JSON.stringify(
-      items.map(({ id, path, version }) => ({ id, path, version }))
+      items.map(({ id, path, version, blobSha }) => ({ id, path, version, blobSha }))
     );
   }
 
@@ -252,14 +316,17 @@
       isRunnableItem(cached) &&
       cached.id === expected.id &&
       cached.path === expected.path &&
-      cached.version === expected.version
+      cached.version === expected.version &&
+      SHA_RE.test(expected.blobSha || '') &&
+      cached.blobSha === expected.blobSha &&
+      gitBlobSha(cached.code) === expected.blobSha
     );
   }
 
   function isCacheCurrent(cache, manifest, signature) {
     if (
       !cache ||
-      cache.schemaVersion !== 1 ||
+      cache.schemaVersion !== 2 ||
       cache.signature !== signature ||
       !Array.isArray(cache.extensions) ||
       cache.extensions.length !== manifest.length
@@ -308,17 +375,17 @@
   async function refreshCache(currentCache, options = {}) {
     const silent = options.silent === true;
     const force = options.force === true;
-    const manifest = await loadManifest();
-    const signature = getSignature(manifest);
-
-    if (!force && isCacheCurrent(currentCache, manifest, signature)) {
-      return {
-        updated: false,
-        manifest,
-        updatedItems: [],
-        removedItems: []
-      };
+    const commit = await getHead();
+    if (!force && currentCache?.schemaVersion === 2 && currentCache.commit === commit &&
+        Array.isArray(currentCache.extensions) &&
+        isCacheCurrent(currentCache, currentCache.extensions, getSignature(currentCache.extensions))) {
+      return { updated: false, commit, manifest: currentCache.extensions.map(({ code, ...item }) => item),
+        updatedItems: [], removedItems: [] };
     }
+    const snapshot = await getSnapshot(commit);
+    const manifest = await loadManifest(snapshot);
+    const signature = getSignature(manifest);
+    const loader = force ? checkLoaderVersion(await snapshotText(snapshot, 'extension.js')) : null;
 
     const cachedById = new Map(
       (currentCache?.extensions || [])
@@ -350,7 +417,7 @@
         const cached = cachedById.get(item.id);
         if (!force && matchesManifestItem(cached, item)) return cached;
 
-        const code = await requestText(RAW_ROOT + item.path);
+        const code = await snapshotText(snapshot, item.path);
         if (!code.trim()) throw new Error('Empty extension source: ' + item.path);
 
         return { ...item, code };
@@ -358,12 +425,17 @@
     );
 
     const nextCache = {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      commit,
       signature,
       updatedAt: new Date().toISOString(),
       extensions
     };
 
+    const latestCache = readCache();
+    if (JSON.stringify(latestCache) !== JSON.stringify(currentCache) && latestCache?.commit !== commit) {
+      throw new Error('Cache changed in another tab. Update was not applied.');
+    }
     writeCache(nextCache);
 
     const hadRunnableCache = Boolean(
@@ -373,7 +445,7 @@
     if (!silent) {
       if (!hadRunnableCache) {
         runExtensions(extensions);
-        console.log('[Extensions] Loaded ' + extensions.length + ' extensions');
+        announceRunning(nextCache);
       } else {
         console.log('[Extensions] Update cached. Reload Strapi to apply it.');
       }
@@ -381,112 +453,44 @@
 
     return {
       updated: true,
+      commit,
+      loader,
       manifest,
       updatedItems,
       removedItems
     };
   }
 
+  function announceRunning(cache) {
+    const commit = cache?.commit || 'unverified legacy cache';
+    document.documentElement?.setAttribute('data-tm-extensions-commit', commit);
+    console.info('[Extensions] Running commit: ' + commit);
+    console.table((cache?.extensions || []).map(({ id, version, blobSha }) => ({ id, version, blobSha: blobSha || null })));
+  }
+
   let forceUpdatePromise = null;
 
   async function forceUpdateNow() {
-    if (forceUpdatePromise) {
-      console.info('[Extensions] Force update is already running.');
-      return forceUpdatePromise;
-    }
-
+    if (forceUpdatePromise) return forceUpdatePromise;
     forceUpdatePromise = (async () => {
-      console.info('[Extensions] Force downloading all extensions...');
-
-      await startupRefresh;
-      const currentCache = readCache();
-
-      const results = await Promise.allSettled([
-        checkLoaderVersion(),
-        refreshCache(currentCache, { silent: true, force: true })
-      ]);
-
-      const loaderResult = results[0];
-      const extensionResult = results[1];
-
-      let failed = false;
-
-      if (loaderResult.status === 'fulfilled') {
-        const info = loaderResult.value;
-
-        if (info.updateAvailable) {
-          console.warn(
-            '[Extensions] Loader update available: ' +
-            info.localVersion +
-            ' → ' +
-            info.remoteVersion +
-            '. Update the userscript in Tampermonkey.'
-          );
-        } else if (info.localAhead) {
-          console.warn(
-            '[Extensions] Installed loader ' +
-            info.localVersion +
-            ' is newer than repository version ' +
-            info.remoteVersion +
-            '.'
-          );
+      console.info('[Extensions] Downloading verified main snapshot...');
+      try {
+        await startupRefresh;
+        const result = await refreshCache(readCache(), { silent: true, force: true });
+        console.info('[Extensions] Verified commit ' + result.commit + ' (' + result.manifest.length + ' extensions)');
+        console.table(result.manifest.map(({ id, version, blobSha }) => ({ id, version, blobSha })));
+        if (result.loader?.updateAvailable) {
+          console.warn('[Extensions] Update userscript in Tampermonkey: ' + result.loader.localVersion + ' → ' + result.loader.remoteVersion);
         }
-      } else {
-        failed = true;
-        console.error(
-          '[Extensions] Failed to check loader version',
-          loaderResult.reason
-        );
+        location.reload();
+        return { ...result, failed: false };
+      } catch (error) {
+        console.error('[Extensions] Force update failed. Previous cache retained.', error);
+        return { failed: true, error: error.message };
       }
-
-      if (extensionResult.status === 'fulfilled') {
-        const info = extensionResult.value;
-
-        if (info.updatedItems.length) {
-          console.table(
-            info.updatedItems.map(item => ({
-              extension: item.id,
-              cached: item.from || 'not cached',
-              repository: item.to
-            }))
-          );
-        }
-
-        if (info.removedItems.length) {
-          console.table(
-            info.removedItems.map(item => ({
-              extension: item.id,
-              cached: item.from,
-              repository: 'removed'
-            }))
-          );
-        }
-
-        if (info.updated) {
-          console.info(
-            '[Extensions] All extensions downloaded to cache (' + info.manifest.length +
-            '). Reload Strapi to apply them.'
-          );
-        }
-      } else {
-        failed = true;
-        console.error(
-          '[Extensions] Failed to check extension updates',
-          extensionResult.reason
-        );
-      }
-
-      return {
-        loader:
-          loaderResult.status === 'fulfilled' ? loaderResult.value : null,
-        extensions:
-          extensionResult.status === 'fulfilled' ? extensionResult.value : null,
-        failed
-      };
     })().finally(() => {
       forceUpdatePromise = null;
     });
-
     return forceUpdatePromise;
   }
 
@@ -494,6 +498,7 @@
 
   if (cache?.extensions?.length) {
     runExtensions(cache.extensions);
+    announceRunning(cache);
   }
 
   const startupRefresh = refreshCache(cache).catch(error => {
