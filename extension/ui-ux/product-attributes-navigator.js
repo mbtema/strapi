@@ -38,57 +38,35 @@
         style.id = STYLE_ID;
         style.textContent = `
             [${ROOT}] [${PANEL}]{
-                display:flex;flex-direction:column;gap:10px;align-self:flex-start;
+                display:flex;flex-direction:column;gap:8px;align-self:flex-start;
                 width:100%;min-height:0!important;height:fit-content!important;
-                box-sizing:border-box;margin-top:10px;padding:12px 12px 8px;
-                border:1px solid #3f3f5f;border-radius:8px;background:#181826
+                box-sizing:border-box;margin-top:8px;padding:12px;
+                border:1px solid var(--tm-ds-neutral200);
+                border-radius:var(--tm-ds-radius);background:var(--tm-ds-neutral100)
             }
             [${ROOT}] .tm-pan-footer,[${ROOT}] .tm-pan-pages{
                 display:flex;align-items:center;gap:8px;flex-wrap:wrap
             }
             [${ROOT}] .tm-pan-footer{justify-content:space-between;min-height:32px;margin:0;padding:0}
-            [${ROOT}] .tm-pan-search{
-                width:100%;height:36px;box-sizing:border-box;padding:8px 10px;
-                border:1px solid #4a4a6a;border-radius:6px;outline:none;
-                background:#212134;color:#fff;font:inherit;font-size:13px
-            }
-            [${ROOT}] .tm-pan-search::placeholder{color:#8e8ea9}
-            [${ROOT}] .tm-pan-search:focus{border-color:#7b79ff;box-shadow:0 0 0 2px rgba(123,121,255,.18)}
-            [${ROOT}] .tm-pan-button,[${ROOT}] .tm-pan-page{
-                min-height:32px;box-sizing:border-box;padding:6px 10px;
-                border:1px solid #4a4a6a;border-radius:6px;background:#212134;
-                color:#dcdce4;font:inherit;font-size:12px;cursor:pointer
-            }
-            [${ROOT}] .tm-pan-button:hover,[${ROOT}] .tm-pan-page:hover{background:#292944;border-color:#5b5b80}
-            [${ROOT}] .tm-pan-button:disabled,[${ROOT}] .tm-pan-page:disabled{opacity:.45;cursor:default}
-            [${ROOT}] .tm-pan-page[data-active="true"]{border-color:#7b79ff;background:#302c6f;color:#fff;font-weight:600}
-            [${ROOT}] .tm-pan-meta{color:#a5a5ba;font-size:12px;line-height:18px}
+            [${ROOT}] .tm-pan-search{width:100%}
             [${ROOT}] .tm-pan-list{display:flex;flex-direction:column;gap:4px;min-height:44px}
             [${ROOT}] .tm-pan-row{
-                display:flex;align-items:center;gap:10px;min-height:44px;box-sizing:border-box;
-                padding:7px 10px;border:1px solid #3f3f5f;border-radius:6px;background:#212134
+                display:flex;align-items:center;gap:8px;min-height:44px;box-sizing:border-box;
+                padding:8px 16px;border:1px solid var(--tm-ds-neutral200);
+                border-radius:var(--tm-ds-radius);background:var(--tm-ds-neutral0)
             }
-            [${ROOT}] .tm-pan-row:hover{border-color:#5b5b80;background:#24243a}
             [${ROOT}] .tm-pan-link{
-                min-width:0;flex:1;overflow:hidden;color:#9593ff;font-size:13px;line-height:20px;
-                text-decoration:none;text-overflow:ellipsis;white-space:nowrap
+                min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap
             }
-            [${ROOT}] .tm-pan-link:hover{text-decoration:underline}
             [${ROOT}] .tm-pan-details{
                 display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;
-                gap:4px 10px;min-width:0;max-width:50%;color:#c0c0cf;
-                font-size:12px;line-height:18px;overflow-wrap:anywhere
+                gap:4px 8px;min-width:0;max-width:50%;overflow-wrap:anywhere
             }
-            [${ROOT}] .tm-pan-detail-empty{color:#a5a5ba}
-            [${ROOT}] .tm-pan-status{
-                flex:0 0 auto;padding:3px 7px;border:1px solid #5b5b80;border-radius:5px;
-                color:#dcdce4;font-size:11px;line-height:16px;text-transform:capitalize
-            }
-            [${ROOT}] .tm-pan-empty,[${ROOT}] .tm-pan-loading,[${ROOT}] .tm-pan-error{
-                padding:10px 2px;color:#a5a5ba;font-size:13px;line-height:20px
-            }
-            [${ROOT}] .tm-pan-error{color:#ee5e52}
-            [${ROOT}] .tm-pan-manage{align-self:flex-start;margin-top:2px}
+            [${ROOT}] .tm-pan-detail-empty{color:var(--tm-ds-neutral600)}
+            [${ROOT}] .tm-pan-status{flex:0 0 auto}
+            [${ROOT}] .tm-pan-empty,[${ROOT}] .tm-pan-loading,[${ROOT}] .tm-pan-error{padding:8px 0}
+            [${ROOT}] .tm-pan-error{color:var(--tm-ds-danger600)}
+            [${ROOT}] .tm-pan-manage{align-self:flex-start}
             [${ROOT}]:not([${MANAGE}]) [${NATIVE}]{display:none!important}
             [${ROOT}][${MANAGE}] [${NATIVE_LIST}]{
                 height:${NATIVE_HEIGHT}px!important;max-height:${NATIVE_HEIGHT}px!important;overflow-y:auto!important
@@ -436,18 +414,19 @@
         const panel = el('div');
         panel.setAttribute(CREATED_ATTR, 'product-attributes-navigator');
         panel.setAttribute(PANEL, '');
+        panel.setAttribute('data-tm-ds', '');
 
-        const search = el('input', 'tm-pan-search');
+        const search = el('input', 'tm-pan-search tm-ds-input');
         search.type = 'search';
         search.placeholder = 'Поиск';
         search.autocomplete = 'off';
 
-        const meta = el('div', 'tm-pan-meta');
+        const meta = el('div', 'tm-pan-meta tm-ds-meta');
         const list = el('div', 'tm-pan-list');
         const footer = el('div', 'tm-pan-footer');
-        const range = el('div', 'tm-pan-meta');
+        const range = el('div', 'tm-pan-meta tm-ds-meta');
         const pages = el('div', 'tm-pan-pages');
-        const manage = el('button', 'tm-pan-button tm-pan-manage', 'Управление связями');
+        const manage = el('button', 'tm-pan-button tm-pan-manage tm-ds-button', 'Управление связями');
         manage.type = 'button';
 
         footer.append(range, pages);
@@ -561,7 +540,7 @@
         current.page = Math.min(Math.max(1, current.page), count);
         current.ui.pages.replaceChildren();
 
-        const previous = el('button', 'tm-pan-page', '‹');
+        const previous = el('button', 'tm-pan-page tm-ds-page', '‹');
         previous.type = 'button';
         previous.disabled = current.page <= 1;
         previous.title = 'Предыдущая страница';
@@ -574,10 +553,10 @@
         let last = 0;
         for (const page of visiblePages(current.page, count)) {
             if (last && page - last > 1) {
-                current.ui.pages.appendChild(el('span', 'tm-pan-meta', '…'));
+                current.ui.pages.appendChild(el('span', 'tm-pan-meta tm-ds-meta', '…'));
             }
 
-            const button = el('button', 'tm-pan-page', String(page));
+            const button = el('button', 'tm-pan-page tm-ds-page', String(page));
             button.type = 'button';
             button.dataset.active = String(page === current.page);
             button.onclick = () => {
@@ -588,7 +567,7 @@
             last = page;
         }
 
-        const next = el('button', 'tm-pan-page', '›');
+        const next = el('button', 'tm-pan-page tm-ds-page', '›');
         next.type = 'button';
         next.disabled = current.page >= count;
         next.title = 'Следующая страница';
@@ -607,14 +586,14 @@
 
         if (current.loading && !current.items.length) {
             ui.meta.textContent = 'Загружаю все торговые предложения…';
-            ui.list.replaceChildren(el('div', 'tm-pan-loading', 'Загрузка…'));
+            ui.list.replaceChildren(el('div', 'tm-pan-loading tm-ds-meta', 'Загрузка…'));
             ui.footer.hidden = true;
             return;
         }
 
         if (current.error && !current.items.length) {
             ui.meta.textContent = '';
-            ui.list.replaceChildren(el('div', 'tm-pan-error', current.error));
+            ui.list.replaceChildren(el('div', 'tm-pan-error tm-ds-meta', current.error));
             ui.footer.hidden = true;
             return;
         }
@@ -636,26 +615,27 @@
         ui.list.replaceChildren();
 
         if (!pageItems.length) {
-            ui.list.appendChild(el('div', 'tm-pan-empty', 'Ничего не найдено'));
+            ui.list.appendChild(el('div', 'tm-pan-empty tm-ds-meta', 'Ничего не найдено'));
         } else {
             for (const item of pageItems) {
                 const row = el('div', 'tm-pan-row');
                 const label = itemLabel(item);
-                const link = el('a', 'tm-pan-link', label);
+                const link = el('a', 'tm-pan-link tm-ds-link', label);
 
                 link.href = attributeUrl(item, current.context.locale);
                 link.title = label;
 
                 const status = el(
                     'span',
-                    'tm-pan-status',
+                    'tm-pan-status tm-ds-status',
                     item.status || (item.publishedAt ? 'published' : 'draft')
                 );
 
+                status.dataset.status = status.textContent.toLowerCase();
                 row.appendChild(link);
                 const details = current.details.get(item.documentId);
                 if (details) {
-                    const info = el('span', 'tm-pan-details');
+                    const info = el('span', 'tm-pan-details tm-ds-text');
                     for (const [field, title] of [['volume', 'Объём'], ['shade', 'Оттенок']]) {
                         const value = details[field];
                         if (value) {
@@ -665,7 +645,7 @@
                         }
                     }
                     if (details.error) {
-                        const warning = el('span', 'tm-pan-detail-empty', 'Нет данных о связях');
+                        const warning = el('span', 'tm-pan-detail-empty tm-ds-meta', 'Нет данных о связях');
                         warning.title = details.error;
                         info.appendChild(warning);
                     }
@@ -965,6 +945,7 @@
 
         const input = document.querySelector(FIELD);
         if (!input) return;
+        window.__tmStrapiDesignSystem?.syncTheme();
 
         const root = findRoot(input);
         if (!root) {
