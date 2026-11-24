@@ -1,6 +1,10 @@
 (function () {
     'use strict';
 
+    const RUN_KEY = '__tmProductAttributesNavigator';
+    if (window[RUN_KEY]) return;
+    window[RUN_KEY] = true;
+
     const STYLE_ID = 'tm-product-attributes-navigator-style';
     const CREATED_ATTR = 'data-tm-created';
     const ROOT = 'data-tm-attributes-navigator-root';
@@ -17,6 +21,10 @@
     const RELOAD_DELAY = 500;
     const NATIVE_HEIGHT = 540;
     const NATIVE_WAIT_TIMEOUT = 5000;
+    const NATIVE_PAGE_SIZE = 5;
+    const CAPTURE_TTL = 10000;
+    const CAPTURE_WAIT = 250;
+    const nativeRequests = new Map();
 
     let state = null;
     let frameScheduled = false;
@@ -96,6 +104,146 @@
         const locale = params.get('plugins[i18n][locale]') || 'ru';
 
         return { productDocumentId, locale, key: `${productDocumentId}:${locale}` };
+    }
+
+    function relationCaptureKey(input, method) {
+        if (String(method || 'GET').toUpperCase() !== 'GET') return null;
+        const context = getContext();
+        if (!context) return null;
+
+        const url = new URL(input, location.href);
+        const match = url.pathname.match(
+            /^\/content-manager\/relations\/api::product\.product\/([^/]+)\/attributes$/
+        );
+        if (url.origin !== location.origin || !match ||
+            decodeURIComponent(match[1]) !== context.productDocumentId) return null;
+
+        const params = url.searchParams;
+        const allowed = new Set(['locale', 'pageSize', 'page', 'status']);
+        if ([...params.keys()].some(key => !allowed.has(key)) ||
+            params.get('locale') !== context.locale ||
+            params.get('page') !== '1' ||
+            params.get('pageSize') !== String(NATIVE_PAGE_SIZE) ||
+            (params.has('status') && params.get('status') !== 'draft')) return null;
+
+        return context.key;
+    }
+
+    function pageData(data, page, size) {
+        const pagination = data?.pagination;
+        const items = data?.results;
+        const total = Number(pagination?.total);
+        const count = Number(pagination?.pageCount);
+        if (!Array.isArray(items) ||
+            pagination?.total == null || pagination?.pageCount == null ||
+            Number(pagination.page) !== page ||
+            !Number.isSafeInteger(total) || total < 0 ||
+            !Number.isSafeInteger(count) || count < 0 ||
+            (total ? count !== Math.ceil(total / size) : count > 1) ||
+            items.length !== Math.min(size, Math.max(0, total - (page - 1) * size)) ||
+            items.some(item => typeof item?.documentId !== 'string' || !item.documentId) ||
+            new Set(items.map(item => item.documentId)).size !== items.length) {
+            throw new Error('Некорректная страница торговых предложений');
+        }
+        return { items, total, count };
+    }
+
+    function beginCapture(key) {
+        if (!key) return null;
+        let resolve;
+        const record = {
+            started: Date.now(),
+            promise: new Promise(done => { resolve = done; }),
+            finish(data) {
+                let result = null;
+                try { result = pageData(data, 1, NATIVE_PAGE_SIZE); } catch {}
+                resolve(result);
+            }
+        };
+        nativeRequests.delete(key);
+        nativeRequests.set(key, record);
+        for (const [id, value] of nativeRequests) {
+            if (Date.now() - value.started > CAPTURE_TTL || nativeRequests.size > 8) {
+                nativeRequests.delete(id);
+            }
+        }
+        return record;
+    }
+
+    function observeNativeRequests() {
+        const originalFetch = window.fetch;
+        if (typeof originalFetch === 'function') {
+            window.fetch = function (...args) {
+                const promise = Reflect.apply(originalFetch, this, args);
+                try {
+                    const [input, init] = args;
+                    const key = relationCaptureKey(
+                        typeof input === 'string' || input instanceof URL ? input : input?.url,
+                        init?.method || input?.method
+                    );
+                    const record = beginCapture(key);
+                    if (record) {
+                        promise.then(response => response.ok
+                            ? response.clone().json()
+                            : null
+                        ).then(data => record.finish(data), () => record.finish(null));
+                    }
+                } catch {}
+                return promise;
+            };
+        }
+
+        const prototype = window.XMLHttpRequest?.prototype;
+        if (!prototype) return;
+        const originalOpen = prototype.open;
+        const originalSend = prototype.send;
+        const requests = new WeakMap();
+
+        prototype.open = function (...args) {
+            const result = Reflect.apply(originalOpen, this, args);
+            requests.delete(this);
+            try {
+                const key = relationCaptureKey(args[1], args[0]);
+                if (key) requests.set(this, key);
+            } catch {}
+            return result;
+        };
+
+        prototype.send = function (...args) {
+            const key = requests.get(this);
+            if (key) {
+                requests.delete(this);
+                const record = beginCapture(key);
+                this.addEventListener('loadend', () => {
+                    let data = null;
+                    try {
+                        if (this.status >= 200 && this.status < 300) {
+                            data = this.responseType === 'json'
+                                ? this.response
+                                : JSON.parse(this.responseText);
+                        }
+                    } catch {}
+                    record.finish(data);
+                }, { once: true });
+            }
+            return Reflect.apply(originalSend, this, args);
+        };
+    }
+
+    async function takeNative(context) {
+        const record = nativeRequests.get(context.key);
+        if (!record) return null;
+        nativeRequests.delete(context.key);
+        if (Date.now() - record.started > CAPTURE_TTL) return null;
+        let timer;
+        try {
+            return await Promise.race([
+                record.promise,
+                new Promise(resolve => { timer = setTimeout(() => resolve(null), CAPTURE_WAIT); })
+            ]);
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     function getToken() {
@@ -448,7 +596,7 @@
         if (!current || current !== state) return;
 
         const { ui } = current;
-        ui.search.disabled = current.loading && !current.items.length;
+        ui.search.disabled = !current.complete;
 
         if (current.loading && !current.items.length) {
             ui.meta.textContent = 'Загружаю все торговые предложения…';
@@ -457,22 +605,26 @@
             return;
         }
 
-        if (current.error) {
+        if (current.error && !current.items.length) {
             ui.meta.textContent = '';
             ui.list.replaceChildren(el('div', 'tm-pan-error', current.error));
             ui.footer.hidden = true;
             return;
         }
 
-        const filtered = filteredItems(current);
-        current.page = Math.min(Math.max(1, current.page), pageCount(filtered.length));
+        const filtered = current.complete ? filteredItems(current) : current.items;
+        current.page = current.complete
+            ? Math.min(Math.max(1, current.page), pageCount(filtered.length))
+            : 1;
 
         const start = (current.page - 1) * UI_PAGE_SIZE;
         const pageItems = filtered.slice(start, start + UI_PAGE_SIZE);
 
-        ui.meta.textContent = current.query
-            ? `Найдено ${filtered.length} из ${current.items.length}`
-            : `Загружено ${current.items.length}`;
+        ui.meta.textContent = !current.complete
+            ? `Загружено ${current.items.length}${current.total == null ? '' : ' из ' + current.total} · ${current.error || 'Загрузка…'}`
+            : current.query
+                ? `Найдено ${filtered.length} из ${current.items.length}`
+                : `Загружено ${current.items.length}`;
 
         ui.list.replaceChildren();
 
@@ -496,6 +648,11 @@
                 row.append(link, status);
                 ui.list.appendChild(row);
             }
+        }
+
+        if (!current.complete) {
+            ui.footer.hidden = true;
+            return;
         }
 
         const from = filtered.length ? start + 1 : 0;
@@ -529,39 +686,67 @@
         return response.json();
     }
 
-    async function loadAll(current) {
+    function showItems(current, items, total, complete) {
+        if (current !== state) return;
+        current.items = alignItemsWithNativeOrder(items, current.root);
+        current.total = total;
+        current.complete = complete;
+        current.page = 1;
+        render(current);
+    }
+
+    async function loadAll(current, reuseNative = false) {
         if (!current || current.loading) return;
 
         current.abortController?.abort();
         current.abortController = new AbortController();
+        const signal = current.abortController.signal;
         current.loading = true;
+        current.complete = false;
         current.error = '';
         render(current);
 
         try {
-            const first = await fetchRelations(
-                current.context,
-                1,
-                current.abortController.signal
-            );
+            const captured = reuseNative ? await takeNative(current.context) : null;
+            if (current !== state || signal.aborted) return;
 
-            let items = Array.isArray(first.results) ? [...first.results] : [];
-            const count = Number(first.pagination?.pageCount || 1);
-
-            for (let page = 2; page <= count; page += 1) {
-                const next = await fetchRelations(
-                    current.context,
-                    page,
-                    current.abortController.signal
-                );
-                if (Array.isArray(next.results)) items.push(...next.results);
+            if (captured) {
+                const complete = captured.items.length === captured.total;
+                showItems(current, captured.items, captured.total, complete);
+                if (complete) return;
             }
 
-            if (current !== state) return;
-            current.items = alignItemsWithNativeOrder(items, current.root);
-            current.page = 1;
+            const first = pageData(
+                await fetchRelations(current.context, 1, signal), 1, API_PAGE_SIZE
+            );
+            if (current !== state || signal.aborted) return;
+
+            const items = [...first.items];
+            const seen = new Set(items.map(item => item.documentId));
+            showItems(current, items.slice(), first.total, items.length === first.total);
+
+            for (let page = 2; page <= first.count; page += 1) {
+                const next = pageData(
+                    await fetchRelations(current.context, page, signal), page, API_PAGE_SIZE
+                );
+                if (current !== state || signal.aborted) return;
+                if (next.total !== first.total || next.count !== first.count ||
+                    next.items.some(item => seen.has(item.documentId))) {
+                    throw new Error('Список торговых предложений изменился во время загрузки');
+                }
+                for (const item of next.items) {
+                    seen.add(item.documentId);
+                    items.push(item);
+                }
+                showItems(current, items.slice(), first.total, items.length === first.total);
+            }
+
+            if (items.length !== first.total) {
+                throw new Error('Загружены не все торговые предложения');
+            }
         } catch (error) {
             if (error?.name === 'AbortError' || current !== state) return;
+            current.complete = false;
             current.error = error?.message || 'Не удалось загрузить торговые предложения';
             console.warn('[product-attributes-navigator]', error);
         } finally {
@@ -612,6 +797,7 @@
         if (!state) return;
 
         state.abortController?.abort();
+        nativeRequests.delete(state.context.key);
         state.root?.removeAttribute(ROOT);
         state.root?.removeAttribute(MANAGE);
 
@@ -637,6 +823,8 @@
             root,
             ui,
             items: [],
+            total: null,
+            complete: false,
             query: '',
             page: 1,
             loading: false,
@@ -681,7 +869,7 @@
 
         destroy();
         state = createState(context, input, root);
-        loadAll(state);
+        loadAll(state, true);
     }
 
     function scheduleApply() {
@@ -753,5 +941,6 @@
         scheduleApply();
     }
 
+    observeNativeRequests();
     start();
 })();
