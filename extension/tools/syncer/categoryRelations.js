@@ -14,6 +14,7 @@
     brand: BRAND_UID,
     top_brands: BRAND_UID
   };
+  const INTEGRITY_IGNORE = { [UID]: new Set(['key']) };
   const PAGE_SIZE = 100;
   const RUN_KEY = '__tmCategoryRelationsRunning';
   if (window[RUN_KEY]) {
@@ -35,6 +36,7 @@
       published: [],
       errors: [],
       integrityDiffs: [],
+      ignoredIntegrityDiffs: [],
       unpublishedRelations: [],
       reverseWarnings: [],
       counters: { GET: 0, PUT: 0, POST: 0, retries: 0 },
@@ -342,7 +344,7 @@
     }
 
     function checkIntegrity(stage, uid, id, relation, beforeRU, afterRU, beforeKK, afterKK) {
-      const differences = [];
+      let differences = [];
       for (const [locale, before, after] of [
         ['ru', beforeRU, afterRU],
         ['kk', beforeKK, afterKK]
@@ -359,6 +361,14 @@
             after: Object.hasOwn(after, field) ? after[field] : { missing: true }
           });
         }
+      }
+      const ignored = differences.filter(item => INTEGRITY_IGNORE[uid]?.has(item.field));
+      if (ignored.length) {
+        const warning = { stage, uid, documentId: id, relation, categoryId,
+          capturedAt: new Date().toISOString(), differences: ignored };
+        report.ignoredIntegrityDiffs.push(warning);
+        console.warn(TAG, 'Игнорируемые изменения полей', warning);
+        differences = differences.filter(item => !INTEGRITY_IGNORE[uid]?.has(item.field));
       }
       if (!differences.length) return;
       const diagnostic = {
@@ -378,7 +388,8 @@
       if (!report.integrityDiffs.length) return;
       const data = {
         categoryId, status: report.status, pending: report.pending,
-        differences: report.integrityDiffs, errors: report.errors
+        differences: report.integrityDiffs, ignoredDifferences: report.ignoredIntegrityDiffs,
+        errors: report.errors
       };
       const href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {
         type: 'application/json;charset=utf-8'
@@ -757,6 +768,9 @@
       ...totals, skipped: report.skipped.length, published: report.published.length,
       comment: [
         ...report.errors,
+        ...report.ignoredIntegrityDiffs.flatMap(item => item.differences.map(diff =>
+          'Игнорировано ' + item.stage + ' ' + item.uid + '/' + item.documentId + ' ' +
+          diff.locale + '.' + diff.field + ': ' + JSON.stringify(diff.before) + ' → ' + JSON.stringify(diff.after))),
         ...(report.reverseWarnings.length ? ['Расхождения обратных связей (информация): ' + report.reverseWarnings.length] : []),
         ...(report.unpublishedRelations.length ? ['Связи с неопубликованными KK записями: ' + report.unpublishedRelations.length] : []),
         ...report.skipped.map(item => item.field + '/' + item.documentId + ': ' + item.reason),
