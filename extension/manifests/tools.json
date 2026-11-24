@@ -14,16 +14,16 @@
       "group": "pusher"
     },
     {
-      "file": "syncer/categoryGroupForward.js",
-      "group": "syncer"
-    },
-    {
-      "file": "syncer/categoryGroupMirror.js",
-      "group": "syncer"
-    },
-    {
       "file": "syncer/categoryRelations.js",
       "group": "syncer"
+    },
+    {
+      "file": "catalog/groupForward.js",
+      "group": "catalog"
+    },
+    {
+      "file": "catalog/groupMirror.js",
+      "group": "catalog"
     },
     {
       "file": "service/dom.js",
