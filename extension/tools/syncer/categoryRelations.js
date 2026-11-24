@@ -35,6 +35,7 @@
       operations: [],
       published: [],
       errors: [],
+      integrityDiffs: [],
       counters: { GET: 0, PUT: 0, POST: 0, retries: 0 },
       pending: null
     };
@@ -333,6 +334,57 @@
         'Изменилась обратная схема Product/Brand');
     }
 
+    function checkIntegrity(stage, uid, id, relation, beforeRU, afterRU, beforeKK, afterKK) {
+      const differences = [];
+      for (const [locale, before, after] of [
+        ['ru', beforeRU, afterRU],
+        ['kk', beforeKK, afterKK]
+      ]) {
+        if (same(before, after)) continue;
+        if (before == null || after == null) {
+          differences.push({ locale, field: '$record', before, after });
+          continue;
+        }
+        for (const field of [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()) {
+          if (!same(before[field], after[field])) differences.push({
+            locale, field,
+            before: Object.hasOwn(before, field) ? before[field] : { missing: true },
+            after: Object.hasOwn(after, field) ? after[field] : { missing: true }
+          });
+        }
+      }
+      if (!differences.length) return;
+      const diagnostic = {
+        stage, uid, documentId: id, relation, categoryId,
+        capturedAt: new Date().toISOString(), differences
+      };
+      report.integrityDiffs.push(diagnostic);
+      console.error(TAG, 'Расхождения целостности', diagnostic);
+      console.table(differences.map(({ locale, field, before, after }) => ({
+        locale, field, before: JSON.stringify(before), after: JSON.stringify(after)
+      })));
+      const fieldsList = differences.map(item => item.locale + '.' + item.field).join(', ');
+      throw Error('После ' + stage + ' изменились поля ' + uid + '/' + id + ': ' + fieldsList);
+    }
+
+    function downloadIntegrity() {
+      if (!report.integrityDiffs.length) return;
+      const data = {
+        categoryId, status: report.status, pending: report.pending,
+        differences: report.integrityDiffs, errors: report.errors
+      };
+      const href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json;charset=utf-8'
+      }));
+      const link = document.createElement('a');
+      link.href = href;
+      link.download = 'category-relations-integrity-' + categoryId + '.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 1000);
+    }
+
     async function writeRelation(uid, id, field, connect, disconnect, expected) {
       stopCheck();
       const beforeRU = await detail(uid, id, 'ru', 'draft', uid !== UID);
@@ -362,10 +414,9 @@
       catch (error) { writeError = error; }
       const afterRU = await detail(uid, id, 'ru', 'draft', uid !== UID);
       const afterKK = await detail(uid, id, 'kk');
-      ensure(same(afterRU ? fields(afterRU, uid) : null, ruFields) &&
-        same(fields(afterKK, uid), kkFields),
-        'ПОСЛЕ ЗАПИСИ изменились поля RU или KK: ' + uid + '/' + id + '/' + field +
-        '. Остановлено, проверь исходные значения в CMS');
+      checkIntegrity('Save', uid, id, field,
+        ruFields, afterRU ? fields(afterRU, uid) : null,
+        kkFields, fields(afterKK, uid));
       if (uid !== UID && beforeRU) {
         const actualRU = idsOf(await links(uid, id, field, 'ru', afterRU));
         ensure(same(actualRU, ruRelation),
@@ -408,9 +459,9 @@
       ensure(published?.publishedAt && published.publishedAt !== previousPublished?.publishedAt,
         'Не удалось подтвердить новую KK Published версию: ' + uid + '/' + id +
         (writeError ? ': ' + writeError.message : ''));
-      ensure(same(fields(draft, uid), beforeFields) &&
-        same(ruAfter ? fields(ruAfter, uid) : null, ruFields),
-        'Publish изменил поля RU/KK: ' + uid + '/' + id);
+      checkIntegrity('Publish', uid, id, changedFields,
+        ruFields, ruAfter ? fields(ruAfter, uid) : null,
+        beforeFields, fields(draft, uid));
       if (ruRelations) {
         for (const [field, beforeIds] of Object.entries(ruRelations)) {
           const afterIds = idsOf(await links(uid, id, field, 'ru', ruAfter));
@@ -663,6 +714,8 @@
       console.error(TAG, 'ОСТАНОВЛЕНО:', error.message, 'documentId:', categoryId);
     } finally {
       report.finishedAt = new Date().toISOString();
+      try { downloadIntegrity(); }
+      catch (error) { console.error(TAG, 'Ошибка экспорта диагностики:', error.message); }
       if (!bulk) {
         try { outputSkips(); }
         catch (error) { console.error(TAG, 'Ошибка экспорта CSV:', error.message); }
