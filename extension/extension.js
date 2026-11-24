@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.4.0
+// @version      1.4.1
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifests
 // @match        http://10.10.3.80:1337/admin/*
 // @match        https://strapi.monamie.kz/admin/*
@@ -387,44 +387,32 @@
     };
   }
 
-  let manualCheckPromise = null;
-  let manualCheckForced = false;
+  let forceUpdatePromise = null;
 
-  async function checkUpdatesNow(force = false) {
-    if (manualCheckPromise) {
-      if (force && !manualCheckForced) {
-        await manualCheckPromise;
-        return checkUpdatesNow(true);
-      }
-
-      console.info('[Extensions] Update check is already running.');
-      return manualCheckPromise;
+  async function forceUpdateNow() {
+    if (forceUpdatePromise) {
+      console.info('[Extensions] Force update is already running.');
+      return forceUpdatePromise;
     }
 
-    manualCheckForced = force;
-    manualCheckPromise = (async () => {
-      console.info(force
-        ? '[Extensions] Force downloading all extensions...'
-        : '[Extensions] Checking loader and extension updates...');
+    forceUpdatePromise = (async () => {
+      console.info('[Extensions] Force downloading all extensions...');
 
       await startupRefresh;
       const currentCache = readCache();
 
       const results = await Promise.allSettled([
         checkLoaderVersion(),
-        refreshCache(currentCache, { silent: true, force })
+        refreshCache(currentCache, { silent: true, force: true })
       ]);
 
       const loaderResult = results[0];
       const extensionResult = results[1];
 
-      let loaderNeedsUpdate = false;
-      let extensionsUpdated = false;
       let failed = false;
 
       if (loaderResult.status === 'fulfilled') {
         const info = loaderResult.value;
-        loaderNeedsUpdate = info.updateAvailable;
 
         if (info.updateAvailable) {
           console.warn(
@@ -453,7 +441,6 @@
 
       if (extensionResult.status === 'fulfilled') {
         const info = extensionResult.value;
-        extensionsUpdated = info.updated;
 
         if (info.updatedItems.length) {
           console.table(
@@ -476,10 +463,9 @@
         }
 
         if (info.updated) {
-          console.info(force
-            ? '[Extensions] All extensions downloaded to cache (' + info.manifest.length +
-              '). Reload Strapi to apply them.'
-            : '[Extensions] Extension updates downloaded to cache. Reload Strapi to apply them.'
+          console.info(
+            '[Extensions] All extensions downloaded to cache (' + info.manifest.length +
+            '). Reload Strapi to apply them.'
           );
         }
       } else {
@@ -487,16 +473,6 @@
         console.error(
           '[Extensions] Failed to check extension updates',
           extensionResult.reason
-        );
-      }
-
-      if (!failed && !loaderNeedsUpdate && !extensionsUpdated) {
-        console.info(
-          '[Extensions] Everything is up to date: loader ' +
-          loaderResult.value.localVersion +
-          ', ' +
-          extensionResult.value.manifest.length +
-          ' extensions.'
         );
       }
 
@@ -508,11 +484,10 @@
         failed
       };
     })().finally(() => {
-      manualCheckPromise = null;
-      manualCheckForced = false;
+      forceUpdatePromise = null;
     });
 
-    return manualCheckPromise;
+    return forceUpdatePromise;
   }
 
   const cache = readCache();
@@ -530,6 +505,5 @@
     console.error('[Extensions] Failed to load extensions', error);
   });
 
-  unsafeWindow.checkUpdates = () => checkUpdatesNow();
-  unsafeWindow.forceUpdate = () => checkUpdatesNow(true);
+  unsafeWindow.forceUpdate = () => forceUpdateNow();
 })();
