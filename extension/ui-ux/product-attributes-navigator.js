@@ -83,7 +83,7 @@
     }
 
     const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-    const normalize = value => String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+    const normalize = value => String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
 
     function getContext() {
         const match = location.pathname.match(
@@ -301,11 +301,16 @@
         return { panel, search, manage, meta, list, footer, range, pages };
     }
 
+    const itemLabel = item => [item.barcode, item.name_web, item.documentId]
+        .map(value => String(value ?? '').trim())
+        .find(Boolean) || '';
+
     function filteredItems(current) {
         const query = normalize(current.query);
         if (!query) return current.items;
 
         return current.items.filter(item =>
+            normalize(item.barcode).includes(query) ||
             normalize(item.name_web).includes(query) ||
             normalize(item.documentId).includes(query)
         );
@@ -338,7 +343,7 @@
         const byLabel = new Map();
 
         for (const item of items) {
-            const key = normalize(item.name_web || item.documentId);
+            const key = normalize(itemLabel(item));
             if (!key) continue;
 
             if (!byLabel.has(key)) byLabel.set(key, []);
@@ -476,7 +481,7 @@
         } else {
             for (const item of pageItems) {
                 const row = el('div', 'tm-pan-row');
-                const label = item.name_web || item.documentId;
+                const label = itemLabel(item);
                 const link = el('a', 'tm-pan-link', label);
 
                 link.href = attributeUrl(item, current.context.locale);
