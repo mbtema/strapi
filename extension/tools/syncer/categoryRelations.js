@@ -14,7 +14,10 @@
     brand: BRAND_UID,
     top_brands: BRAND_UID
   };
-  const INTEGRITY_IGNORE = { [UID]: new Set(['key']) };
+  const INTEGRITY_IGNORE = {
+    [UID]: new Set(['key']),
+    [PRODUCT_UID]: new Set(['InStock', 'inStock'])
+  };
   const PAGE_SIZE = 100;
   const RUN_KEY = '__tmCategoryRelationsRunning';
   if (window[RUN_KEY]) {
@@ -38,7 +41,6 @@
       integrityDiffs: [],
       ignoredIntegrityDiffs: [],
       unpublishedRelations: [],
-      reverseWarnings: [],
       counters: { GET: 0, PUT: 0, POST: 0, retries: 0 },
       pending: null
     };
@@ -403,7 +405,7 @@
       setTimeout(() => URL.revokeObjectURL(href), 1000);
     }
 
-    async function snapshot(uid, id, reverseFields = []) {
+    async function snapshot(uid, id, relationFields = []) {
       const result = {};
       for (const locale of ['ru', 'kk']) {
         for (const status of ['draft', 'published']) {
@@ -414,7 +416,7 @@
             continue;
           }
           const relationIds = {};
-          for (const field of reverseFields)
+          for (const field of relationFields)
             relationIds[field] = idsOf(await links(uid, id, field, locale, row, status));
           result[key] = { row, fields: fields(row, uid), relations: relationIds };
         }
@@ -422,33 +424,14 @@
       return result;
     }
 
-    function warnReverse(stage, uid, id, locale, status, field, before, expected, actual) {
-      if (same(expected, actual)) return;
-      const warning = { stage, uid, documentId: id, locale, status, field, before, expected, actual };
-      report.reverseWarnings.push(warning);
-      console.warn(TAG, 'Расхождение обратной связи (информация)', warning);
-    }
-
-    function verifySnapshot(stage, uid, id, relation, before, after, expectedKK = null) {
+    function verifySnapshot(stage, uid, id, relation, before, after) {
       for (const status of ['draft', 'published']) {
         const ru = 'ru/' + status, kk = 'kk/' + status;
-        const expected = status === 'draft' && expectedKK ? expectedKK : before[kk]?.fields ?? null;
         checkIntegrity(stage + ' ' + status, uid, id, relation,
           before[ru]?.fields ?? null, after[ru]?.fields ?? null,
-          expected, after[kk]?.fields ?? null);
-        for (const field of relation) {
-          const previous = before[ru]?.relations[field] ?? null;
-          warnReverse(stage, uid, id, 'ru', status, field, previous, previous,
-            after[ru]?.relations[field] ?? null);
-        }
+          before[kk]?.fields ?? null, after[kk]?.fields ?? null);
       }
     }
-
-    const reverseField = {
-      parent: 'categories', categories: 'parent',
-      product: 'categories', products: 'category',
-      brand: 'categories', top_brands: 'category'
-    };
 
     async function prepareChanges(root, desired) {
       const delta = {}, affected = new Map();
@@ -462,14 +445,12 @@
           connect.push({ ...row, isTemporary: true });
         }
         delta[field] = { connect, disconnect };
-        for (const [added, rows] of [[true, connect], [false, disconnect]]) {
-          for (const row of rows) {
-            const uid = TARGET_UID[field], id = row.documentId;
-            ensure(uid !== UID || id !== categoryId, 'Category не может ссылаться на себя');
-            const key = uid + '/' + id;
-            if (!affected.has(key)) affected.set(key, { uid, id, changes: [] });
-            affected.get(key).changes.push({ field, reverse: reverseField[field], added });
-          }
+        for (const row of [...connect, ...disconnect]) {
+          const uid = TARGET_UID[field], id = row.documentId;
+          ensure(uid !== UID || id !== categoryId, 'Category не может ссылаться на себя');
+          const key = uid + '/' + id;
+          if (!affected.has(key)) affected.set(key, { uid, id, fields: [] });
+          affected.get(key).fields.push(field);
         }
       }
       return { delta, affected: [...affected.values()] };
@@ -477,22 +458,8 @@
 
     async function captureTargets(affected) {
       for (const item of affected) {
-        const reverseFields = sortUnique(item.changes.map(change => change.reverse));
-        item.before = await snapshot(item.uid, item.id, reverseFields);
-        const kk = item.before['kk/draft'], ru = item.before['ru/draft'];
-        ensure(kk, 'KK target исчез: ' + item.uid + '/' + item.id);
-        for (const change of item.changes) {
-          const previous = kk.relations[change.reverse];
-          if (change.added && ru) {
-            const source = ru.relations[change.reverse];
-            warnReverse('Preflight', item.uid, item.id, 'ru', 'draft', change.reverse,
-              source, sortUnique([...source, categoryId]), source);
-          }
-          const single = ['categories', 'products', 'top_brands'].includes(change.field);
-          change.expected = change.added
-            ? single ? [categoryId] : sortUnique([...previous, categoryId])
-            : previous.filter(id => id !== categoryId);
-        }
+        item.before = await snapshot(item.uid, item.id);
+        ensure(item.before['kk/draft'], 'KK target исчез: ' + item.uid + '/' + item.id);
       }
     }
 
@@ -569,13 +536,8 @@
         }
       }
       for (const item of affected) {
-        const reverseFields = sortUnique(item.changes.map(change => change.reverse));
-        const actual = await snapshot(item.uid, item.id, reverseFields);
-        verifySnapshot('Publish Category', item.uid, item.id, reverseFields, item.before, actual);
-        for (const change of item.changes)
-          warnReverse('Publish Category', item.uid, item.id, 'kk', 'draft', change.reverse,
-            item.before['kk/draft'].relations[change.reverse], change.expected,
-            actual['kk/draft']?.relations[change.reverse] ?? null);
+        const actual = await snapshot(item.uid, item.id);
+        verifySnapshot('Publish Category', item.uid, item.id, item.fields, item.before, actual);
       }
       for (const field of FIELDS) {
         const { connect, disconnect } = delta[field];
@@ -771,7 +733,6 @@
         ...report.ignoredIntegrityDiffs.flatMap(item => item.differences.map(diff =>
           'Игнорировано ' + item.stage + ' ' + item.uid + '/' + item.documentId + ' ' +
           diff.locale + '.' + diff.field + ': ' + JSON.stringify(diff.before) + ' → ' + JSON.stringify(diff.after))),
-        ...(report.reverseWarnings.length ? ['Расхождения обратных связей (информация): ' + report.reverseWarnings.length] : []),
         ...(report.unpublishedRelations.length ? ['Связи с неопубликованными KK записями: ' + report.unpublishedRelations.length] : []),
         ...report.skipped.map(item => item.field + '/' + item.documentId + ': ' + item.reason),
         ...(report.pending ? ['Неподтверждённая операция: ' + JSON.stringify(report.pending)] : [])
