@@ -36,6 +36,12 @@
       "path": "ui-ux/product-sections.js",
       "version": "1.7.0",
       "enabled": true
+    },
+    {
+      "id": "attribute-sections",
+      "path": "ui-ux/attribute-sections.js",
+      "version": "1.0.0",
+      "enabled": true
     }
   ]
 }
