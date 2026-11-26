@@ -15,6 +15,8 @@
 
     const PRODUCT_UID = 'api::product.product';
     const ATTRIBUTE_UID = 'api::attribute.attribute';
+    const SHADE_UID = 'api::shade.shade';
+    const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
     const FIELD = 'input[type="relation"][name="attributes"]';
     const API_PAGE_SIZE = 100;
     const UI_PAGE_SIZE = 10;
@@ -61,6 +63,12 @@
             [${ROOT}] .tm-pan-details{
                 display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;
                 gap:4px 8px;min-width:0;max-width:50%;flex:0 1 auto;overflow-wrap:anywhere
+            }
+            [${ROOT}] .tm-pan-shade-swatch{
+                display:inline-block;height:18px;margin-inline-end:6px;
+                vertical-align:middle;border-radius:var(--tm-ds-radius,4px);
+                box-shadow:inset 0 0 0 1px var(--tm-ds-neutral300,#a5a5ba);
+                pointer-events:none
             }
             [${ROOT}] .tm-pan-detail-empty{color:var(--tm-ds-neutral600)}
             [${ROOT}] .tm-pan-status{flex:0 0 auto;margin-inline-start:auto}
@@ -410,6 +418,19 @@
         return node;
     }
 
+    function shadeSwatch(colors) {
+        if (!colors?.length) return null;
+        const node = el('span', 'tm-pan-shade-swatch');
+        node.setAttribute('data-tm-relation-attribute-shade', '');
+        node.setAttribute('aria-hidden', 'true');
+        node.style.width = colors.length * 18 + 'px';
+        node.style.background = colors.length === 1 ? colors[0] :
+            'linear-gradient(to right, ' + colors.map((color, index) =>
+                color + ' ' + (index * 18) + 'px ' + ((index + 1) * 18) + 'px'
+            ).join(', ') + ')';
+        return node;
+    }
+
     function createPanel() {
         const panel = el('div');
         panel.setAttribute(CREATED_ATTR, 'product-attributes-navigator');
@@ -641,6 +662,10 @@
                         if (value) {
                             const label = el('span', '', value);
                             label.title = title + ': ' + value;
+                            if (field === 'shade') {
+                                const swatch = shadeSwatch(details.shadeColors);
+                                if (swatch) label.prepend(swatch);
+                            }
                             info.appendChild(label);
                         }
                     }
@@ -732,7 +757,13 @@
         }
 
         return data.results.map(item => {
-            const result = { volume: '', shade: '', error: '' };
+            const shadeDocumentId = item.shade?.documentId;
+            const result = {
+                volume: '', shade: '', error: '',
+                shadeDocumentId: typeof shadeDocumentId === 'string' &&
+                    /^[a-z0-9]+$/i.test(shadeDocumentId) ? shadeDocumentId : '',
+                shadeColors: []
+            };
             const errors = [];
             for (const field of ['volume', 'shade']) {
                 try {
@@ -741,9 +772,74 @@
                     errors.push(error.message);
                 }
             }
+            if (result.shade && !result.shadeDocumentId) {
+                console.warn('[relationAttribute] Нет documentId связанного оттенка:', item.documentId);
+            }
             result.error = errors.join('; ');
             return [item.documentId, result];
         });
+    }
+
+    function readShadeColors(item) {
+        if (!Array.isArray(item?.hexes)) return null;
+        return item.hexes.map(value => String(value?.hex || '').trim()).filter(value => HEX.test(value));
+    }
+
+    async function fetchShadeColors(ids, locale, signal) {
+        const colors = new Map();
+        if (!ids.length || signal.aborted) return colors;
+
+        const headers = { Accept: 'application/json' };
+        const token = getToken();
+        if (token) headers.Authorization = 'Bearer ' + token;
+        const options = { method: 'GET', credentials: 'include', headers, signal };
+        const params = new URLSearchParams({
+            page: '1', pageSize: String(ids.length), sort: 'id:ASC', locale
+        });
+        ids.forEach((id, index) => params.append('filters[documentId][$in][' + index + ']', id));
+        params.append('populate[hexes][fields][0]', 'hex');
+        const expected = new Set(ids);
+
+        try {
+            const response = await fetch('/content-manager/collection-types/' + SHADE_UID + '?' + params, options);
+            if (!response.ok) throw new Error('Shade API: ' + response.status);
+            const data = await response.json();
+            if (!Array.isArray(data?.results) ||
+                data.results.some(item => !expected.has(item?.documentId)) ||
+                new Set(data.results.map(item => item.documentId)).size !== data.results.length) {
+                throw new Error('Несоответствующий ответ Shade API');
+            }
+            for (const item of data.results) {
+                const values = readShadeColors(item);
+                if (values !== null) colors.set(item.documentId, values);
+            }
+        } catch (error) {
+            if (signal.aborted) return colors;
+            console.warn('[relationAttribute] Shade batch:', error);
+        }
+
+        const missing = ids.filter(id => !colors.has(id));
+        const query = new URLSearchParams({ locale });
+        for (let offset = 0; offset < missing.length && !signal.aborted; offset += 3) {
+            await Promise.all(missing.slice(offset, offset + 3).map(async id => {
+                try {
+                    const response = await fetch(
+                        '/content-manager/collection-types/' + SHADE_UID + '/' + encodeURIComponent(id) + '?' + query,
+                        options
+                    );
+                    if (!response.ok) throw new Error('Shade API: ' + response.status);
+                    const item = (await response.json())?.data;
+                    const values = readShadeColors(item);
+                    if (item?.documentId !== id || values === null) {
+                        throw new Error('Не удалось подтвердить HEX оттенка');
+                    }
+                    colors.set(id, values);
+                } catch (error) {
+                    if (!signal.aborted) console.warn('[relationAttribute] Shade:', id, error);
+                }
+            }));
+        }
+        return colors;
     }
 
     async function loadDetails(current, signal) {
@@ -755,6 +851,7 @@
         }
 
         for (const [locale, items] of groups) {
+            const shadeCache = new Map();
             for (let offset = 0; offset < items.length; offset += DETAILS_BATCH_SIZE) {
                 if (signal.aborted || current !== state) return;
                 const batch = items.slice(offset, offset + DETAILS_BATCH_SIZE);
@@ -762,7 +859,17 @@
                     const entries = await fetchDetails(batch, locale, signal);
                     if (signal.aborted || current !== state) return;
                     for (const [id, details] of entries) {
+                        details.shadeColors = shadeCache.get(details.shadeDocumentId) || [];
                         current.details.set(id, details);
+                    }
+                    render(current);
+                    const shadeIds = [...new Set(entries.map(([, details]) => details.shadeDocumentId)
+                        .filter(id => id && !shadeCache.has(id)))];
+                    const colors = await fetchShadeColors(shadeIds, locale, signal);
+                    if (signal.aborted || current !== state) return;
+                    for (const [id, values] of colors) shadeCache.set(id, values);
+                    for (const [, details] of entries) {
+                        details.shadeColors = shadeCache.get(details.shadeDocumentId) || [];
                     }
                 } catch (error) {
                     if (signal.aborted || current !== state) return;
