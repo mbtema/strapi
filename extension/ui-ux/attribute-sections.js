@@ -12,7 +12,7 @@
         ['system', 'Системное']
     ];
     const SECTIONS = {
-        content: new Set(['active', 'detail_picture', 'shade', 'volume', 'barcode']),
+        content: new Set(['active', 'detail_picture', 'shade', 'volume', 'barcode', 'product']),
         ar: new Set(['isArTryOnAvailable', 'arSupportsIntensity', 'arTexture', 'arType']),
         marketing: new Set(['label_sales', 'label_new', 'label_hit', 'label_exclusive', 'home_new_priority', 'home_hit_priority'])
     };
