@@ -812,148 +812,327 @@
     const dialog = document.createElement('dialog');
     dialog.setAttribute('data-tm-category-relations', '');
     dialog.setAttribute('data-tm-ds', '');
-    dialog.setAttribute('aria-label', 'Category Relations');
-    dialog.style.cssText = 'width:min(520px,calc(100vw - 32px));max-height:85vh;overflow:auto;padding:24px;border:1px solid var(--tm-ds-neutral200,#4a4a6a);border-radius:8px;background:var(--tm-ds-neutral0,#212134);color:var(--tm-ds-neutral800,#fff);font:inherit;box-sizing:border-box';
+    dialog.setAttribute('aria-labelledby', 'tm-cr-heading');
     const style = document.createElement('style');
-    style.textContent = '[data-tm-category-relations]::backdrop{background:rgba(0,0,0,.55)}[data-tm-category-relations] input{width:100%;box-sizing:border-box}[data-tm-category-relations] [hidden]{display:none!important}[data-tm-category-relations] button:disabled{opacity:.55;cursor:default}';
-    const add = (tag, text, cls, parent = dialog) => {
+    style.textContent = [
+      '[data-tm-category-relations]{position:fixed;inset:0;margin:auto;width:min(560px,calc(100vw - 32px));height:fit-content;max-height:calc(100dvh - 32px);overflow:auto;padding:24px;box-sizing:border-box;border:1px solid var(--tm-ds-neutral200);border-radius:8px;background:var(--tm-ds-neutral0);color:var(--tm-ds-neutral800);box-shadow:0 16px 48px #0004;font:inherit;outline:none}',
+      '[data-tm-category-relations]::backdrop{background:rgba(3,3,20,.58)}',
+      '[data-tm-category-relations] [hidden]{display:none!important}',
+      '[data-tm-category-relations] .tm-cr-header,[data-tm-category-relations] .tm-cr-actions,[data-tm-category-relations] .tm-cr-line{display:flex;align-items:center;gap:8px}',
+      '[data-tm-category-relations] .tm-cr-header,[data-tm-category-relations] .tm-cr-line{justify-content:space-between}',
+      '[data-tm-category-relations] h2{font-size:20px;font-weight:600;line-height:1.3;margin:0 0 4px}',
+      '[data-tm-category-relations] h3{font-size:14px;font-weight:600;margin:0}',
+      '[data-tm-category-relations] p{margin:0;overflow-wrap:anywhere}',
+      '[data-tm-category-relations] .tm-cr-stack{display:flex;flex-direction:column;gap:16px;margin-top:20px}',
+      '[data-tm-category-relations] .tm-cr-switch{display:flex;gap:4px;padding:4px;border-radius:6px;background:var(--tm-ds-neutral100);border:1px solid var(--tm-ds-neutral200)}',
+      '[data-tm-category-relations] .tm-cr-switch button{flex:1;min-width:0;padding:8px;border:1px solid transparent;background:transparent}',
+      '[data-tm-category-relations] .tm-cr-switch button[aria-pressed="true"]{background:var(--tm-ds-neutral0);border-color:var(--tm-ds-primary600);color:var(--tm-ds-primary700)}',
+      '[data-tm-category-relations] .tm-cr-switch button:disabled{opacity:.55}',
+      '[data-tm-category-relations] .tm-cr-section{display:flex;flex-direction:column;gap:10px}',
+      '[data-tm-category-relations] input{width:100%;min-width:0;box-sizing:border-box}',
+      '[data-tm-category-relations] .tm-cr-file{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;border:1px dashed var(--tm-ds-neutral300);border-radius:6px;padding:18px;overflow-wrap:anywhere}',
+      '[data-tm-category-relations] .tm-cr-file input{font:inherit;color:inherit;font-size:12px;max-width:100%}',
+      '[data-tm-category-relations] .tm-cr-file input::file-selector-button{font:inherit;color:inherit;background:var(--tm-ds-neutral100);border:1px solid var(--tm-ds-neutral200);border-radius:4px;padding:7px 10px;margin-right:8px;cursor:pointer}',
+      '[data-tm-category-relations] .tm-cr-note{padding:12px;border-radius:6px;background:var(--tm-ds-neutral100);border:1px solid var(--tm-ds-neutral200)}',
+      '[data-tm-category-relations] [data-tone="error"]{color:var(--tm-ds-danger600)}',
+      '[data-tm-category-relations] [data-tone="success"]{color:var(--tm-ds-success600)}',
+      '[data-tm-category-relations] [data-tone="warning"]{color:var(--tm-ds-warning600)}',
+      '[data-tm-category-relations] .tm-cr-actions{justify-content:flex-end;flex-wrap:wrap;margin-top:20px;padding-top:16px;border-top:1px solid var(--tm-ds-neutral200)}',
+      '[data-tm-category-relations] .tm-cr-primary:not(:disabled){background:var(--tm-ds-buttonPrimary600);border-color:var(--tm-ds-buttonPrimary600);color:#fff}',
+      '[data-tm-category-relations] .tm-cr-primary:hover:not(:disabled){background:var(--tm-ds-primary500)}',
+      '[data-tm-category-relations] .tm-cr-close{width:32px;padding:0;font-size:20px;flex-shrink:0}',
+      '[data-tm-category-relations] progress{width:100%;height:8px;accent-color:var(--tm-ds-primary600)}',
+      '[data-tm-category-relations] .tm-cr-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}',
+      '[data-tm-category-relations] .tm-cr-metric{padding:12px;border:1px solid var(--tm-ds-neutral200);border-radius:6px;min-width:0}',
+      '[data-tm-category-relations] .tm-cr-value{font-size:24px;font-weight:600;line-height:1.2;margin-top:4px;font-variant-numeric:tabular-nums}',
+      '@media(max-width:420px){[data-tm-category-relations]{padding:16px}[data-tm-category-relations] .tm-cr-actions>button{flex:1}}'
+    ].join('\n');
+
+    const add = (parent, tag, text = '', cls = '') => {
       const node = document.createElement(tag);
-      if (text) node.textContent = text;
-      if (cls) node.className = cls;
+      node.textContent = text;
+      node.className = cls;
       parent.appendChild(node);
       return node;
     };
-    const button = (text, parent = dialog) => {
-      const node = add('button', text, 'tm-ds-button', parent);
+    const button = (parent, text, cls = '') => {
+      const node = add(parent, 'button', text, 'tm-ds-button ' + cls);
       node.type = 'button';
       return node;
     };
-    const gap = node => { node.style.marginTop = '12px'; return node; };
-    const heading = add('h2', 'Category Relations', 'tm-ds-text');
-    heading.style.cssText = 'font-size:18px;font-weight:600;margin:0 0 12px';
-    add('p', 'Синхронизация связей RU → KK', 'tm-ds-meta');
-    const single = gap(button('Текущая запись'));
-    single.disabled = !currentId;
-    if (!currentId) gap(add('p', 'Для стандартного режима откройте Category.', 'tm-ds-meta'));
-    gap(add('h3', 'Массовая синхронизация', 'tm-ds-text'));
-    const input = gap(add('input', '', 'tm-ds-input'));
+    const header = add(dialog, 'div', '', 'tm-cr-header');
+    const heading = add(header, 'div');
+    add(heading, 'h2', 'Category Relations').id = 'tm-cr-heading';
+    add(heading, 'p', 'Синхронизация связей RU → KK', 'tm-ds-meta');
+    const cross = button(header, '×', 'tm-cr-close');
+    cross.setAttribute('aria-label', 'Закрыть');
+
+    const form = add(dialog, 'div', '', 'tm-cr-stack');
+    const modes = add(form, 'div', '', 'tm-cr-switch');
+    modes.setAttribute('role', 'group');
+    modes.setAttribute('aria-label', 'Режим синхронизации');
+    const single = button(modes, 'Текущая запись');
+    single.title = currentId ? '' : 'Откройте карточку Category';
+    const multiple = button(modes, 'Массовая');
+    const singleForm = add(form, 'div', '', 'tm-cr-section');
+    add(singleForm, 'h3', 'Открытая Category');
+    add(singleForm, 'p', currentId, 'tm-ds-meta tm-cr-note');
+    add(singleForm, 'p', 'Связи текущей записи будут сверены с RU и опубликованы в KK.', 'tm-ds-text');
+    const massForm = add(form, 'div', '', 'tm-cr-section');
+    add(massForm, 'h3', 'Источник конфигурации');
+    const sources = add(massForm, 'div', '', 'tm-cr-switch');
+    sources.setAttribute('role', 'group');
+    sources.setAttribute('aria-label', 'Источник конфигурации');
+    const local = button(sources, 'CSV-файл');
+    const remote = button(sources, 'Google Sheets');
+    const fileForm = add(massForm, 'div', '', 'tm-cr-file');
+    add(fileForm, 'h3', 'Выберите CSV с documentId');
+    const file = add(fileForm, 'input');
+    file.type = 'file';
+    file.accept = '.csv,text/csv';
+    file.setAttribute('aria-label', 'CSV-файл конфигурации');
+    add(fileForm, 'p', 'Можно использовать файл из config → categoryRelations.js.', 'tm-ds-meta');
+    const urlForm = add(massForm, 'div', '', 'tm-cr-section');
+    const urlLabel = add(urlForm, 'label', 'URL Google Sheets', 'tm-ds-meta');
+    urlLabel.htmlFor = 'tm-cr-url';
+    const input = add(urlForm, 'input', '', 'tm-ds-input');
+    input.id = 'tm-cr-url';
     input.type = 'url';
-    input.placeholder = 'URL Google Sheets';
-    input.setAttribute('aria-label', 'URL Google Sheets');
-    const preview = gap(button('Загрузить конфиг'));
-    const status = gap(add('p', '', 'tm-ds-text'));
-    status.setAttribute('role', 'status');
-    status.style.whiteSpace = 'pre-wrap';
-    status.style.overflowWrap = 'anywhere';
-    gap(add('p', 'RU → KK: изменения связей публикуются через текущую KK Category. Отдельные Product и Brand не сохраняются. Google Sheets не изменяется.', 'tm-ds-meta'));
-    const actions = gap(add('div', ''));
-    actions.style.cssText += ';display:flex;gap:8px;flex-wrap:wrap';
-    const start = button('Запустить', actions);
-    const stop = button('Остановить', actions);
-    const save = button('Скачать CSV', actions);
-    const close = button('Закрыть', actions);
-    start.disabled = true;
-    stop.hidden = true;
-    save.hidden = true;
-    let config = null, busy = false, batch = null;
-    const invalidate = () => { config = null; start.disabled = true; };
-    input.addEventListener('input', () => {
-      invalidate();
-      status.textContent = '';
-    });
-    function lock(value) {
-      busy = value;
-      input.disabled = value;
-      preview.disabled = value;
-      single.disabled = value || !currentId;
-      close.disabled = value;
-      start.disabled = value || !config;
+    input.placeholder = 'https://docs.google.com/spreadsheets/d/…';
+    const preview = button(urlForm, 'Загрузить конфиг');
+    add(urlForm, 'p', 'Таблица должна быть доступна по ссылке.', 'tm-ds-meta');
+    const configStatus = add(massForm, 'p', 'Конфиг не загружен', 'tm-ds-meta tm-cr-note');
+    configStatus.setAttribute('role', 'status');
+    add(form, 'p', 'Публикуется только KK Category. Связанные записи отдельно не публикуются.', 'tm-ds-meta');
+
+    const result = add(dialog, 'div', '', 'tm-cr-stack');
+    result.hidden = true;
+    const resultLine = add(result, 'div', '', 'tm-cr-line');
+    const phase = add(resultLine, 'h3', 'Обработка');
+    const percent = add(resultLine, 'span', '', 'tm-ds-meta');
+    const progress = add(result, 'progress');
+    progress.setAttribute('aria-label', 'Прогресс синхронизации');
+    const metrics = add(result, 'div', '', 'tm-cr-metrics');
+    const values = {};
+    for (const [key, label, tone] of [
+      ['completed', 'Успешно', 'success'],
+      ['partial', 'Частично', 'warning'],
+      ['stopped', 'Ошибки', 'error'],
+      ['pending', 'Осталось', '']
+    ]) {
+      const metric = add(metrics, 'div', '', 'tm-cr-metric');
+      add(metric, 'p', label, 'tm-ds-meta');
+      values[key] = add(metric, 'p', '0', 'tm-cr-value');
+      if (tone) values[key].dataset.tone = tone;
     }
+    const detail = add(result, 'p', '', 'tm-ds-meta');
+    detail.setAttribute('role', 'status');
+    const resultError = add(result, 'p', '', 'tm-ds-text tm-cr-note');
+    resultError.dataset.tone = 'error';
+    resultError.hidden = true;
+
+    const actions = add(dialog, 'div', '', 'tm-cr-actions');
+    const close = button(actions, 'Закрыть');
+    const reset = button(actions, 'Новая синхронизация');
+    const stop = button(actions, 'Остановить');
+    const save = button(actions, 'Скачать отчёт CSV');
+    const start = button(actions, 'Запустить', 'tm-cr-primary');
+
+    let mode = currentId ? 'single' : 'bulk';
+    let source = 'file';
+    let config = null, busy = false, view = 'form', batch = null;
+
+    function setConfigStatus(text, tone = '') {
+      configStatus.textContent = text;
+      configStatus.dataset.tone = tone;
+    }
+
+    function invalidate() {
+      config = null;
+      setConfigStatus('Конфиг не загружен');
+    }
+
+    function render() {
+      const inForm = view === 'form';
+      form.hidden = !inForm;
+      result.hidden = inForm;
+      single.setAttribute('aria-pressed', String(mode === 'single'));
+      multiple.setAttribute('aria-pressed', String(mode === 'bulk'));
+      local.setAttribute('aria-pressed', String(source === 'file'));
+      remote.setAttribute('aria-pressed', String(source === 'sheet'));
+      singleForm.hidden = mode !== 'single';
+      massForm.hidden = mode !== 'bulk';
+      fileForm.hidden = source !== 'file';
+      urlForm.hidden = source !== 'sheet';
+      single.disabled = busy || !currentId;
+      for (const node of [multiple, local, remote, file, input, preview]) node.disabled = busy;
+      preview.disabled = busy || !input.value.trim();
+      start.hidden = !inForm;
+      start.disabled = busy || (mode === 'single' ? !currentId : !config);
+      start.textContent = mode === 'single' ? 'Синхронизировать' : 'Запустить' + (config ? ' · ' + config.ids.length : '');
+      close.disabled = cross.disabled = busy;
+      close.hidden = !inForm && busy;
+      stop.hidden = inForm || !busy || mode !== 'bulk';
+      stop.disabled = window.categoryRelationsStop === true;
+      stop.textContent = stop.disabled ? 'Остановка…' : 'Остановить';
+      save.hidden = inForm || !batch;
+      reset.hidden = inForm || busy;
+    }
+
+    function showConfig(value, name) {
+      config = value;
+      setConfigStatus(name + ' · ' + value.ids.length + ' записей' +
+        (value.duplicates ? ' · дублей исключено: ' + value.duplicates : ''), 'success');
+    }
+
+    function renderReport(report, done, id) {
+      batch = report;
+      const total = report.rows.length;
+      const running = report.status === 'running';
+      phase.textContent = running ? 'Синхронизация' : ({
+        completed: 'Синхронизация завершена',
+        partial: 'Завершено с исключениями',
+        stopped: 'Синхронизация остановлена',
+        cancelled: 'Синхронизация отменена'
+      })[report.status] || 'Итог';
+      progress.max = Math.max(total, 1);
+      progress.value = done;
+      percent.textContent = done + ' / ' + total + ' · ' + Math.round(100 * done / Math.max(total, 1)) + '%';
+      for (const key of Object.keys(values))
+        values[key].textContent = String(report.rows.filter(row => row.status === key).length);
+      detail.textContent = running
+        ? (window.categoryRelationsStop === true ? 'Остановка после текущей записи…' : id ? 'Текущая Category: ' + id : 'Обработка…')
+        : 'Подключено: ' + report.rows.reduce((n, row) => n + (row.added || 0), 0) +
+          ' · Отключено: ' + report.rows.reduce((n, row) => n + (row.removed || 0), 0) +
+          ' · Опубликовано: ' + report.rows.reduce((n, row) => n + (row.published || 0), 0);
+      const error = report.status === 'stopped' ? report.reports.at(-1)?.errors.join('; ') || '' : '';
+      resultError.textContent = error;
+      resultError.hidden = !error;
+      render();
+    }
+
+    single.onclick = () => { mode = 'single'; render(); };
+    multiple.onclick = () => { mode = 'bulk'; render(); };
+    local.onclick = () => {
+      if (source === 'file') return;
+      source = 'file';
+      file.value = '';
+      invalidate();
+      render();
+    };
+    remote.onclick = () => {
+      if (source === 'sheet') return;
+      source = 'sheet';
+      file.value = '';
+      invalidate();
+      render();
+    };
+    input.addEventListener('input', () => { invalidate(); render(); });
+    file.addEventListener('change', async () => {
+      invalidate();
+      const selected = file.files?.[0];
+      if (!selected) { render(); return; }
+      busy = true;
+      setConfigStatus('Чтение CSV…');
+      render();
+      try {
+        if (!/\.csv$/i.test(selected.name)) throw Error('Выберите файл CSV');
+        showConfig(parseCsv(await selected.text()), selected.name);
+      } catch (error) {
+        setConfigStatus(error.message, 'error');
+        file.value = '';
+      } finally {
+        busy = false;
+        render();
+      }
+    });
+    preview.onclick = async () => {
+      if (busy) return;
+      invalidate();
+      busy = true;
+      setConfigStatus('Чтение Google Sheets…');
+      render();
+      try {
+        const url = exportUrl(input.value);
+        const response = await fetch(url, { credentials: 'omit', cache: 'no-store' });
+        if (!response.ok) throw Error('Google Sheets: HTTP ' + response.status);
+        if (!/^text\/csv\b/i.test(response.headers.get('content-type') || ''))
+          throw Error('Google Sheets не вернул CSV. Проверьте доступ по ссылке.');
+        showConfig(parseCsv(await response.text()), 'Google Sheets');
+      } catch (error) {
+        setConfigStatus(error.message, 'error');
+      } finally {
+        busy = false;
+        render();
+      }
+    };
+
+    reset.onclick = () => {
+      batch = null;
+      view = 'form';
+      delete window.categoryRelationsStop;
+      file.value = '';
+      invalidate();
+      render();
+    };
+    stop.onclick = () => {
+      window.categoryRelationsStop = true;
+      detail.textContent = 'Остановка после текущей записи…';
+      render();
+    };
+    save.onclick = () => { if (batch) downloadResults(batch); };
+    start.onclick = async () => {
+      if (busy || view !== 'form') return;
+      if (mode === 'single' && (!currentId || location.pathname !== pathname)) {
+        singleForm.querySelector('.tm-cr-note').textContent = 'Открытая запись изменилась. Запустите инструмент повторно.';
+        return;
+      }
+      if (mode === 'bulk' && !config) return;
+      const ids = mode === 'single' ? [currentId] : config.ids.slice();
+      if (mode === 'bulk' && !confirm('Обработать ' + ids.length + ' Category RU → KK с публикацией только KK Category?')) return;
+      delete window.categoryRelationsStop;
+      busy = true;
+      view = 'result';
+      batch = null;
+      renderReport({ status: 'running', rows: ids.map(documentId => ({ documentId, status: 'pending' })), reports: [] }, 0, ids[0]);
+      try {
+        if (mode === 'bulk') {
+          batch = await runBatch(ids, renderReport);
+        } else {
+          const report = await normalize(currentId);
+          const singleBatch = { status: report.status, rows: [summarize(report)], reports: [report] };
+          renderReport(singleBatch, 1, '');
+          if (report.status === 'cancelled') batch = null;
+        }
+      } catch (error) {
+        phase.textContent = 'Ошибка синхронизации';
+        resultError.textContent = error.message;
+        resultError.hidden = false;
+        console.error(TAG, error);
+      } finally {
+        busy = false;
+        render();
+      }
+    };
+
     try {
       document.head.appendChild(style);
       document.body.appendChild(dialog);
-      const selected = await new Promise(resolve => {
-        const finish = value => {
+      window.__tmStrapiDesignSystem?.syncTheme();
+      render();
+      await new Promise(resolve => {
+        const finish = () => {
           if (busy) return;
           dialog.close();
-          resolve(value);
+          resolve();
         };
-        close.onclick = () => finish(null);
+        close.onclick = cross.onclick = finish;
         dialog.addEventListener('cancel', event => {
           event.preventDefault();
-          finish(null);
+          finish();
         });
-        single.onclick = () => {
-          if (location.pathname !== pathname) {
-            status.textContent = 'Открытая запись изменилась. Запустите инструмент повторно.';
-            return;
-          }
-          finish(currentId);
-        };
-        preview.onclick = async () => {
-          if (busy) return;
-          invalidate();
-          lock(true);
-          status.textContent = 'Чтение Google Sheets…';
-          try {
-            const url = exportUrl(input.value);
-            const response = await fetch(url, { credentials: 'omit', cache: 'no-store' });
-            if (!response.ok) throw Error('Google Sheets: HTTP ' + response.status);
-            if (!/^text\/csv\b/i.test(response.headers.get('content-type') || ''))
-              throw Error('Google Sheets не вернул CSV. Проверьте доступ по ссылке.');
-            config = parseCsv(await response.text());
-            status.textContent = 'Записей к обработке: ' + config.ids.length +
-              '\nИсключено дублей: ' + config.duplicates;
-          } catch (error) {
-            status.textContent = error.message;
-          } finally { lock(false); }
-        };
-        stop.onclick = () => {
-          window.categoryRelationsStop = true;
-          stop.disabled = true;
-          status.textContent += '\nОстановка после текущей записи…';
-        };
-        save.onclick = () => {
-          const report = batch || window.categoryRelationsBatchReport;
-          if (report) downloadResults(report);
-        };
-        start.onclick = async () => {
-          if (busy || !config) return;
-          const ids = config.ids.slice();
-          if (!confirm('Обработать ' + ids.length + ' Category RU → KK с публикацией только KK Category?')) return;
-          delete window.categoryRelationsStop;
-          invalidate();
-          lock(true);
-          stop.hidden = false;
-          stop.disabled = false;
-          save.hidden = false;
-          batch = null;
-          try {
-            batch = await runBatch(ids, (report, done, id) => {
-              const count = name => report.rows.filter(row => row.status === name).length;
-              status.textContent = (report.status === 'running' ? 'Обработка' : 'Итог: ' + report.status) +
-                '\nОбработано: ' + done + '/' + ids.length +
-                '\nУспешно: ' + count('completed') + ', частично: ' + count('partial') +
-                ', ошибки: ' + count('stopped') + ', осталось: ' + count('pending') +
-                (id ? '\nТекущая Category: ' + id : '') +
-                (window.categoryRelationsStop === true && report.status === 'running'
-                  ? '\nОстановка после текущей записи…' : '') +
-                (report.status === 'stopped' && report.reports.at(-1)?.errors.length
-                  ? '\n' + report.reports.at(-1).errors.join('; ') : '');
-            });
-          } catch (error) {
-            status.textContent = 'Ошибка: ' + error.message;
-            console.error(TAG, error);
-          } finally {
-            stop.hidden = true;
-            lock(false);
-          }
-        };
         dialog.showModal();
       });
-      dialog.remove();
-      style.remove();
-      if (selected) await normalize(selected);
     } finally {
       dialog.remove();
       style.remove();
