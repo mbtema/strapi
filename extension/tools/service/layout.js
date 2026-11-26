@@ -16,30 +16,45 @@
   })();
 
 
-  const PRODUCT_UID = 'api::product.product';
-  const PRODUCT_ENTRY_RE = /^\/admin\/content-manager\/collection-types\/api::product\.product\/([^/]+)\/?$/;
-  const CONFIG_URL = '/content-manager/content-types/' + PRODUCT_UID + '/configuration';
-  const ROOT_SELECTOR = '[data-tm-product-sections="true"]';
-  const TAB_SELECTOR = '[data-tm-product-section-tab]';
-  const FILTER_GROUP_ORDER_ATTR = 'data-tm-product-filter-group-order';
-  const SECTION_KEYS = ['content', 'filters', 'system'];
-  const ROW_TOLERANCE_PX = 4;
-
-  const entryMatch = location.pathname.match(PRODUCT_ENTRY_RE);
-
-  if (!entryMatch || entryMatch[1] === 'configurations') {
-    throw new Error(
-      '[layout] Открой обычную карточку Product, где уже работает product-sections'
-    );
+  try {
+  const ENTRY_RE = /^\/admin\/content-manager\/collection-types\/(api::(?:product\.product|attribute\.attribute))\/([^/]+)\/?$/;
+  const entryMatch = location.pathname.match(ENTRY_RE);
+  if (!entryMatch || ['configurations', 'create'].includes(entryMatch[2])) {
+    throw new Error('[layout] Открой обычную карточку Product или Attribute');
   }
+
+  const entryPath = location.pathname + location.search;
+  const uid = entryMatch[1];
+  const isProduct = uid === 'api::product.product';
+  const prefix = isProduct ? 'product' : 'attribute';
+  const CONFIG_URL = '/content-manager/content-types/' + uid + '/configuration';
+  const ROOT_SELECTOR = '[data-tm-' + prefix + '-sections="true"]';
+  const TAB_ATTR = 'data-tm-' + prefix + '-section-tab';
+  const TAB_SELECTOR = '[' + TAB_ATTR + ']';
+  const FILTER_GROUP_ORDER_ATTR = 'data-tm-product-filter-group-order';
+  const ROW_TOLERANCE_PX = 4;
 
   const root = document.querySelector(ROOT_SELECTOR);
   const panel = root?.closest('[role="tabpanel"]');
 
   if (!root || !panel) {
-    throw new Error(
-      '[layout] Не найден product-sections. Обнови страницу и проверь extensions'
-    );
+    throw new Error('[layout] Не найден ' + prefix + '-sections. Обнови страницу и проверь extensions');
+  }
+
+  const SECTION_KEYS = [...root.querySelectorAll(TAB_SELECTOR)]
+    .map(button => button.getAttribute(TAB_ATTR));
+
+  if (!SECTION_KEYS.length || SECTION_KEYS.some(key => !key) ||
+      new Set(SECTION_KEYS).size !== SECTION_KEYS.length) {
+    throw new Error('[layout] Не удалось определить уникальные вкладки карточки');
+  }
+
+  function assertCurrentEntry() {
+    if (location.pathname + location.search !== entryPath ||
+        !document.contains(root) || !document.contains(panel) ||
+        panel.getAttribute('data-state') === 'inactive') {
+      throw new Error('[layout] Карточка или версия изменилась. Запусти скрипт заново');
+    }
   }
 
   const getAdminToken = () => {
@@ -188,7 +203,7 @@
       .filter(Boolean);
   }
 
-  function buildFieldMarkers(fieldNames) {
+  function buildFieldMarkers(fieldNames, metadatas) {
     const fieldSet = new Set(fieldNames);
     const markerByName = new Map();
 
@@ -202,7 +217,7 @@
     }
 
     const textCandidates = panel.querySelectorAll(
-      'p[id$="-hint"], label, p, span'
+      isProduct ? 'p[id$="-hint"], label, p, span' : 'p[id$="-hint"], label'
     );
 
     for (const element of textCandidates) {
@@ -220,17 +235,33 @@
       }
     }
 
+    const labelByName = new Map(fieldNames.map(name => [
+      name, String(metadatas?.[name]?.edit?.label || '').trim()
+    ]));
+    const labels = [...panel.querySelectorAll('label')];
     for (const name of fieldNames) {
       if (markerByName.has(name)) continue;
-
-      const fallback = [...textCandidates].find(element =>
-        String(element.textContent || '').includes(name)
-      );
-
-      if (fallback) markerByName.set(name, [fallback]);
+      const label = labelByName.get(name);
+      if (label && [...labelByName.values()].filter(value => value === label).length === 1) {
+        const matches = labels.filter(element => {
+          const copy = element.cloneNode(true);
+          copy.querySelectorAll('[aria-hidden="true"]').forEach(node => node.remove());
+          return copy.textContent.trim() === label;
+        });
+        if (matches.length === 1) {
+          markerByName.set(name, matches);
+          continue;
+        }
+      }
+      if (isProduct) {
+        const fallback = [...textCandidates].find(element =>
+          String(element.textContent || '').includes(name)
+        );
+        if (fallback) markerByName.set(name, [fallback]);
+      }
     }
 
-    if (!markerByName.has('relatedProductsSlider')) {
+    if (isProduct && fieldSet.has('relatedProductsSlider') && !markerByName.has('relatedProductsSlider')) {
       const sliderLabel = [...panel.querySelectorAll('label')]
         .find(label =>
           String(label.textContent || '').includes('relatedProductsSlider')
@@ -278,13 +309,13 @@
   function getActiveTabKey() {
     return root
       .querySelector(TAB_SELECTOR + '[aria-selected="true"]')
-      ?.getAttribute('data-tm-product-section-tab') || null;
+      ?.getAttribute(TAB_ATTR) || null;
   }
 
   async function activateTab(key, scrollPosition) {
-    const button = root.querySelector(
-      TAB_SELECTOR + '[data-tm-product-section-tab="' + escapeCss(key) + '"]'
-    );
+    assertCurrentEntry();
+    const button = [...root.querySelectorAll(TAB_SELECTOR)]
+      .find(element => element.getAttribute(TAB_ATTR) === key);
 
     if (!button) {
       throw new Error('[layout] Не найдена вкладка ' + key);
@@ -296,6 +327,10 @@
       await nextFrame();
     }
 
+    assertCurrentEntry();
+    if (getActiveTabKey() !== key) {
+      throw new Error('[layout] Не удалось переключить вкладку ' + key);
+    }
     window.scrollTo(scrollPosition.x, scrollPosition.y);
   }
 
@@ -504,13 +539,18 @@
     currentFields.map(field => [field.name, field.size])
   );
 
-  const markerByName = buildFieldMarkers(fieldNames);
+  if (fieldNames.length !== fieldSet.size || currentFields.some(field =>
+      !field.name || !Number.isInteger(field.size) || field.size < 1 || field.size > 12)) {
+    throw new Error('[layout] Некорректные или повторяющиеся поля штатного layout');
+  }
+  assertCurrentEntry();
+  const markerByName = buildFieldMarkers(fieldNames, configuration.metadatas);
   const primaryMarkers = choosePrimaryMarkers(markerByName, fieldNames);
   const stack = findFieldStack(primaryMarkers);
 
   if (!stack) {
     throw new Error(
-      '[layout] Не удалось определить общий контейнер полей Product'
+      '[layout] Не удалось определить общий контейнер полей карточки'
     );
   }
 
@@ -527,6 +567,7 @@
 
   try {
     for (const section of SECTION_KEYS) {
+      if (__tm.st.stop) break;
       await activateTab(section, scrollPosition);
 
       const scan = scanVisibleSection(
@@ -560,6 +601,8 @@
     window.scrollTo(scrollPosition.x, scrollPosition.y);
   }
 
+  if (__tm.st.stop) { __tm.finish('Остановлено'); return; }
+  assertCurrentEntry();
   const missing = fieldNames.filter(name => !scannedNames.has(name));
   const unexpected = [...scannedNames].filter(name => !fieldSet.has(name));
 
@@ -577,6 +620,10 @@
       '[layout] Dry-run остановлен: не найдено ' +
       missing.length + ' полей из штатного layout'
     );
+  }
+
+  if (desiredLayout.some(row => row.reduce((sum, field) => sum + field.size, 0) > 12)) {
+    throw new Error('[layout] Визуальная строка превышает 12 колонок. Запись остановлена');
   }
 
   const desiredNames = getFieldNames(desiredLayout);
@@ -609,7 +656,7 @@
   console.table(diff);
 
   const approved = window.confirm(
-    'Layout sync\n\n' +
+    'Layout sync: ' + (isProduct ? 'Product' : 'Attribute') + '\n\n' +
     'Штатных полей: ' + fieldNames.length + '\n' +
     'Строк сейчас: ' + currentLayout.length + '\n' +
     'Строк после: ' + desiredLayout.length + '\n' +
@@ -623,6 +670,15 @@
     return;
   }
 
+  assertCurrentEntry();
+  const latest = await getConfiguration('GET configuration перед записью');
+  if (!sameLayout(latest.layouts, configuration.layouts) ||
+      !sameLayout(latest.settings, configuration.settings) ||
+      !sameLayout(latest.metadatas, configuration.metadatas)) {
+    throw new Error('[layout] Configuration изменилась после dry-run. Запусти скрипт повторно');
+  }
+  if (__tm.st.stop) { __tm.finish('Остановлено'); return; }
+  assertCurrentEntry();
   const sanitizedMetadatas = sanitizeMetadatasForPut(configuration.metadatas);
   const forbiddenListMainFields = Object.entries(sanitizedMetadatas)
     .filter(([, metadata]) =>
@@ -669,6 +725,11 @@
 
   __tm.step();__tm.finish();
   console.log(
-    '[layout] Готово: layouts.edit синхронизирован. Перезагрузи карточку Product.'
+    '[layout] Готово: layouts.edit синхронизирован. Перезагрузи карточку ' + (isProduct ? 'Product' : 'Attribute') + '.'
   );
+  } catch (error) {
+    __tm.st.failed++;
+    __tm.finish('Ошибка: ' + (error?.message || String(error)));
+    console.error('[layout]', error);
+  }
 })();
