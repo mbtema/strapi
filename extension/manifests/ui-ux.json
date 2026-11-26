@@ -38,15 +38,15 @@
       "enabled": true
     },
     {
-      "id": "productCard",
-      "path": "ui-ux/productCard.js",
-      "version": "1.7.1",
+      "id": "product",
+      "path": "ui-ux/collection/product.js",
+      "version": "1.7.2",
       "enabled": true
     },
     {
-      "id": "attributeCard",
-      "path": "ui-ux/attributeCard.js",
-      "version": "1.2.1",
+      "id": "attribute",
+      "path": "ui-ux/collection/attribute.js",
+      "version": "1.2.2",
       "enabled": true
     }
   ]

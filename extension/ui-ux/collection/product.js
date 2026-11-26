@@ -450,7 +450,7 @@
             });
         } else {
             console.warn(
-                '[productCard] Контейнер полей не flex/grid; визуальный порядок групп не применён'
+                '[collection/product] Контейнер полей не flex/grid; визуальный порядок групп не применён'
             );
         }
     }
@@ -473,7 +473,7 @@
         const stack = findFieldStack(currentPanel, markers);
 
         if (!stack) {
-            console.warn('[productCard] Не найден контейнер строк карточки товара');
+            console.warn('[collection/product] Не найден контейнер строк карточки товара');
             return;
         }
 

@@ -38,7 +38,7 @@
   const panel = root?.closest('[role="tabpanel"]');
 
   if (!root || !panel) {
-    throw new Error('[layout] Не найден ' + (isProduct ? 'productCard' : 'attributeCard') + '. Обнови страницу и проверь extensions');
+    throw new Error('[layout] Не найден ' + ('collection/' + prefix + '.js') + '. Обнови страницу и проверь extensions');
   }
 
   const SECTION_KEYS = [...root.querySelectorAll(TAB_SELECTOR)]
