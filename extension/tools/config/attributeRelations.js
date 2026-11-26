@@ -8,6 +8,8 @@
   const PAGE_SIZE = 100;
   const RUN_KEY = '__tmAttributeRelationsConfigRunning';
   if (window[RUN_KEY]) return;
+  const designSystem = window.__tmStrapiDesignSystem;
+  if (!designSystem?.createToolStatus) throw Error('Обновите расширения через forceUpdate()');
   window[RUN_KEY] = true;
 
   const report = {
@@ -127,7 +129,7 @@
       return { documentId: row.documentId, fields };
     }, null, (loaded, total) => {
       report[locale + 'Total'] = loaded;
-      render('Чтение ' + locale.toUpperCase() + ': ' + loaded + '/' + total);
+      render('Чтение ' + locale.toUpperCase() + ': ' + loaded + '/' + total, '', { loaded, total });
     });
   }
 
@@ -243,33 +245,11 @@
     report.status = 'completed';
   }
 
-  const panel = document.createElement('div');
-  panel.setAttribute('data-tm-attribute-relations-config', '');
-  panel.setAttribute('data-tm-ds', '');
-  panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Attribute Relations Config');
-  panel.style.cssText = 'position:fixed;right:24px;bottom:24px;width:min(400px,calc(100vw - 48px));padding:18px;z-index:2147483647;border:1px solid var(--tm-ds-neutral200);border-radius:var(--tm-ds-radius);background:var(--tm-ds-neutral0);color:var(--tm-ds-neutral800);box-sizing:border-box;font:inherit';
-  const add = (tag, text, className) => {
-    const el = document.createElement(tag);
-    el.textContent = text;
-    el.className = className;
-    panel.appendChild(el);
-    return el;
-  };
-  add('h2', 'Attribute Relations Config', 'tm-ds-text').style.cssText =
-    'font-size:16px;font-weight:600;margin:0 0 12px';
-  const status = add('p', '', 'tm-ds-text');
-  status.setAttribute('role', 'status');
-  status.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 12px';
-  const progress = add('progress', '', '');
-  progress.style.cssText = 'width:100%;margin:0 0 12px';
-  progress.max = 1;
-  progress.value = 0;
-  const stop = add('button', 'Остановить', 'tm-ds-button');
-  const save = add('button', 'Скачать конфиг', 'tm-ds-button');
-  const review = add('button', 'Скачать исключения', 'tm-ds-button');
-  for (const button of [stop, save, review]) button.type = 'button';
-  save.style.marginLeft = review.style.marginLeft = '8px';
+  const ui = designSystem.createToolStatus('Attribute Relations Config');
+  const { phase: phaseLabel, detail: status } = ui;
+  const stop = ui.button('Остановить');
+  const save = ui.button('Скачать конфиг');
+  const review = ui.button('Скачать исключения');
   save.hidden = review.hidden = true;
   stop.onclick = () => {
     stopped = true;
@@ -279,21 +259,22 @@
   save.onclick = () => download('attribute-relations-config.csv', configCsv());
   review.onclick = () => download('attribute-relations-config-blocked.csv', blockedCsv());
 
-  function render(phase, id = '') {
-    status.textContent = phase + '\nПроверено: ' + report.checked + '/' + report.total +
+  function render(phase, id = '', reading = null) {
+    phaseLabel.textContent = phase;
+    status.textContent = 'Проверено: ' + report.checked + '/' + report.total +
       '\nС расхождениями: ' + report.differences.length +
       '\nСовпадают: ' + report.matched + ' · Исключено: ' + report.blocked.length +
       '\nRU: ' + report.ruTotal + ' · KK: ' + report.kkTotal +
       '\nТолько RU: ' + report.ruOnly + ' · Только KK: ' + report.kkOnly +
       '\nЗапросов: ' + report.requests + ' · Fallback: ' + report.relationFallbacks +
       (id ? '\nAttribute: ' + id : '');
-    progress.max = Math.max(report.total, 1);
-    progress.value = report.checked;
+    ui.setProgress(reading ? reading.loaded : report.checked,
+      reading ? reading.total : report.total);
     if (stopped && report.status === 'running') status.textContent += '\nОстановка…';
   }
 
   try {
-    document.body.appendChild(panel);
+    ui.open();
     render('Загрузка списков RU / KK Attribute');
     await scan(render);
     render(report.differences.length ? 'Конфиг готов' : 'Расхождений для синхронизации нет');
@@ -307,9 +288,7 @@
     render(stopped ? 'Остановлено. Конфиг не сформирован' : 'Ошибка: ' + error.message);
     console.error(TAG, error);
   } finally {
-    stop.disabled = false;
-    stop.textContent = 'Закрыть';
-    stop.onclick = () => panel.remove();
+    ui.finish(stop);
     window[RUN_KEY] = false;
   }
 })();

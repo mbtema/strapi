@@ -7,6 +7,8 @@
   const PAGE_SIZE = 100;
   const RUN_KEY = '__tmCategoryRelationsConfigRunning';
   if (window[RUN_KEY]) return;
+  const designSystem = window.__tmStrapiDesignSystem;
+  if (!designSystem?.createToolStatus) throw Error('Обновите расширения через forceUpdate()');
   window[RUN_KEY] = true;
 
   const report = {
@@ -43,7 +45,7 @@
     return response.json();
   }
 
-  async function readPages(path, params, validate, expectedCount = null) {
+  async function readPages(path, params, validate, expectedCount = null, onPage = () => {}) {
     const rows = [], seen = new Set();
     let total = null, pageCount = null;
     for (let page = 1; page <= 10000; page++) {
@@ -69,6 +71,7 @@
         seen.add(id);
         rows.push(id);
       }
+      onPage(rows.length, total);
       if (page >= pageCount) break;
       ensure(data.results.length > 0 && page < 10000, 'Неполная пагинация: ' + path);
     }
@@ -77,7 +80,7 @@
     return rows;
   }
 
-  async function listCategories() {
+  async function listCategories(render) {
     let previousId = 0;
     return readPages('/content-manager/collection-types/' + UID, {
       locale: 'ru', status: 'draft', sort: 'id:ASC'
@@ -88,7 +91,7 @@
         'Неверная локаль или порядок RU Category');
       previousId = row.id;
       return row.documentId;
-    });
+    }, null, (loaded, total) => render('Чтение RU: ' + loaded + '/' + total, '', { loaded, total }));
   }
 
   async function detail(id, locale) {
@@ -166,7 +169,7 @@
   }
 
   async function scan(render) {
-    const ids = await listCategories();
+    const ids = await listCategories(render);
     report.total = ids.length;
     render('Проверка Category');
     for (const id of ids) {
@@ -184,33 +187,11 @@
     report.status = 'completed';
   }
 
-  const panel = document.createElement('div');
-  panel.setAttribute('data-tm-category-relations-config', '');
-  panel.setAttribute('data-tm-ds', '');
-  panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Category Relations Config');
-  panel.style.cssText = 'position:fixed;right:24px;bottom:24px;width:min(400px,calc(100vw - 48px));padding:18px;z-index:2147483647;border:1px solid var(--tm-ds-neutral200,#4a4a6a);border-radius:8px;background:var(--tm-ds-neutral0,#212134);color:var(--tm-ds-neutral800,#fff);box-sizing:border-box;font:inherit';
-  const add = (tag, text, className) => {
-    const el = document.createElement(tag);
-    el.textContent = text;
-    el.className = className;
-    panel.appendChild(el);
-    return el;
-  };
-  add('h2', 'Category Relations Config', 'tm-ds-text').style.cssText =
-    'font-size:16px;font-weight:600;margin:0 0 12px';
-  const status = add('p', '', 'tm-ds-text');
-  status.setAttribute('role', 'status');
-  status.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 12px';
-  const progress = add('progress', '', '');
-  progress.style.cssText = 'width:100%;margin:0 0 12px';
-  progress.max = 1;
-  progress.value = 0;
-  const stop = add('button', 'Остановить', 'tm-ds-button');
-  const save = add('button', 'Скачать конфиг', 'tm-ds-button');
-  const review = add('button', 'Скачать исключения', 'tm-ds-button');
-  for (const button of [stop, save, review]) button.type = 'button';
-  save.style.marginLeft = review.style.marginLeft = '8px';
+  const ui = designSystem.createToolStatus('Category Relations Config');
+  const { phase: phaseLabel, detail: status } = ui;
+  const stop = ui.button('Остановить');
+  const save = ui.button('Скачать конфиг');
+  const review = ui.button('Скачать исключения');
   save.hidden = review.hidden = true;
   stop.onclick = () => {
     stopped = true;
@@ -220,18 +201,19 @@
   save.onclick = () => download('category-relations-config.csv', configCsv());
   review.onclick = () => download('category-relations-config-blocked.csv', blockedCsv());
 
-  function render(phase, id = '') {
-    status.textContent = phase + '\nПроверено: ' + report.checked + '/' + report.total +
+  function render(phase, id = '', reading = null) {
+    phaseLabel.textContent = phase;
+    status.textContent = 'Проверено: ' + report.checked + '/' + report.total +
       '\nС расхождениями: ' + report.differences.length +
       '\nСовпадают: ' + report.matched + ' · Исключено: ' + report.blocked.length +
       (id ? '\nCategory: ' + id : '');
-    progress.max = Math.max(report.total, 1);
-    progress.value = report.checked;
+    ui.setProgress(reading ? reading.loaded : report.checked,
+      reading ? reading.total : report.total);
     if (stopped && report.status === 'running') status.textContent += '\nОстановка…';
   }
 
   try {
-    document.body.appendChild(panel);
+    ui.open();
     render('Загрузка списка RU Category');
     await scan(render);
     render(report.differences.length ? 'Конфиг готов' : 'Расхождений для синхронизации нет');
@@ -245,9 +227,7 @@
     render(stopped ? 'Остановлено. Конфиг не сформирован' : 'Ошибка: ' + error.message);
     console.error(TAG, error);
   } finally {
-    stop.disabled = false;
-    stop.textContent = 'Закрыть';
-    stop.onclick = () => panel.remove();
+    ui.finish(stop);
     window[RUN_KEY] = false;
   }
 })();

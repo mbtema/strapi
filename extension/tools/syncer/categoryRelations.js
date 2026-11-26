@@ -811,12 +811,12 @@
     const currentId = /^[a-zA-Z0-9]+$/.test(current) && current !== 'create' ? current : '';
     const dialog = document.createElement('dialog');
     dialog.setAttribute('data-tm-category-relations', '');
+    dialog.setAttribute('data-tm-tool-dialog', '');
+    dialog.setAttribute('data-tm-created', 'category-relations');
     dialog.setAttribute('data-tm-ds', '');
     dialog.setAttribute('aria-labelledby', 'tm-cr-heading');
     const style = document.createElement('style');
     style.textContent = [
-      '[data-tm-category-relations]{position:fixed;inset:0;margin:auto;width:min(560px,calc(100vw - 32px));height:fit-content;max-height:calc(100dvh - 32px);overflow:auto;padding:24px;box-sizing:border-box;border:1px solid var(--tm-ds-neutral200);border-radius:8px;background:var(--tm-ds-neutral0);color:var(--tm-ds-neutral800);box-shadow:0 16px 48px #0004;font:inherit;outline:none}',
-      '[data-tm-category-relations]::backdrop{background:rgba(3,3,20,.58)}',
       '[data-tm-category-relations] [hidden]{display:none!important}',
       '[data-tm-category-relations] .tm-cr-header,[data-tm-category-relations] .tm-cr-actions,[data-tm-category-relations] .tm-cr-line{display:flex;align-items:center;gap:8px}',
       '[data-tm-category-relations] .tm-cr-header,[data-tm-category-relations] .tm-cr-line{justify-content:space-between}',
@@ -837,11 +837,9 @@
       '[data-tm-category-relations] [data-tone="error"]{color:var(--tm-ds-danger600)}',
       '[data-tm-category-relations] [data-tone="success"]{color:var(--tm-ds-success600)}',
       '[data-tm-category-relations] [data-tone="warning"]{color:var(--tm-ds-warning600)}',
-      '[data-tm-category-relations] .tm-cr-actions{justify-content:flex-end;flex-wrap:wrap;margin-top:20px;padding-top:16px;border-top:1px solid var(--tm-ds-neutral200)}',
       '[data-tm-category-relations] .tm-cr-primary:not(:disabled){background:var(--tm-ds-buttonPrimary600);border-color:var(--tm-ds-buttonPrimary600);color:#fff}',
       '[data-tm-category-relations] .tm-cr-primary:hover:not(:disabled){background:var(--tm-ds-primary500)}',
       '[data-tm-category-relations] .tm-cr-close{width:32px;padding:0;font-size:20px;flex-shrink:0}',
-      '[data-tm-category-relations] progress{width:100%;height:8px;accent-color:var(--tm-ds-primary600)}',
       '[data-tm-category-relations] .tm-cr-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}',
       '[data-tm-category-relations] .tm-cr-metric{padding:12px;border:1px solid var(--tm-ds-neutral200);border-radius:6px;min-width:0}',
       '[data-tm-category-relations] .tm-cr-value{font-size:24px;font-weight:600;line-height:1.2;margin-top:4px;font-variant-numeric:tabular-nums}',
@@ -931,7 +929,7 @@
     resultError.dataset.tone = 'error';
     resultError.hidden = true;
 
-    const actions = add(dialog, 'div', '', 'tm-cr-actions');
+    const actions = add(dialog, 'div', '', 'tm-cr-actions tm-ds-tool-actions');
     const close = button(actions, 'Закрыть');
     const reset = button(actions, 'Новая синхронизация');
     const stop = button(actions, 'Остановить');
@@ -1117,6 +1115,7 @@
 
     try {
       document.head.appendChild(style);
+      if (document.querySelector('[data-tm-tool-dialog][open]')) throw Error('Закройте предыдущее окно инструмента');
       document.body.appendChild(dialog);
       window.__tmStrapiDesignSystem?.syncTheme();
       render();

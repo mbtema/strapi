@@ -59,6 +59,143 @@
         return true;
     }
 
+    function createToolStatus(title) {
+        const dialog = document.createElement('dialog');
+        dialog.setAttribute('data-tm-tool-dialog', '');
+        dialog.setAttribute('data-tm-created', 'tool-status');
+        dialog.setAttribute('data-tm-ds', '');
+        dialog.setAttribute('aria-label', title);
+
+        function add(parent, tag, text = '', cls = '') {
+            const node = document.createElement(tag);
+            node.textContent = text;
+            node.className = cls;
+            parent.appendChild(node);
+            return node;
+        }
+
+        add(dialog, 'h2', title, 'tm-ds-heading tm-ds-tool-title');
+        const body = add(dialog, 'div', '', 'tm-ds-tool-body');
+        const phase = add(body, 'p', 'Подготовка', 'tm-ds-text tm-ds-tool-phase');
+        const progress = add(body, 'progress');
+        progress.setAttribute('aria-label', 'Прогресс выполнения');
+        const detail = add(body, 'p', '', 'tm-ds-text tm-ds-tool-detail');
+        detail.setAttribute('role', 'status');
+        const actions = add(dialog, 'div', '', 'tm-ds-tool-actions');
+        let finished = false;
+
+        function close() {
+            if (dialog.open) dialog.close();
+            dialog.remove();
+        }
+
+        dialog.addEventListener('cancel', event => {
+            event.preventDefault();
+            if (finished) close();
+        });
+
+        function open() {
+            if (dialog.open) return;
+            if (document.querySelector('[data-tm-tool-dialog][open]')) {
+                throw Error('Закройте предыдущее окно инструмента');
+            }
+            document.body.appendChild(dialog);
+            try {
+                dialog.showModal();
+            } catch (error) {
+                dialog.remove();
+                throw error;
+            }
+        }
+
+        function button(text) {
+            const node = add(actions, 'button', text, 'tm-ds-button');
+            node.type = 'button';
+            return node;
+        }
+
+        function setProgress(done, total) {
+            if (Number.isFinite(total) && total > 0 && Number.isFinite(done)) {
+                progress.max = total;
+                progress.value = Math.max(0, Math.min(done, total));
+            } else {
+                progress.removeAttribute('value');
+            }
+        }
+
+        function finish(stop) {
+            finished = true;
+            stop.disabled = false;
+            stop.textContent = 'Закрыть';
+            stop.onclick = close;
+        }
+
+        return { dialog, phase, progress, detail, actions, button, setProgress, open, close, finish };
+    }
+
+    function createToolProgress(title) {
+        const ui = createToolStatus(title);
+        const stop = ui.button('Остановить');
+        const st = {
+            stop: false, done: 0, total: 0, phase: 'Подготовка',
+            start: performance.now(), phaseStart: performance.now(),
+            failed: 0, concurrency: null, best: null
+        };
+        let finished = false;
+
+        stop.onclick = () => {
+            st.stop = true;
+            stop.textContent = 'Остановка…';
+            stop.disabled = true;
+        };
+
+        function render() {
+            const elapsed = Math.max(.001, (performance.now() - st.phaseStart) / 1000);
+            const speed = st.done / elapsed;
+            const pct = st.total ? Math.min(100, 100 * st.done / st.total) : 0;
+            ui.phase.textContent = st.phase;
+            ui.setProgress(st.done, st.total);
+            ui.detail.textContent = st.done + ' / ' + (st.total || '?') +
+                (st.total ? ' (' + pct.toFixed(1) + '%)' : '') +
+                '\nСкорость: ' + speed.toFixed(1) + '/сек' +
+                '\nОшибки: ' + st.failed +
+                (st.concurrency === null ? '' : ' · concurrency: ' + st.concurrency) +
+                (st.best === null ? '' : ' · best: ' + st.best) +
+                '\nETA: ' + (speed && st.total ? Math.max(0, Math.ceil((st.total - st.done) / speed)) + ' сек' : '—') +
+                ' · прошло: ' + Math.ceil((performance.now() - st.start) / 1000) + ' сек';
+        }
+
+        function phase(name, total = 0) {
+            st.phase = name;
+            st.total = total;
+            st.done = 0;
+            st.phaseStart = performance.now();
+            render();
+        }
+
+        function step(n = 1) {
+            st.done += n;
+            render();
+        }
+
+        function perf(cur, best) {
+            st.concurrency = cur;
+            st.best = best;
+            render();
+        }
+
+        function finish(status = 'Завершено') {
+            st.phase = status;
+            finished = true;
+            render();
+            ui.finish(stop);
+        }
+
+        render();
+        ui.open();
+        return { st, phase, step, perf, finish, render, get finished() { return finished; } };
+    }
+
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
@@ -377,10 +514,57 @@
         }
         .tm-ds-color-swatch-before::before{content:''}
 
+        [data-tm-tool-dialog]{
+            position:fixed;inset:0;margin:auto;width:min(640px,calc(100vw - 32px));
+            height:fit-content;max-height:calc(100dvh - 32px);overflow:auto;
+            padding:var(--tm-ds-space6);box-sizing:border-box;
+            border:1px solid var(--tm-ds-neutral200);border-radius:var(--tm-ds-radius);
+            background:var(--tm-ds-neutral0);color:var(--tm-ds-neutral800);
+            box-shadow:0 16px 48px rgba(0,0,0,.35);font:inherit;outline:none
+        }
+        [data-tm-tool-dialog]::backdrop{background:rgba(3,3,20,.58)}
+        [data-tm-tool-dialog] [hidden]{display:none!important}
+        [data-tm-tool-dialog] .tm-ds-tool-title{margin:0}
+        [data-tm-tool-dialog] .tm-ds-tool-body{
+            display:flex;flex-direction:column;gap:var(--tm-ds-space4);
+            margin-top:var(--tm-ds-space5)
+        }
+        [data-tm-tool-dialog] .tm-ds-tool-phase{
+            margin:0;font-weight:var(--tm-ds-font-bold);overflow-wrap:anywhere
+        }
+        [data-tm-tool-dialog] .tm-ds-tool-detail{
+            margin:0;white-space:pre-wrap;overflow-wrap:anywhere;
+            line-height:1.7;font-variant-numeric:tabular-nums
+        }
+        [data-tm-tool-dialog] progress{
+            display:block;width:100%;height:8px;accent-color:var(--tm-ds-primary600);
+            border:0;border-radius:var(--tm-ds-radius);overflow:hidden;
+            appearance:none;background:var(--tm-ds-neutral150)
+        }
+        [data-tm-tool-dialog] progress::-webkit-progress-bar{
+            background:var(--tm-ds-neutral150);border-radius:var(--tm-ds-radius)
+        }
+        [data-tm-tool-dialog] progress::-webkit-progress-value{
+            background:var(--tm-ds-primary600);border-radius:var(--tm-ds-radius)
+        }
+        [data-tm-tool-dialog] progress::-moz-progress-bar{background:var(--tm-ds-primary600)}
+        [data-tm-tool-dialog] progress:indeterminate{
+            appearance:auto;accent-color:var(--tm-ds-primary600)
+        }
+        [data-tm-tool-dialog] .tm-ds-tool-actions{
+            display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;
+            gap:var(--tm-ds-space2);margin-top:var(--tm-ds-space5);
+            padding-top:var(--tm-ds-space4);border-top:1px solid var(--tm-ds-neutral200)
+        }
+        @media(max-width:420px){
+            [data-tm-tool-dialog]{padding:var(--tm-ds-space4)}
+            [data-tm-tool-dialog] .tm-ds-tool-actions>button{flex:1}
+        }
+
     `;
     if (!document.getElementById(STYLE_ID)) (document.head || root).appendChild(style);
 
-    window[KEY] = { syncTheme, setColorSwatch };
+    window[KEY] = { syncTheme, setColorSwatch, createToolStatus, createToolProgress };
     new MutationObserver(syncTheme).observe(root, {
         attributes: true, attributeFilter: ['class', 'style']
     });

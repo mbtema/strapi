@@ -412,7 +412,7 @@
     ) {
       event.preventDefault();
       event.stopPropagation();
-      openLauncher();
+      if (!document.querySelector('[data-tm-tool-dialog][open]')) openLauncher();
       return;
     }
 
