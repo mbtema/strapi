@@ -241,7 +241,8 @@
         [data-tm-ds] .tm-ds-status[data-status="draft"]{
             background:var(--tm-ds-secondary100);border-color:var(--tm-ds-secondary200);color:var(--tm-ds-secondary600)
         }
-        :where([data-tm-ds]) .tm-ds-heading{
+        :where([data-tm-ds]) .tm-ds-heading,
+        .tm-ds-heading:where([data-tm-ds]){
             font-family:inherit;font-size:var(--tm-ds-heading-size);
             line-height:var(--tm-ds-heading-line);font-weight:var(--tm-ds-font-bold);
             color:var(--tm-ds-neutral800)
@@ -251,7 +252,8 @@
             line-height:var(--tm-ds-sigma-line);font-weight:var(--tm-ds-font-bold);
             text-transform:uppercase;color:var(--tm-ds-neutral600)
         }
-        :where([data-tm-ds]) .tm-ds-tablist{
+        :where([data-tm-ds]) .tm-ds-tablist,
+        .tm-ds-tablist:where([data-tm-ds]){
             display:flex;align-items:stretch;flex-wrap:wrap;position:relative;z-index:0
         }
         :where([data-tm-ds]) .tm-ds-tab{

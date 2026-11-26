@@ -121,25 +121,17 @@
     }
 
     function ensureStyle() {
-        let style = document.getElementById(STYLE_ID);
-
-        if (!style) {
-            style = document.createElement('style');
-            style.id = STYLE_ID;
-            document.head.appendChild(style);
-        }
+        if (document.getElementById(STYLE_ID)) return;
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
 
         style.textContent = `
             ${ROOT_SELECTOR} {
-                display:flex !important;
-                align-items:center !important;
-                gap:6px !important;
-                width:100% !important;
-                margin:0 0 12px !important;
-                padding:0 !important;
-                border:0 !important;
-                border-bottom:0 !important;
-                box-shadow:none !important;
+                width:100%;
+                margin:0 0 var(--tm-ds-space3);
+                padding:0;
+                border:0;
+                box-shadow:none;
             }
             ${ROOT_SELECTOR}::before,
             ${ROOT_SELECTOR}::after {
@@ -147,29 +139,6 @@
                 display:none !important;
                 border:0 !important;
                 box-shadow:none !important;
-            }
-            ${ROOT_SELECTOR} [data-tm-product-section-tab] {
-                min-height:34px;
-                padding:7px 12px;
-                border:1px solid transparent;
-                border-radius:6px;
-                background:transparent;
-                color:#a5a5ba;
-                font:inherit;
-                font-size:13px;
-                font-weight:500;
-                line-height:18px;
-                cursor:pointer;
-            }
-            ${ROOT_SELECTOR} [data-tm-product-section-tab]:hover {
-                background:#212134;
-                color:#dcdce4;
-            }
-            ${ROOT_SELECTOR} [data-tm-product-section-tab][aria-selected="true"] {
-                border-color:#5b5b80;
-                background:#302c6f;
-                color:#fff;
-                font-weight:600;
             }
             [data-tm-product-section-hidden="true"] {
                 display:none !important;
@@ -186,15 +155,11 @@
                 min-height:32px;
                 box-sizing:border-box;
                 margin:0;
-                padding:4px 0 8px;
-                border-bottom:1px solid #3f3f5f;
-                color:#fff;
-                font:inherit;
-                font-size:18px;
-                font-weight:600;
-                line-height:22px;
+                padding:var(--tm-ds-space1) 0 var(--tm-ds-space2);
+                border-bottom:1px solid var(--tm-ds-neutral200);
             }
         `;
+        document.head.appendChild(style);
     }
 
     function getNamedFieldMarkers(panel) {
@@ -319,6 +284,8 @@
             title = document.createElement('div');
             title.setAttribute(CREATED_ATTR, 'product-sections');
             title.setAttribute(FILTER_GROUP_TITLE_ATTR, group.id);
+            title.setAttribute('data-tm-ds', '');
+            title.classList.add('tm-ds-heading');
             title.textContent = group.title;
         }
 
@@ -535,6 +502,8 @@
         const root = document.createElement('div');
         root.setAttribute(CREATED_ATTR, 'product-sections');
         root.dataset.tmProductSections = 'true';
+        root.setAttribute('data-tm-ds', '');
+        root.classList.add('tm-ds-tablist');
         root.setAttribute('role', 'tablist');
         root.setAttribute('aria-label', 'Разделы карточки товара');
 
@@ -546,6 +515,7 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.dataset.tmProductSectionTab = key;
+            button.classList.add('tm-ds-tab');
             button.setAttribute('role', 'tab');
             button.setAttribute('aria-selected', String(key === activeTab));
             button.textContent = label;

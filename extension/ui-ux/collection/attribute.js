@@ -39,42 +39,11 @@
         style.id = STYLE_ID;
         style.textContent = `
             ${ROOT} {
-                display:flex !important;
-                align-items:center !important;
-                flex-wrap:wrap;
-                gap:6px !important;
-                width:100% !important;
-                margin:0 0 12px !important;
-                padding:0 !important;
-                border:0 !important;
-                box-shadow:none !important;
-            }
-            ${ROOT} [role="tab"] {
-                min-height:34px;
-                padding:7px 12px;
-                border:1px solid transparent;
-                border-radius:6px;
-                background:transparent;
-                color:var(--tm-ds-neutral600,#a5a5ba);
-                font:inherit;
-                font-size:13px;
-                font-weight:500;
-                line-height:18px;
-                cursor:pointer;
-            }
-            ${ROOT} [role="tab"]:hover {
-                background:var(--tm-ds-neutral150,#212134);
-                color:var(--tm-ds-neutral800,#dcdce4);
-            }
-            ${ROOT} [role="tab"][aria-selected="true"] {
-                border-color:var(--tm-ds-primary600,#5b5b80);
-                background:var(--tm-ds-primary100,#302c6f);
-                color:var(--tm-ds-primary700,#fff);
-                font-weight:600;
-            }
-            ${ROOT} [role="tab"]:focus-visible {
-                outline:2px solid var(--tm-ds-primary600,#7b79ff);
-                outline-offset:2px;
+                width:100%;
+                margin:0 0 var(--tm-ds-space3);
+                padding:0;
+                border:0;
+                box-shadow:none;
             }
             [${HIDDEN}] { display:none !important; }
         `;
@@ -180,12 +149,15 @@
         const root = document.createElement('div');
         root.dataset.tmCreated = 'attribute-sections';
         root.dataset.tmAttributeSections = 'true';
+        root.setAttribute('data-tm-ds', '');
+        root.classList.add('tm-ds-tablist');
         root.setAttribute('role', 'tablist');
         root.setAttribute('aria-label', 'Разделы карточки предложения');
         for (const [key, label] of TABS) {
             const button = document.createElement('button');
             button.type = 'button';
             button.dataset.tmAttributeSectionTab = key;
+            button.classList.add('tm-ds-tab');
             button.setAttribute('role', 'tab');
             button.setAttribute('aria-selected', String(activeTab === key));
             button.tabIndex = activeTab === key ? 0 : -1;
