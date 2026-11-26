@@ -6,6 +6,10 @@
       "group": "config"
     },
     {
+      "file": "config/attributeRelations.js",
+      "group": "config"
+    },
+    {
       "file": "extractor/brandActiveProducts.js",
       "group": "extractor"
     },
