@@ -130,7 +130,7 @@
             clearVisibility();
             if (warnedPanel !== panel) {
                 warnedPanel = panel;
-                console.warn('[attribute-sections] Не найден контейнер полей карточки');
+                console.warn('[attributeCard] Не найден контейнер полей карточки');
             }
             return false;
         }

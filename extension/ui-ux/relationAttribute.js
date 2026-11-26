@@ -367,7 +367,7 @@
                 const ready = await waitForNativeReady(current, button);
 
                 if (ready.timedOut) {
-                    console.warn('[product-attributes-navigator] Load More stayed busy too long');
+                    console.warn('[relationAttribute] Load More stayed busy too long');
                     break;
                 }
 
@@ -387,7 +387,7 @@
                 placePanelAfterNative(current.root, current.ui.panel);
 
                 if (!advanced) {
-                    console.warn('[product-attributes-navigator] Load More did not advance');
+                    console.warn('[relationAttribute] Load More did not advance');
                     break;
                 }
             }
@@ -511,7 +511,7 @@
         if (descending) return [...items].reverse();
 
         console.warn(
-            '[product-attributes-navigator] Не удалось однозначно сопоставить порядок API и native relation'
+            '[relationAttribute] Не удалось однозначно сопоставить порядок API и native relation'
         );
         return items;
     }
@@ -766,7 +766,7 @@
                     }
                 } catch (error) {
                     if (signal.aborted || current !== state) return;
-                    console.warn('[product-attributes-navigator] Attribute details:', error);
+                    console.warn('[relationAttribute] Attribute details:', error);
                     for (const item of batch) {
                         current.details.set(item.documentId, {
                             error: error?.message || 'Не удалось загрузить volume/shade'
@@ -841,7 +841,7 @@
             if (error?.name === 'AbortError' || current !== state) return;
             current.complete = false;
             current.error = error?.message || 'Не удалось загрузить торговые предложения';
-            console.warn('[product-attributes-navigator]', error);
+            console.warn('[relationAttribute]', error);
         } finally {
             if (current === state) {
                 current.loading = false;
@@ -949,7 +949,7 @@
 
         const root = findRoot(input);
         if (!root) {
-            console.warn('[product-attributes-navigator] attributes relation root not found');
+            console.warn('[relationAttribute] attributes relation root not found');
             return;
         }
 
