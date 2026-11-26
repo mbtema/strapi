@@ -32,6 +32,12 @@
       "enabled": true
     },
     {
+      "id": "relationShade",
+      "path": "ui-ux/relationShade.js",
+      "version": "1.0.0",
+      "enabled": true
+    },
+    {
       "id": "productCard",
       "path": "ui-ux/productCard.js",
       "version": "1.7.1",
