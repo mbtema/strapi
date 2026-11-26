@@ -3,7 +3,16 @@
 
   const TAG = '[attributeRelationsConfig]';
   const UID = 'api::attribute.attribute';
-  const FIELDS = ['product', 'shade', 'volume', 'color_variant1C', 'filtry'];
+  const SYSTEM = new Set([
+    'id', 'documentId', 'locale', 'status', 'createdAt', 'updatedAt',
+    'publishedAt', 'createdBy', 'updatedBy', 'localizations', '__pivot'
+  ]);
+  const SCALARS = new Set([
+    'string', 'text', 'richtext', 'email', 'enumeration', 'json', 'blocks',
+    'integer', 'biginteger', 'float', 'decimal', 'boolean', 'date',
+    'time', 'datetime', 'uid'
+  ]);
+  let fields = [];
   const CONCURRENCY = 3;
   const PAGE_SIZE = 100;
   const RUN_KEY = '__tmAttributeRelationsConfigRunning';
@@ -14,7 +23,8 @@
 
   const report = {
     status: 'running', total: 0, checked: 0, matched: 0,
-    ruTotal: 0, kkTotal: 0, pairs: 0, ruOnly: 0, kkOnly: 0, relationFallbacks: 0,
+    ruTotal: 0, kkTotal: 0, pairs: 0, ruOnly: 0, kkOnly: 0, relationFallbacks: 0, detailFallbacks: 0,
+    comparedFields: [], fieldDifferences: Object.create(null),
     differences: [], blocked: [], requests: 0, errors: []
   };
   window.attributeRelationsConfigReport = report;
@@ -97,44 +107,126 @@
     return rows;
   }
 
-  function inlineLinks(raw, present, field) {
+  async function readSchema() {
+    const data = await get('/content-manager/content-types');
+    ensure(Array.isArray(data?.data), 'Не удалось прочитать схему CMS');
+    const schema = data.data.find(type => type.uid === UID);
+    ensure(schema?.attributes && typeof schema.attributes === 'object', 'Нет схемы Attribute');
+    fields = Object.entries(schema.attributes).filter(([name]) => !SYSTEM.has(name));
+    ensure(fields.length > 0, 'Пустая схема Attribute');
+    for (const name of ['product', 'shade', 'volume', 'color_variant1C', 'filtry']) {
+      ensure(fields.some(([field, def]) => field === name && def.type === 'relation'),
+        'Изменилась схема Attribute.' + name);
+    }
+    for (const [name, def] of fields) {
+      ensure(SCALARS.has(def.type) || def.type === 'media' ||
+        (def.type === 'relation' && typeof def.target === 'string' &&
+          ['oneToOne', 'manyToOne', 'oneToMany', 'manyToMany', 'oneWay', 'manyWay'].includes(def.relation)),
+        'Неподдерживаемый тип Attribute.' + name + ': ' + def.type);
+    }
+    report.comparedFields = fields.map(([name, def]) => ({ name, type: def.type }));
+  }
+
+  function singleRelation(def) {
+    return ['oneToOne', 'manyToOne', 'oneWay'].includes(def.relation);
+  }
+
+  function inlineLinks(raw, present, field, def) {
     if (!present || raw === undefined) return { ids: null, count: null };
     const value = raw && typeof raw === 'object' && own(raw, 'data') ? raw.data : raw;
     if (value === null) return { ids: [], count: 0 };
     if (value && !Array.isArray(value) && typeof value === 'object' && own(value, 'count')) {
-      ensure(Number.isSafeInteger(value.count) && value.count >= 0,
-        'Неверный count: ' + field);
-      if (field !== 'filtry') ensure(value.count <= 1, 'Несколько to-one связей: ' + field);
+      ensure(Number.isSafeInteger(value.count) && value.count >= 0, 'Неверный count: ' + field);
+      if (singleRelation(def)) ensure(value.count <= 1, 'Несколько to-one связей: ' + field);
       return { ids: value.count === 0 ? [] : null, count: value.count };
     }
     const items = Array.isArray(value) ? value : [value];
     const ids = items.map(item => unwrap(item)?.documentId);
     if (!ids.every(validDocumentId)) return { ids: null, count: null };
     ensure(new Set(ids).size === ids.length, 'Дубли связей: ' + field);
-    if (field !== 'filtry') ensure(ids.length <= 1, 'Несколько to-one связей: ' + field);
+    if (singleRelation(def)) ensure(ids.length <= 1, 'Несколько to-one связей: ' + field);
     return { ids, count: ids.length };
+  }
+
+  function mediaValue(raw, def) {
+    const value = raw && typeof raw === 'object' && own(raw, 'data') ? raw.data : raw;
+    if (value === null) return def.multiple ? [] : null;
+    const idOf = item => Number.isSafeInteger(item) ? item : item?.id;
+    if (def.multiple) {
+      if (!Array.isArray(value)) return undefined;
+      const ids = value.map(idOf);
+      return ids.every(id => Number.isSafeInteger(id) && id > 0) ? ids : undefined;
+    }
+    const id = idOf(value);
+    return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+  }
+
+  function canonical(value) {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
+    }
+    return value;
+  }
+
+  function readValue(raw, def) {
+    if (raw === undefined) return undefined;
+    if (def.type === 'media') return mediaValue(raw, def);
+    return canonical(raw);
+  }
+
+  function parseRecord(row) {
+    const relations = Object.create(null), values = Object.create(null), missing = [];
+    for (const [name, def] of fields) {
+      if (def.type === 'relation') {
+        relations[name] = inlineLinks(row[name], own(row, name), name, def);
+      } else {
+        const value = own(row, name) ? readValue(row[name], def) : undefined;
+        if (value === undefined) missing.push(name);
+        else values[name] = value;
+      }
+    }
+    return { documentId: row.documentId, relations, values, missing };
   }
 
   async function listAttributes(locale, render) {
     let previousId = 0;
     const params = { locale, status: 'draft', sort: 'id:ASC' };
-    for (const field of FIELDS) params['populate[' + field + '][fields][0]'] = 'documentId';
+    for (const [name, def] of fields) {
+      if (def.type === 'relation') params['populate[' + name + '][fields][0]'] = 'documentId';
+      if (def.type === 'media') params['populate[' + name + '][fields][0]'] = 'id';
+    }
     return readPages('/content-manager/collection-types/' + UID, params, row => {
       ensure(row?.locale === locale && Number.isSafeInteger(row.id) && row.id > previousId,
         'Неверная локаль или порядок ' + locale + ' Attribute');
       previousId = row.id;
       ensure(validDocumentId(row.documentId), 'Нет documentId Attribute');
-      const fields = {};
-      for (const field of FIELDS) fields[field] = inlineLinks(row[field], own(row, field), field);
-      return { documentId: row.documentId, fields };
+      return parseRecord(row);
     }, null, (loaded, total) => {
       report[locale + 'Total'] = loaded;
       render('Чтение ' + locale.toUpperCase() + ': ' + loaded + '/' + total, '', { loaded, total });
     });
   }
 
-  async function links(row, field, locale) {
-    const value = row.fields[field];
+  async function fillMissing(row, locale) {
+    if (!row.missing.length) return;
+    report.detailFallbacks++;
+    const data = await get('/content-manager/collection-types/' + UID + '/' +
+      encodeURIComponent(row.documentId) + '?locale=' + locale + '&status=draft');
+    const detail = unwrap(data?.data);
+    ensure(detail?.documentId === row.documentId && detail.locale === locale,
+      'Неверная карточка: ' + row.documentId + '/' + locale);
+    for (const name of row.missing) {
+      const def = fields.find(([field]) => field === name)[1];
+      const value = own(detail, name) ? readValue(detail[name], def) : undefined;
+      ensure(value !== undefined, 'Не удалось прочитать ' + row.documentId + '/' + locale + '/' + name);
+      row.values[name] = value;
+    }
+    row.missing = [];
+  }
+
+  async function links(row, field, locale, def) {
+    const value = row.relations[field];
     if (value.ids !== null) return value.ids;
     report.relationFallbacks++;
     const ids = await readPages('/content-manager/relations/' + UID + '/' +
@@ -143,7 +235,7 @@
         validDocumentId(item.documentId), 'Неверная relation: ' + row.documentId + '/' + field);
       return item.documentId;
     }, value.count);
-    if (field !== 'filtry') ensure(ids.length <= 1, 'Несколько to-one связей: ' + field);
+    if (singleRelation(def)) ensure(ids.length <= 1, 'Несколько to-one связей: ' + field);
     return ids;
   }
 
@@ -156,13 +248,24 @@
   }
 
   async function inspect(ru, kk) {
-    const changes = {};
-    for (const field of FIELDS) {
+    await fillMissing(ru, 'ru');
+    await fillMissing(kk, 'kk');
+    const changes = Object.create(null);
+    for (const [field, def] of fields) {
       guard();
-      const source = await links(ru, field, 'ru');
-      const target = await links(kk, field, 'kk');
-      const delta = diff(source, target);
-      if (delta.connect.length || delta.disconnect.length) changes[field] = delta;
+      if (def.type === 'relation') {
+        const source = await links(ru, field, 'ru', def);
+        const target = await links(kk, field, 'kk', def);
+        const delta = diff(source, target);
+        if (delta.connect.length || delta.disconnect.length) changes[field] = delta;
+      } else {
+        const source = ru.values[field], target = kk.values[field];
+        ensure(source !== undefined && target !== undefined,
+          'Неполные данные: ' + ru.documentId + '/' + field);
+        if (JSON.stringify(source) !== JSON.stringify(target)) {
+          changes[field] = { ru: source, kk: target };
+        }
+      }
     }
     return changes;
   }
@@ -193,6 +296,8 @@
   }
 
   async function scan(render) {
+    render('Чтение схемы Attribute');
+    await readSchema();
     const ru = await listAttributes('ru', render);
     const kk = await listAttributes('kk', render);
     const kkById = new Map(kk.map(row => [row.documentId, row]));
@@ -223,9 +328,12 @@
           const [source, target] = pairs[cursor++];
           const fields = await inspect(source, target);
           guard();
-          if (Object.keys(fields).length)
+          if (Object.keys(fields).length) {
             report.differences.push({ documentId: source.documentId, fields });
-          else report.matched++;
+            for (const name of Object.keys(fields)) {
+              report.fieldDifferences[name] = (report.fieldDifferences[name] || 0) + 1;
+            }
+          } else report.matched++;
           report.checked++;
           render('Сравнение RU / KK', source.documentId);
         }
@@ -245,7 +353,7 @@
     report.status = 'completed';
   }
 
-  const ui = designSystem.createToolStatus('Attribute Relations Config');
+  const ui = designSystem.createToolStatus('Attribute RU / KK Config');
   const { phase: phaseLabel, detail: status } = ui;
   const stop = ui.button('Остановить');
   const save = ui.button('Скачать конфиг');
@@ -266,7 +374,8 @@
       '\nСовпадают: ' + report.matched + ' · Исключено: ' + report.blocked.length +
       '\nRU: ' + report.ruTotal + ' · KK: ' + report.kkTotal +
       '\nТолько RU: ' + report.ruOnly + ' · Только KK: ' + report.kkOnly +
-      '\nЗапросов: ' + report.requests + ' · Fallback: ' + report.relationFallbacks +
+      '\nПолей: ' + report.comparedFields.length + ' · Запросов: ' + report.requests +
+      '\nFallback: relations ' + report.relationFallbacks + ' · detail ' + report.detailFallbacks +
       (id ? '\nAttribute: ' + id : '');
     ui.setProgress(reading ? reading.loaded : report.checked,
       reading ? reading.total : report.total);
