@@ -546,6 +546,14 @@
                 vector-effect: non-scaling-stroke;
             }
 
+            [${CLEANUP_ATTR}] [${ICON_ATTR}] svg > * {
+                fill: none !important;
+                stroke: currentColor !important;
+                stroke-width: 1.6 !important;
+                stroke-linecap: round !important;
+                stroke-linejoin: round !important;
+            }
+
             [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR}:hover [${ICON_ATTR}],
             [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR}:hover [${ICON_ATTR}] {
                 color: var(--tm-ds-neutral800) !important;
@@ -568,14 +576,14 @@
 
             [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] {
                 position: relative !important;
-                background: var(--tm-ds-primary100) !important;
+                background: var(--tm-ds-neutral150) !important;
                 color: var(--tm-ds-primary700) !important;
                 font-weight: var(--tm-ds-font-semibold) !important;
                 overflow: hidden !important;
-                border-inline-end: 2px solid var(--tm-ds-primary600) !important;
+                border-right: 0 !important;
+                border-inline-end: 0 !important;
             }
 
-            [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] *,
             [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] > div > span:last-child {
                 color: var(--tm-ds-primary700) !important;
                 font-weight: var(--tm-ds-font-semibold) !important;
