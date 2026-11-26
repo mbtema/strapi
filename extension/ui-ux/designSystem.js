@@ -30,6 +30,35 @@
         });
     }
 
+    function setColorSwatch(element, colors, before = false) {
+        const values = Array.isArray(colors)
+            ? colors.filter(value => typeof value === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value))
+            : [];
+        const className = before ? 'tm-ds-color-swatch-before' : 'tm-ds-color-swatch';
+
+        if (!values.length) {
+            element.classList.remove(className);
+            element.style.removeProperty('--tm-ds-swatch-width');
+            element.style.removeProperty('--tm-ds-swatch-colors');
+            return false;
+        }
+
+        const width = 'calc(var(--tm-ds-swatch-size) * ' + values.length + ')';
+        const gradient = values.length === 1 ? values[0] :
+            'linear-gradient(to right, ' + values.map((color, index) =>
+                color + ' ' + (index / values.length * 100) + '% ' + ((index + 1) / values.length * 100) + '%'
+            ).join(', ') + ')';
+
+        if (element.style.getPropertyValue('--tm-ds-swatch-width') !== width) {
+            element.style.setProperty('--tm-ds-swatch-width', width);
+        }
+        if (element.style.getPropertyValue('--tm-ds-swatch-colors') !== gradient) {
+            element.style.setProperty('--tm-ds-swatch-colors', gradient);
+        }
+        if (!element.classList.contains(className)) element.classList.add(className);
+        return true;
+    }
+
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
@@ -342,7 +371,7 @@
     `;
     if (!document.getElementById(STYLE_ID)) (document.head || root).appendChild(style);
 
-    window[KEY] = { syncTheme };
+    window[KEY] = { syncTheme, setColorSwatch };
     new MutationObserver(syncTheme).observe(root, {
         attributes: true, attributeFilter: ['class', 'style']
     });

@@ -4,7 +4,7 @@
     {
       "id": "designSystem",
       "path": "ui-ux/designSystem.js",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "enabled": true
     },
     {
@@ -28,13 +28,13 @@
     {
       "id": "relation/attribute",
       "path": "ui-ux/relation/attribute.js",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "enabled": true
     },
     {
       "id": "relation/shade",
       "path": "ui-ux/relation/shade.js",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "enabled": true
     },
     {

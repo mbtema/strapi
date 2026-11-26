@@ -3,7 +3,6 @@
 
     const TARGET = 'api::shade.shade';
     const CLEANUP = '__tmRelationShadeCleanup';
-    const STYLE_ID = 'tm-relation-shade-style';
     const MARK = 'data-tm-relation-shade';
     const ROW = 'ol > li[aria-describedby]';
     const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
@@ -20,25 +19,6 @@
     let pending = 0;
     let frame = 0;
     let stopped = false;
-
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
-    style.textContent = `
-        [${MARK}]::before {
-            content: '';
-            display: inline-block;
-            flex: 0 0 var(--tm-relation-shade-width);
-            width: var(--tm-relation-shade-width);
-            height: 18px;
-            margin-inline-end: 6px;
-            vertical-align: middle;
-            border-radius: var(--tm-ds-radius, 4px);
-            box-shadow: inset 0 0 0 1px var(--tm-ds-neutral300, #a5a5ba);
-            background: var(--tm-relation-shade-colors);
-            pointer-events: none;
-        }
-    `;
-    document.head.appendChild(style);
 
     function currentFiber(node) {
         const key = Object.keys(node).find(key => key.startsWith('__reactFiber$'));
@@ -75,29 +55,16 @@
 
     function clear(button) {
         button.removeAttribute(MARK);
-        button.style.removeProperty('--tm-relation-shade-width');
-        button.style.removeProperty('--tm-relation-shade-colors');
+        window.__tmStrapiDesignSystem?.setColorSwatch(button, [], true);
         tracked.delete(button);
     }
 
     function paint(button, colors, key) {
-        if (!colors.length) {
+        if (!window.__tmStrapiDesignSystem?.setColorSwatch(button, colors, true)) {
             clear(button);
             return;
         }
-
-        const width = colors.length * 18;
-        const gradient = colors.length === 1 ? colors[0] :
-            'linear-gradient(to right, ' + colors.map((color, index) =>
-                color + ' ' + (index * 18) + 'px ' + ((index + 1) * 18) + 'px'
-            ).join(', ') + ')';
-
-        if (button.getAttribute(MARK) !== key ||
-            button.style.getPropertyValue('--tm-relation-shade-colors') !== gradient) {
-            button.style.setProperty('--tm-relation-shade-width', width + 'px');
-            button.style.setProperty('--tm-relation-shade-colors', gradient);
-            button.setAttribute(MARK, key);
-        }
+        if (button.getAttribute(MARK) !== key) button.setAttribute(MARK, key);
         tracked.add(button);
     }
 
@@ -219,7 +186,6 @@
         queue.length = 0;
         cache.clear();
         for (const button of tracked) clear(button);
-        style.remove();
     };
 
     schedule();

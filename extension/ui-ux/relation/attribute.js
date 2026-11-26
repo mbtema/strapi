@@ -64,12 +64,6 @@
                 display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;
                 gap:4px 8px;min-width:0;max-width:50%;flex:0 1 auto;overflow-wrap:anywhere
             }
-            [${ROOT}] .tm-pan-shade-swatch{
-                display:inline-block;height:18px;margin-inline-end:6px;
-                vertical-align:middle;border-radius:var(--tm-ds-radius,4px);
-                box-shadow:inset 0 0 0 1px var(--tm-ds-neutral300,#a5a5ba);
-                pointer-events:none
-            }
             [${ROOT}] .tm-pan-detail-empty{color:var(--tm-ds-neutral600)}
             [${ROOT}] .tm-pan-status{flex:0 0 auto;margin-inline-start:auto}
             [${ROOT}] .tm-pan-empty,[${ROOT}] .tm-pan-loading,[${ROOT}] .tm-pan-error{padding:8px 0}
@@ -420,15 +414,10 @@
 
     function shadeSwatch(colors) {
         if (!colors?.length) return null;
-        const node = el('span', 'tm-pan-shade-swatch');
+        const node = el('span');
         node.setAttribute('data-tm-relation-attribute-shade', '');
         node.setAttribute('aria-hidden', 'true');
-        node.style.width = colors.length * 18 + 'px';
-        node.style.background = colors.length === 1 ? colors[0] :
-            'linear-gradient(to right, ' + colors.map((color, index) =>
-                color + ' ' + (index * 18) + 'px ' + ((index + 1) * 18) + 'px'
-            ).join(', ') + ')';
-        return node;
+        return window.__tmStrapiDesignSystem?.setColorSwatch(node, colors) ? node : null;
     }
 
     function createPanel() {
