@@ -2,6 +2,10 @@
   "schemaVersion": 1,
   "tools": [
     {
+      "file": "config/categoryRelations.js",
+      "group": "config"
+    },
+    {
       "file": "extractor/brandActiveProducts.js",
       "group": "extractor"
     },
