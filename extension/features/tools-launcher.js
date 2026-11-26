@@ -8,16 +8,13 @@
   const TOOL_PATH_RE = /^(?:syncer|service|extractor|pusher|catalog|config)\/[a-z][a-zA-Z0-9-]*\.js$/;
   const ACTIVE_RUNS_KEY = '__tmToolsLauncherActiveRuns';
 
-  const TOOL_GROUPS = [
-    { id: 'config', title: 'config' },
-    { id: 'extractor', title: 'extractor' },
-    { id: 'pusher', title: 'pusher' },
-    { id: 'syncer', title: 'syncer' },
-    { id: 'catalog', title: 'catalog' },
-    { id: 'service', title: 'service' }
+  const TOOL_COLUMNS = [
+    ['extractor', 'pusher', 'catalog'],
+    ['config', 'syncer'],
+    ['service']
   ];
 
-  const KNOWN_GROUP_IDS = new Set(TOOL_GROUPS.map(group => group.id));
+  const KNOWN_GROUP_IDS = new Set(TOOL_COLUMNS.flat());
   const ALLOWED_GROUP_IDS = new Set(KNOWN_GROUP_IDS);
   const activeRuns = window[ACTIVE_RUNS_KEY] instanceof Set
     ? window[ACTIVE_RUNS_KEY]
@@ -302,10 +299,11 @@
   }
 
   function splitTools(tools) {
-    return TOOL_GROUPS.map(group => ({
-      ...group,
-      tools: tools.filter(tool => tool.group === group.id)
-    }));
+    return TOOL_COLUMNS.map(column => column.map(id => ({
+      id,
+      title: id,
+      tools: tools.filter(tool => tool.group === id)
+    })));
   }
 
   async function openLauncher() {
@@ -347,7 +345,7 @@
     const grid = document.createElement('div');
     Object.assign(grid.style, {
       display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))',
       gap: '14px',
       alignItems: 'start'
     });
@@ -377,9 +375,21 @@
 
       const grouped = splitTools(tools);
 
-      for (const group of grouped) {
-        if (!group.tools.length) continue;
-        grid.appendChild(createSection(group.title, group.tools, status));
+      for (const groups of grouped) {
+        const column = document.createElement('div');
+        Object.assign(column.style, {
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px',
+          minWidth: '0'
+        });
+
+        for (const group of groups) {
+          if (!group.tools.length) continue;
+          column.appendChild(createSection(group.title, group.tools, status));
+        }
+
+        if (column.childElementCount) grid.appendChild(column);
       }
 
       status.textContent = '';
