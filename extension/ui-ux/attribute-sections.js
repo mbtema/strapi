@@ -12,9 +12,9 @@
         ['system', 'Системное']
     ];
     const SECTIONS = {
+        content: new Set(['active', 'detail_picture', 'shade', 'volume', 'barcode']),
         ar: new Set(['isArTryOnAvailable', 'arSupportsIntensity', 'arTexture', 'arType']),
-        marketing: new Set(['label_sales', 'label_new', 'label_hit', 'label_exclusive', 'home_new_priority', 'home_hit_priority']),
-        system: new Set(['name', 'barcode', 'key', 'product_number', 'code_1c', 'bitrix_id', 'xml_id', 'shopwareId', 'color_variant1C', 'newFrom1C', 'isInStock', 'price', 'shareUrl'])
+        marketing: new Set(['label_sales', 'label_new', 'label_hit', 'label_exclusive', 'home_new_priority', 'home_hit_priority'])
     };
     const MEDIA = new Set(['detail_picture', 'preview_picture']);
     const MEDIA_LABELS = new Map([
@@ -30,7 +30,7 @@
     window.__tmAttributeSectionsCleanup?.();
 
     function section(name) {
-        return Object.keys(SECTIONS).find(key => SECTIONS[key].has(name)) || 'content';
+        return Object.keys(SECTIONS).find(key => SECTIONS[key].has(name)) || 'system';
     }
 
     function ensureStyle() {
