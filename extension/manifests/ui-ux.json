@@ -2,51 +2,51 @@
   "schemaVersion": 1,
   "extensions": [
     {
-      "id": "design-system",
-      "path": "ui-ux/design-system.js",
-      "version": "1.0.0",
+      "id": "designSystem",
+      "path": "ui-ux/designSystem.js",
+      "version": "1.0.1",
       "enabled": true
     },
     {
-      "id": "sidebar",
-      "path": "ui-ux/sidebar.js",
-      "version": "2.6.3",
+      "id": "common/sidebar",
+      "path": "ui-ux/common/sidebar.js",
+      "version": "2.6.4",
       "enabled": true
     },
     {
-      "id": "record-list",
-      "path": "ui-ux/record-list.js",
-      "version": "1.1.0",
+      "id": "common/recordList",
+      "path": "ui-ux/common/recordList.js",
+      "version": "1.1.1",
       "enabled": true
     },
     {
-      "id": "entry-relocate",
-      "path": "ui-ux/entry-relocate.js",
-      "version": "1.4.9",
+      "id": "common/entryLayout",
+      "path": "ui-ux/common/entryLayout.js",
+      "version": "1.4.10",
       "enabled": true
     },
     {
-      "id": "relationAttribute",
-      "path": "ui-ux/relationAttribute.js",
-      "version": "1.1.3",
+      "id": "relation/attribute",
+      "path": "ui-ux/relation/attribute.js",
+      "version": "1.1.4",
       "enabled": true
     },
     {
-      "id": "relationShade",
-      "path": "ui-ux/relationShade.js",
-      "version": "1.0.0",
+      "id": "relation/shade",
+      "path": "ui-ux/relation/shade.js",
+      "version": "1.0.1",
       "enabled": true
     },
     {
-      "id": "product",
+      "id": "collection/product",
       "path": "ui-ux/collection/product.js",
-      "version": "1.7.2",
+      "version": "1.7.3",
       "enabled": true
     },
     {
-      "id": "attribute",
+      "id": "collection/attribute",
       "path": "ui-ux/collection/attribute.js",
-      "version": "1.2.2",
+      "version": "1.2.3",
       "enabled": true
     }
   ]

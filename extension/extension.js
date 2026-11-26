@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         strapi-extensions
-// @version      1.5.0
+// @version      1.6.0
 // @description  Загружает и обновляет рабочие Strapi extensions из GitHub manifests
 // @match        http://10.10.3.80:1337/admin/*
 // @match        https://strapi.monamie.kz/admin/*
@@ -24,7 +24,7 @@
   const SHA_RE = /^[0-9a-f]{40}$/;
   const CACHE_KEY = 'tm-strapi-extensions-cache-v1';
   const LOADER_ATTR = 'data-tm-strapi-extensions-loader';
-  const EXTENSION_ID_RE = /^[a-z0-9-]+$/i;
+  const EXTENSION_ID_RE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/i;
   const MANIFEST_PATH_RE = /^manifests\/[a-z0-9-]+\.json$/i;
   const EXTENSION_PATH_RE = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\/[a-z0-9-]+\.js$/i;
   const VERSION_RE = /^\d+\.\d+\.\d+$/;
@@ -179,7 +179,7 @@
       if (!EXTENSION_PATH_RE.test(path)) {
         throw new Error(`${label}: invalid path for ${id}`);
       }
-      if (path.split('/').pop() !== `${id}.js`) {
+      if (path.split('/').slice(1).join('/') !== `${id}.js`) {
         throw new Error(`${label}: path does not match id ${id}`);
       }
       if (ids.has(id)) {
