@@ -7,6 +7,7 @@
     'id', 'documentId', 'locale', 'status', 'createdAt', 'updatedAt',
     'publishedAt', 'createdBy', 'updatedBy', 'localizations', '__pivot'
   ]);
+  const EXCLUDED = new Set(['price']);
   const SCALARS = new Set([
     'string', 'text', 'richtext', 'email', 'enumeration', 'json', 'blocks',
     'integer', 'biginteger', 'float', 'decimal', 'boolean', 'date',
@@ -24,7 +25,8 @@
   const report = {
     status: 'running', total: 0, checked: 0, matched: 0,
     ruTotal: 0, kkTotal: 0, pairs: 0, ruOnly: 0, kkOnly: 0, relationFallbacks: 0, detailFallbacks: 0,
-    comparedFields: [], fieldDifferences: Object.create(null),
+    sourceLocale: 'ru', targetLocale: 'kk',
+    comparedFields: [], excludedFields: [...EXCLUDED], fieldDifferences: Object.create(null),
     differences: [], blocked: [], requests: 0, errors: []
   };
   window.attributeRelationsConfigReport = report;
@@ -112,7 +114,7 @@
     ensure(Array.isArray(data?.data), 'Не удалось прочитать схему CMS');
     const schema = data.data.find(type => type.uid === UID);
     ensure(schema?.attributes && typeof schema.attributes === 'object', 'Нет схемы Attribute');
-    fields = Object.entries(schema.attributes).filter(([name]) => !SYSTEM.has(name));
+    fields = Object.entries(schema.attributes).filter(([name]) => !SYSTEM.has(name) && !EXCLUDED.has(name));
     ensure(fields.length > 0, 'Пустая схема Attribute');
     for (const name of ['product', 'shade', 'volume', 'color_variant1C', 'filtry']) {
       ensure(fields.some(([field, def]) => field === name && def.type === 'relation'),
