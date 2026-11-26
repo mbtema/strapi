@@ -5,6 +5,7 @@
   const UID = 'api::attribute.attribute';
   const PAGE_SIZE = 100;
   const RUN_KEY = '__tmAttributeSyncRunning';
+  const JOURNAL_KEY = 'tmAttributeSyncPending';
   const SYSTEM = new Set([
     'id', 'documentId', 'locale', 'status', 'createdAt', 'updatedAt',
     'publishedAt', 'createdBy', 'updatedBy', 'localizations', '__pivot'
@@ -106,6 +107,7 @@
       attributeId, status: 'running', dryRun, startedAt: new Date().toISOString(),
       finishedAt: null, plan: {}, skipped: [], operations: [], published: [],
       errors: [], integrityDiffs: [], ignoredIntegrityDiffs: [], unpublishedRelations: [],
+      clearings: [], protectedChanges: [], backup: null,
       counters: { GET: 0, PUT: 0, POST: 0, retries: 0 }, pending: null
     };
     window.attributeSyncReport = report;
@@ -249,7 +251,13 @@
         links[name] = await relations(UID, attributeId, name, locale, info.count, status);
         ensure(!singleRelation(def) || links[name].length <= 1, 'Несколько to-one связей: ' + name);
       }
-      return { row, values, links };
+      const protectedValues = {};
+      for (const name of EXCLUDED) {
+        if (!own(schemas.get(UID).attributes, name)) continue;
+        ensure(own(row, name) && row[name] !== undefined, 'Нет защищённого поля ' + name);
+        protectedValues[name] = canonical(row[name]);
+      }
+      return { row, values, links, protectedValues };
     }
 
     function content(snap) {
@@ -257,10 +265,113 @@
         Object.entries(snap.links).map(([name, rows]) => [name, ids(rows)])) } : null;
     }
 
+    function differences(expected, actual, path = '') {
+      if (same(expected, actual)) return [];
+      if (expected && actual && typeof expected === 'object' && typeof actual === 'object' &&
+          !Array.isArray(expected) && !Array.isArray(actual)) {
+        return [...new Set([...Object.keys(expected), ...Object.keys(actual)])].sort()
+          .flatMap(key => differences(expected[key], actual[key], path ? path + '.' + key : key));
+      }
+      return [{ field: path || '$record',
+        before: expected === undefined ? { missing: true } : expected,
+        after: actual === undefined ? { missing: true } : actual }];
+    }
+
     function verify(stage, expected, actual) {
-      if (same(expected, actual)) return;
-      report.integrityDiffs.push({ stage, expected, actual });
-      throw Error('Проверка не пройдена: ' + stage);
+      const changes = differences(expected, actual);
+      if (!changes.length) return;
+      report.integrityDiffs.push({ stage, expected, actual, differences: changes });
+      console.table(changes);
+      throw Error('Нарушение целостности: ' + stage + ': ' + changes.map(item => item.field).join(', '));
+    }
+
+    function protectedValues(snap) {
+      return snap ? snap.protectedValues : null;
+    }
+
+    function fullContent(snap) {
+      return snap ? { ...content(snap), protected: protectedValues(snap) } : null;
+    }
+
+    function verifyProtected(stage, before, after) {
+      verify(stage + ' защищённые поля', protectedValues(before), protectedValues(after));
+    }
+
+    function targetValues(uid, row) {
+      if (!row) return null;
+      const attributes = schemas.get(uid)?.attributes;
+      ensure(attributes, 'Нет схемы связанной записи ' + uid);
+      const values = {};
+      for (const [name, def] of Object.entries(attributes)) {
+        if (SYSTEM.has(name) || def.type === 'relation') continue;
+        ensure(own(row, name) && row[name] !== undefined, 'Нет поля связанной записи ' + uid + '/' + name);
+        const value = def.type === 'media' ? mediaValue(row[name], def) : canonical(row[name]);
+        ensure(value !== undefined, 'Неполное поле связанной записи ' + uid + '/' + name);
+        values[name] = value;
+      }
+      return values;
+    }
+
+    async function captureTargets(delta) {
+      const result = [];
+      const seen = new Set();
+      for (const [name, def] of fields.filter(([, def]) => def.type === 'relation')) {
+        for (const item of [...delta[name].connect, ...delta[name].disconnect]) {
+          const key = def.target + '/' + item.documentId;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const snapshots = {};
+          const draft = await detail(def.target, item.documentId, 'kk', 'draft', true);
+          ensure(draft, 'Нет связанной записи ' + key);
+          const locales = draft.locale === null ? ['kk'] : ['ru', 'kk'];
+          for (const locale of locales) {
+            for (const status of ['draft', 'published']) {
+              const row = locale === 'kk' && status === 'draft' ? draft :
+                await detail(def.target, item.documentId, locale, status, true);
+              snapshots[locale + '/' + status] = targetValues(def.target, row);
+            }
+          }
+          result.push({ uid: def.target, documentId: item.documentId, snapshots });
+        }
+      }
+      return result;
+    }
+
+    async function verifyTargets(stage, targets) {
+      for (const target of targets) {
+        for (const [version, before] of Object.entries(target.snapshots)) {
+          const [locale, status] = version.split('/');
+          const row = await detail(target.uid, target.documentId, locale, status, true);
+          verify(stage + ' ' + target.uid + '/' + target.documentId + '/' + version,
+            before, targetValues(target.uid, row));
+        }
+      }
+    }
+
+    function journal(stage) {
+      ensure(report.backup, 'Нет резервного снимка');
+      localStorage.setItem(JOURNAL_KEY, JSON.stringify({
+        documentId: attributeId, stage, capturedAt: report.startedAt,
+        backup: report.backup, plan: report.plan, pending: report.pending
+      }));
+    }
+
+    function downloadIntegrity() {
+      const saved = localStorage.getItem(JOURNAL_KEY);
+      let recovery = null;
+      try { recovery = saved ? JSON.parse(saved) : null; } catch {}
+      const href = URL.createObjectURL(new Blob([JSON.stringify({
+        documentId: attributeId, status: report.status, backup: report.backup,
+        pending: report.pending, integrityDiffs: report.integrityDiffs, errors: report.errors,
+        plan: report.plan, recovery
+      }, null, 2)], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = href;
+      link.download = 'attribute-sync-integrity-' + attributeId + '.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 1000);
     }
 
     async function plan(ru, kk) {
@@ -318,9 +429,14 @@
         field, RU: JSON.stringify(change.ru), KK: JSON.stringify(change.kk)
       })));
       if (report.skipped.length) { report.status = 'partial'; return report; }
+      const empty = value => value === null || value === '' || (Array.isArray(value) && !value.length);
+      report.clearings = Object.entries(report.plan).filter(([, change]) => empty(change.ru) && !empty(change.kk))
+        .map(([field, change]) => ({ field, before: change.kk, after: change.ru }));
       if (!Object.keys(report.plan).length || dryRun) { report.status = 'completed'; return report; }
+      ensure(!localStorage.getItem(JOURNAL_KEY), 'Есть неподтверждённая запись в ' + JOURNAL_KEY + '. Проверьте её перед новым запуском');
       if (!bulk && !confirm('Attribute ' + attributeId + ': ' + Object.keys(report.plan).length +
-        ' полей отличаются. Обновить и опубликовать KK?')) {
+        ' полей отличаются.' + (report.clearings.length ? '\nОчистка KK по RU: ' + report.clearings.map(item => item.field).join(', ') : '') +
+        '\nОбновить и опубликовать KK?')) {
         report.status = 'cancelled';
         return report;
       }
@@ -329,42 +445,70 @@
       ]);
       verify('RU перед записью', expected, content(freshRU));
       verify('KK перед записью', previous, content(freshKK));
+      verifyProtected('RU перед записью', ru, freshRU);
+      verifyProtected('KK перед записью', kk, freshKK);
       report.before = { ru: expected, kk: previous, ruPublished: content(ruPub), kkPublished: content(kkPub) };
       const currentPlan = await plan(freshRU, freshKK);
       ensure(!report.skipped.length, 'Целевая связь исчезла перед записью');
       if (window.attributeSyncStop === true) { report.status = 'cancelled'; return report; }
+      const affected = await captureTargets(currentPlan.delta);
+      report.backup = { ru: fullContent(freshRU), kk: fullContent(freshKK),
+        ruPublished: fullContent(ruPub), kkPublished: fullContent(kkPub), targets: affected };
+      const [lastRU, lastKK, lastRUPub, lastKKPub] = await Promise.all([
+        snapshot('ru'), snapshot('kk'), snapshot('ru', 'published'), snapshot('kk', 'published')
+      ]);
+      verify('RU перед Save', report.backup.ru, fullContent(lastRU));
+      verify('KK перед Save', report.backup.kk, fullContent(lastKK));
+      verify('RU Published перед Save', report.backup.ruPublished, fullContent(lastRUPub));
+      verify('KK Published перед Save', report.backup.kkPublished, fullContent(lastKKPub));
+      if (window.attributeSyncStop === true) { report.status = 'cancelled'; return report; }
       const path = '/content-manager/collection-types/' + UID + '/' + encodeURIComponent(attributeId);
       if (Object.keys(currentPlan.patch).length) {
         report.pending = { stage: 'save', documentId: attributeId, fields: Object.keys(currentPlan.patch) };
+        journal('save');
         await request('PUT', path + '?locale=kk', currentPlan.patch);
         const saved = await snapshot('kk');
         verify('KK после Save', { values: expected.values, relations: previous.relations }, content(saved));
-        verify('RU Draft после Save', expected, content(await snapshot('ru')));
-        verify('RU Published после Save', content(ruPub), content(await snapshot('ru', 'published')));
+        verifyProtected('KK после Save', freshKK, saved);
+        verify('RU Draft после Save', report.backup.ru, fullContent(await snapshot('ru')));
+        verify('RU Published после Save', report.backup.ruPublished, fullContent(await snapshot('ru', 'published')));
+        verify('KK Published после Save', report.backup.kkPublished, fullContent(await snapshot('kk', 'published')));
+        await verifyTargets('Save', affected);
         report.operations.push({ field: '$fields', connect: 0, disconnect: 0, fields: Object.keys(currentPlan.patch) });
       }
       const [beforePublishRU, beforePublishKK] = await Promise.all([snapshot('ru'), snapshot('kk')]);
       verify('RU перед Publish', expected, content(beforePublishRU));
       verify('KK перед Publish', { values: expected.values, relations: previous.relations }, content(beforePublishKK));
+      verifyProtected('RU перед Publish', freshRU, beforePublishRU);
+      verifyProtected('KK перед Publish', freshKK, beforePublishKK);
+      verify('RU Published перед Publish', report.backup.ruPublished, fullContent(await snapshot('ru', 'published')));
+      verify('KK Published перед Publish', report.backup.kkPublished, fullContent(await snapshot('kk', 'published')));
+      await verifyTargets('Перед Publish', affected);
       const final = await plan(beforePublishRU, beforePublishKK);
+      verify('Relation delta перед Publish', currentPlan.delta, final.delta);
       ensure(!report.skipped.length && !Object.keys(final.patch).length, 'План изменился перед Publish');
       const payload = { ...beforePublishKK.values, ...final.delta };
       ensure(!own(payload, 'price'), 'price исключён');
       report.pending = { stage: 'publish', documentId: attributeId, fields: Object.keys(report.plan) };
+      journal('publish');
       await request('POST', path + '/actions/publish?locale=kk', payload);
       const [afterRU, afterRUPub, afterKK, afterKKPub] = await Promise.all([
         snapshot('ru'), snapshot('ru', 'published'), snapshot('kk'), snapshot('kk', 'published')
       ]);
-      verify('RU Draft после Publish', expected, content(afterRU));
-      verify('RU Published после Publish', content(ruPub), content(afterRUPub));
+      verify('RU Draft после Publish', report.backup.ru, fullContent(afterRU));
+      verify('RU Published после Publish', report.backup.ruPublished, fullContent(afterRUPub));
       verify('KK Draft после Publish', expected, content(afterKK));
+      verifyProtected('KK Draft после Publish', beforePublishKK, afterKK);
+      verifyProtected('KK Published после Publish', beforePublishKK, afterKKPub);
       await verifyPublished(afterKKPub, expected);
+      await verifyTargets('Publish', affected);
       ensure(afterKKPub.row.publishedAt !== kkPub?.row.publishedAt,
         'Не подтверждена новая версия KK Published');
       for (const [field, change] of Object.entries(final.delta))
         if (change.connect.length || change.disconnect.length)
           report.operations.push({ field, connect: change.connect.length, disconnect: change.disconnect.length });
       report.published.push({ documentId: attributeId });
+      localStorage.removeItem(JOURNAL_KEY);
       report.pending = null;
       report.status = report.unpublishedRelations.length ? 'partial' : 'completed';
     } catch (error) {
@@ -373,6 +517,10 @@
       console.error(TAG, attributeId, error);
     } finally {
       report.finishedAt = new Date().toISOString();
+      if (report.integrityDiffs.length || report.pending) {
+        try { downloadIntegrity(); }
+        catch (error) { console.error(TAG, 'Ошибка экспорта диагностики:', error.message); }
+      }
       console.log(TAG, report.status, report);
     }
     return report;
@@ -450,9 +598,11 @@
     return {
       documentId: report.attributeId, status: report.status,
       changedFields: Object.keys(report.plan).length, dryRun: report.dryRun,
+      integrityErrors: report.integrityDiffs.length, clearedFields: report.clearings.length,
       ...totals, skipped: report.skipped.length, published: report.published.length,
       comment: [
         ...report.errors,
+        ...report.clearings.map(item => 'Очистка по RU: ' + item.field),
         ...report.ignoredIntegrityDiffs.flatMap(item => item.differences.map(diff =>
           'Игнорировано ' + item.stage + ' ' + item.uid + '/' + item.documentId + ' ' +
           diff.locale + '.' + diff.field + ': ' + JSON.stringify(diff.before) + ' → ' + JSON.stringify(diff.after))),
@@ -464,7 +614,7 @@
   }
 
   function downloadResults(batch) {
-    const columns = ['documentId', 'status', 'dryRun', 'changedFields', 'added', 'removed', 'skipped', 'published', 'comment'];
+    const columns = ['documentId', 'status', 'dryRun', 'changedFields', 'integrityErrors', 'clearedFields', 'added', 'removed', 'skipped', 'published', 'comment'];
     const cell = value => {
       let text = String(value ?? '');
       if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
