@@ -13,7 +13,7 @@
 - Начинать с CANONICAL workflow. Отступать при новом требовании, live-противоречии или сбое. Новые решения проверять live; обновлять context только по прямой команде.
 - `HISTORICAL` — завершено; `EXPERIMENT` — PoC, не production; `SUPERSEDED` — устаревший путь.
 - При отдельном запросе на обновление context сохранять reusable knowledge: путь, inputs/outputs, подтверждённые API/payload, проверка, ограничения и неудачные варианты; не пересказывать чат и изменяемое состояние.
-- `project/instruction.md` и `project/context.md` — staging copies. В Project пользователь переносит их вручную.
+- `promts/project/instruction.md` и `promts/project/context.md` — staging copies. В Project пользователь переносит их вручную.
 
 - **Лимит Project Instructions — 8000 символов.** Перед каждым изменением проверять длину полного текста; целиться в ≤7500, при превышении сокращать до коммита.
 
@@ -25,7 +25,7 @@
 - Backlog — в GitHub Issues, не context. Перед работой учитывать последние comments пользователя.
 - В scope исправлять сразу; реальный техдолг вне scope → Issue. Не создавать Issues на мелочи и гипотезы.
 - При изменении extension повышать manifest version: fix/optimization → patch; заметное новое поведение → minor; крупная переработка → major. Учитывать актуальный cache/reload contract.
-- **README и `project/context.md` менять только по прямой команде пользователя.** Не открывать README и не обновлять эти файлы автоматически при разработке, рефакторинге, изменении manifests или анализе pipeline. README — краткий каталог назначения/архитектуры скриптов. Context — долговременные CANONICAL contracts; релевантные разделы разрешено читать.
+- **README и `promts/project/context.md` менять только по прямой команде пользователя.** Не открывать README и не обновлять эти файлы автоматически при разработке, рефакторинге, изменении manifests или анализе pipeline. README — краткий каталог назначения/архитектуры скриптов. Context — долговременные CANONICAL contracts; релевантные разделы разрешено читать.
 
 ## 4. Strapi API и данные
 - Разделять **Strapi data → API response → Flutter/mobile**. Если данные и API корректны, CMS без причины не менять.

@@ -84,6 +84,8 @@ Tools Launcher получает registry из `extension/manifests/tools.json`, 
 - `extension/tools/extractor/` — выгрузки и извлечение данных;
 - `extension/tools/pusher/` — контролируемые массовые записи;
 - `extension/tools/syncer/` — синхронизации и управляемые write-инструменты;
+- `extension/tools/config/` — GET-only конфигурация/отбор кандидатов для отдельных workflows;
+- `extension/tools/catalog/` — синхронизация групп каталога;
 - `extension/tools/service/` — сервисные инструменты получения предметного контекста CMS (DOM, Network, стили) для анализа.
 
 Manifest tool содержит:
@@ -95,7 +97,7 @@ group
 
 `schemaVersion: 1` сохраняется как версия формата registry. Для tool отсутствует отдельная `version`: Tools Launcher всегда читает свежий `tools.json` и JS-инструмент через `fetch` с `cache: 'no-store'` и cache-busting параметром. Версия `tools-launcher` как extension в `features.json` остаётся обязательной для обновления кеша Tampermonkey-loader.
 
-`group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `extractor`, `pusher`, `syncer`, `service`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
+`group` не является отдельной смысловой классификацией: он обязан совпадать с первой папкой `file`. Допустимые группы: `extractor`, `pusher`, `catalog`, `config`, `syncer`, `service`; Tools Launcher валидирует это соответствие и строит UI-колонки по этим же группам.
 
 Группы `audits` больше нет: новые проверки проектировать отдельно без возвращения удалённых реализаций по умолчанию.
 
@@ -103,15 +105,15 @@ Tool-файлы не содержат собственные metadata-блоки
 
 Managed regular tools получают global run-lock. Для GET временные network errors / `429` / `5xx` могут повторяться; постоянные `4xx` не ретраятся.
 
-## CANONICAL — categoryRelations: синхронизация связей одной Category RU → KK (2026-11-23)
+## CANONICAL — Config → Syncer: categoryRelations RU → KK (2026-11-26)
 
-- Runtime: `extension/tools/syncer/categoryRelations.js`; запуск из карточки конкретной Category, `documentId` из URL. Нет обхода каталога и создания локалей.
-- Scope: `parent`, `categories`, `product`. RU Draft — источник; KK Draft той же Category — цель. Diff по `documentId`: `connect` недостающих доступных и `disconnect` лишних. Остальные поля не изменяются.
-- `categories` — обратная `mappedBy=parent`: добавление/удаление требует `PUT parent` только непосредственно затронутых KK child Category. `product` — `mappedBy=Product.categories`, записывается в Category `product` через прежний Content Manager PUT; требуется GET verify результата, неподтверждённое изменение останавливает процесс.
-- Если у RU relation target нет KK Draft, пропустить только эту связь, продолжить остальные, статус `partial`, `console.table` и CSV `category-relations-missing-kk.csv` (field;documentId;reason), `window.categoryRelationsReport`. Если у текущей Category нет KK Draft — `console.error` и остановка без записей.
-- После `confirm` — только необходимые PUT; публикация изменённой KK child Category после обновления `parent`, затем текущей KK Category; RU не публикуется, дочерние локали и Product не создаются. GET verify после каждого write; нет auto-retry PUT/POST; при неожиданном изменении RU/KK полей остановка, данные о последней операции — `report.pending`.
-- Подтверждены только mock-сценарии: add/disconnect/skip, публикация изменённых child, отсутствие собственной KK (0 writes), неудача Publish, фиксация RU field drift. Live CMS Save/Publish новой реализации пока не подтверждён; нужен контрольный запуск на одной Category.
-
+- Новый образец для переработки локализации: `extension/tools/config/categoryRelations.js` → `extension/tools/syncer/categoryRelations.js`. Config только читает CMS и отбирает кандидатов; Syncer работает с одной карточкой или списком documentId из CSV/Google Sheets, пересчитывает план по live данным. Не переносить прежние универсальные normalizer в новый runtime.
+- Config: все RU Category Draft через list endpoint, `locale=ru&status=draft&sort=id:ASC`, pageSize=100, строгая пагинация, detail count и уникальные documentId; сравнение RU/KK Draft relations. `category-relations-config.csv` (documentId) — только расхождения, `category-relations-config-blocked.csv` (documentId,reason) — нет KK Category или RU products не пусто. Config не является аудитом публикации или контента; совпавшие Draft не входят в CSV. UI с прогрессом и Stop, отчёт `window.categoryRelationsConfigReport`.
+- Scope relations: parent (inversedBy categories), categories (mappedBy parent), product (mappedBy Product.categories), products (mappedBy Product.category, legacy), brand (inversedBy Brand.categories), top_brands (mappedBy Brand.category). Проверять схему через Content Manager. RU products должен быть пуст; лишние KK products удаляются. Цель — RU Draft → KK Draft существующей Category, без создания локалей. Missing KK target пропускается, остальные связи синхронизируются; connect/disconnect по documentId, numeric ID из соответствующей версии relation/target.
+- Актуальный write в Syncer: один `POST /content-manager/collection-types/api::category.category/<documentId>/actions/publish?locale=kk` с текущими KK полями и relation delta (connect: id, documentId, locale, isTemporary; disconnect: актуальные строки KK relation). Отдельные записи/публикации Product, Brand, child Category не выполняются. Проверять четыре версии корневой записи, RU relations и поля затронутых targets до/после; не ретраить write. Старый вариант PUT child parent + Publish superseded. Нет изменений и KK уже опубликована без modified → без write.
+- Published relations могут не включать target без KK Published: сохранить Draft link, проверить отсутствие опубликованной версии target, отразить в `unpublishedRelations`. Missing Draft → skip/partial; если опубликованный target исчез из Published relation, это ошибка. Текущие исключения integrity: Category.key, Product.InStock/inStock; изменения фиксируются, не считать потерю key безопасной для других workflows.
+- Bulk: локальный CSV или Google Sheets CSV, список уникальных documentId; одно подтверждение, последовательная обработка, пауза 350 мс, Stop между категориями; fatal/pending останавливает новые записи. `category-relations-results.csv` (documentId;status;added;removed;skipped;published;comment); детали `window.categoryRelationsBatchReport` / `window.categoryRelationsReport`, в single также `category-relations-missing-kk.csv`. Итоговый CSV содержит число unpublishedRelations, а их documentId остаются в подробном report.
+- HISTORICAL: предоставленный пользователем CSV от 2026-11-26 подтверждает обработку категорий новым workflow; зафиксирована аномалия Category.key (RU Draft key стал null, KK Published получил прежний RU key). Это диагностическое свидетельство, не подтверждение безопасности переноса/создания локали. Текущее состояние CMS перепроверять.
 
 Группа `diagnostics` переименована в `service` 2026-11-23 без изменения функций инструментов: `service/dom.js` копирует DOM, `service/network.js` записывает Network fetch/XHR, `service/styles.js` формирует design snapshot. Сервисные tools служат для передачи предметного контекста CMS. Существующие fallback-имена JSON (`network-recorder.json`, `style-stealer.json`) и структура выходных данных сохранены.
 
@@ -640,11 +642,11 @@ Source of truth для физического порядка — `layouts.edit`.
 
 ## CANONICAL — translator prompts
 
-`translator/full.md` — полный source of truth для production RU → KK translation rules. Он хранит подробные правила, глоссарий, приоритеты и самопроверку без искусственного ограничения длины.
+`promts/translator/full.md` — полный source of truth для production RU → KK translation rules. Он хранит подробные правила, глоссарий, приоритеты и самопроверку без искусственного ограничения длины.
 
-`translator/compressed.md` — поведенчески эквивалентная версия тех же правил для ChatGPT Project Instructions с лимитом 8000 символов. Сжатие должно убирать объяснения и примеры, а не переводческие правила или их приоритет.
+`promts/translator/compressed.md` — поведенчески эквивалентная версия тех же правил для ChatGPT Project Instructions с лимитом 8000 символов. Сжатие должно убирать объяснения и примеры, а не переводческие правила или их приоритет.
 
-`translator/extractor.md` — отдельный audit prompt: анализирует review-таблицы/историю, агрегирует evidence и предлагает только подтверждённые ADD/STRENGTHEN изменения перед merge. Самостоятельно production-терминологию не меняет.
+`promts/translator/extractor.md` — отдельный audit prompt: анализирует review-таблицы/историю, агрегирует evidence и предлагает только подтверждённые ADD/STRENGTHEN изменения перед merge. Самостоятельно production-терминологию не меняет.
 
 Translator сам определяет тип входа `EMPTY`, `PLAIN_TEXT`, `HTML`, `IMAGE`.
 
@@ -731,7 +733,7 @@ Outbound contract:
 
 ## CANONICAL — зеркальная синхронизация категорий Products
 
-Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser tool `extension/tools/syncer/categoryGroupMirror.js` через `MIRROR_SYNC_GROUPS` как `{ name: 'Название', categories: ['documentIdA', 'documentIdB'] }`; `name` восстановлен из подписей исторической версии перед удалением комментариев, порядок и состав групп не менялись; рабочая locale только `ru`.
+Назначение: поддерживать одинаковый набор Product relations внутри явно настроенных зеркальных групп Category в разных ветках каталога. Группа содержит 2+ Category и задаётся вручную внутри browser tool `extension/tools/catalog/groupMirror.js` через `MIRROR_SYNC_GROUPS` как `{ name: 'Название', categories: ['documentIdA', 'documentIdB'] }`; `name` восстановлен из подписей исторической версии перед удалением комментариев, порядок и состав групп не менялись; рабочая locale только `ru`.
 
 Бизнес-правило для одной mirror group:
 - собрать union Products всех Category группы;
@@ -799,13 +801,13 @@ Concurrency:
 - сохранять benchmark по waves: group, concurrency, avg latency, throughput, stage throughput, best concurrency/throughput, tuning action, success/failed.
 
 
-Current configured groups не дублировать в context: source of truth — live `MIRROR_SYNC_GROUPS` в `extension/tools/syncer/categoryGroupMirror.js`.
+Current configured groups не дублировать в context: source of truth — live `MIRROR_SYNC_GROUPS` в `extension/tools/catalog/groupMirror.js`.
 
 Пересечение Category между разными mirror groups сейчас не запрещается и специально не объединяется. Если реальный каталог выявит пересекающиеся группы, сначала отдельно определить бизнес-семантику такого сценария, затем менять workflow.
 
 ## CANONICAL — односторонняя синхронизация категорий Products
 
-Назначение: поддерживать одностороннее включение Products из настроенной source Category в соответствующую target Category. Runtime tool: `extension/tools/syncer/categoryGroupForward.js`; рабочая locale только `ru`.
+Назначение: поддерживать одностороннее включение Products из настроенной source Category в соответствующую target Category. Runtime tool: `extension/tools/catalog/groupForward.js`; рабочая locale только `ru`.
 
 Группы задаются вручную через `FORWARD_SYNC_GROUPS` по контракту:
 
@@ -849,7 +851,7 @@ CANONICAL run:
 
 Concurrency полностью наследует подтверждённый throughput-aware adaptive механизм mirror-sync parser: старт 10, шаг 5, min 5, max 40, оценка ступени после 20 успешных requests, новая ступень должна улучшить best throughput минимум на 3%, после двух подряд неулучшающих ступеней rollback/lock на best concurrency; найденный уровень переносится между groups. На `429`/`5xx`/network error concurrency снижается и benchmark перезапускается. `POST actions/publish` автоматически не ретраить.
 
-Current configured forward-sync groups не дублировать в context: source of truth — live `FORWARD_SYNC_GROUPS` в `extension/tools/syncer/categoryGroupForward.js`.
+Current configured forward-sync groups не дублировать в context: source of truth — live `FORWARD_SYNC_GROUPS` в `extension/tools/catalog/groupForward.js`.
 
 ---
 
@@ -931,22 +933,35 @@ documentId;barcode;active;hasDetailPicture;shade;shadeDocumentId;volume;volumeDo
 
 ---
 
-# 13. CANONICAL — RU → KK normalizers и recovery
+# 13. RU → KK: полезные знания из удалённого locale
 
-## Category — `locale/category/normalizer.js`
+Статус старой реализации: **SUPERSEDED** (2026-11-26). Папка `locale/` удалена; исходники доступны в [Git History до удаления](https://github.com/mbtema/strapi/tree/06d60bceefcec4bf40707af361d2c0fcd07fa594/locale). Новый workflow разрабатывать отдельно по образцу Config → Syncer из раздела 2. Прежние алгоритмы не являются требованиями или подтверждёнными production-контрактами новой реализации.
 
-- Единственный действующий скрипт для всех RU Category, а не только CHANEL. Источник: Content Manager list `locale=ru&status=draft&page=N&pageSize=100&sort=id:ASC`; сверять полную пагинацию, `documentId`, точный locale и `id:ASC`. Запуск с общей RU-страницы сразу production без apply/dry-run-флагов; записи только при расхождениях.
-- Этапы: создание/синхронизация KK Draft content/media/components → добавление missing KK root relations через `connect` до 20 за раз (без `disconnect`) → Publish необходимых RU и KK Category. Связанные Product/Brand не публиковать. Отсутствие KK target и unsupported inverse relation — issue/skip без опасной записи.
-- Защищать `key/code/slug`, но не применять устаревшее правило о блокировке пустого RU key. `SHARED_SEED_GUARD=['code']`: если KK Draft отсутствует и нелокализованный RU.code непустой, создание KK блокируется. Это защита от зафиксированного случая потери RU Draft.code при KK seed («Заколки»).
-- IndexedDB journal `tm-category-normalizer-production-v1`, before/expected, проверки RU/KK Draft/Published; неоднозначный write сохраняет pending без blind retry. Допустим только **однократный** guarded PUT для восстановления точно установленной потери top-level scalar/media RU Draft при неизменных RU Published/relations и остальных данных; nested, relations и иные drift автоматически не восстанавливаются. Поздняя KK публикация допускает read-only подтверждение pending только при семантически точном совпадении KK Draft/Published и оригинального before. Иначе STOP и `pendingDiagnostic`; IndexedDB не заменяет DB backup. Универсальное восстановление проверено синтетически, но не считать его live-верифицированным во всех случаях.
-- Последний зафиксированный **исторический** результат 2026-11-18: content pending «Заколки» был снят, а новый links PUT Category `y3m74pjmlm7xbrvvt0h3vdkd` дал RU drift и неизвестный исход, журнал pending был сохранён. Текущее состояние неизвестно; перед продолжением проверить свежие четыре версии и IndexedDB pending, не чистить его и не повторять PUT. Stop: `window.tmCategoryNormalizerStop=true`; JSON/CSV и `tmCategoryNormalizerReport`.
+## CANONICAL — принципы диагностики локализации
 
-## Product — `locale/product/normalizer.js`
+- Один documentId объединяет версии документа; numeric id может различаться у RU/KK и Draft/Published. Читать и проверять все четыре версии через `GET /content-manager/collection-types/<uid>/<documentId>?locale=<ru|kk>&status=<draft|published>`; проверять возвращённые documentId, locale, status/publishedAt. 404/пустая версия, locale fallback и ошибка доступа — разные состояния. Ответ RU на запрос KK не доказывает наличие KK.
+- Схема: `GET /content-manager/content-types`, `GET /content-manager/components`; учитывать локализацию поля, target entity, required/unique, owner/inverse (mappedBy/inversedBy), media/components/Dynamic Zone. Отсутствующее в ответе поле не равно null; нельзя отправлять его как null или гарантировать сохранность без права чтения.
+- Detail часто возвращает relation count, а не target IDs; читать `GET /content-manager/relations/<uid>/<documentId>/<field>?locale=<locale>&status=<status>&page=N&pageSize=100` полностью, сверять count/pagination/уникальность. Сравнивать по documentId; numeric ID разрешать из актуальной версии. Nonlocalized target не требует KK; для локализованного различать отсутствующий Draft, существующий Draft без Published и Published.
+- Media сравнивать по числовым ID, компоненты — по смысловому содержимому, не техническим ID разных локалей. Существующие переводы и KK media не перезаписывать автоматически. Правила копирования полей, заполнения пустых локализованных значений, изменения inverse links и публикации зависимостей согласовывать по коллекции; не наследовать исключения одного workflow глобально.
+- Перед write читать актуальное состояние, проверять ожидаемую семантику после write по GET, включая RU Draft/Published, KK Draft/Published и затронутые targets. Не повторять неопределённый PUT/POST. Сохранять before, expected, pending, стадию и диагностику; при неоднозначном исходе остановить новые writes. История и journal не заменяют DB backup.
 
-- Браузерная синхронизация всех RU Product в режиме production-by-default: скан списка, четыре версии RU/KK, schema, затем KK Draft → missing relations → KK Publish. **Новый browser Product normalizer на момент исходных исследований был только mock-tested, реальный Product KK create/write не подтверждён.** Не считать синтетический тест разрешением на массовую запись.
-- Сохраняет KK переводы и Media, защищает уникальный `KK.key` (не копировать `RU.key` при создании), исключает `InStock/inStock` из сравнения и payload. Через `connect` добавляет missing owner-side KK relations без `disconnect`; extra/inverse/legacy relations не переписывает. RU Product и связанные Category/Attribute/Brand не публикует.
-- KK Publish требует опубликованных KK dependencies и **точного** совпадения Published relations с KK Draft (включая `attributes`). IndexedDB journal `tm-product-normalizer-production-v1`, postflight всех версий, никакого blind retry PUT/POST. Stop: `window.tmProductNormalizerStop=true`; JSON/CSV.
+## HISTORICAL / EXPERIMENT — Category
 
-## Legacy Product Node recovery — `locale/product/localizer.mjs`
+- `locale/category/normalizer.js`: массовый seed KK content/media/components → additive missing relations → Publish. Исторически защищал key/code/slug; `SHARED_SEED_GUARD=['code']` блокировал создание KK при непустом shared RU.code после случая потери RU Draft.code («Заколки»). Зафиксирован риск изменения shared RU данных при записи KK, также актуальный для проверки key. Не переносить старый список разрешённых полей как универсальный.
+- Прежние content rules: сохранялись KK name/description/локализованные значения и существующие media; filters_app и title брались из RU, структуры repeatable components/DZ сравнивались по длине, типу, смысловому key. Это политика старого скрипта, а не утверждённый новый mapping.
+- Старые relations: parent, brand, product — writable в алгоритме; categories, products, top_brands — inverse; только missing connect до 20, extra/unsupported links блокировали. Прежняя последовательность публикации RU и KK заменена новым Category relations workflow, не применять к новой локализации.
+- Recovery IndexedDB `tm-category-normalizer-production-v1`: pending before/expected; прежний скрипт допускал только однократный guarded RU Draft PUT при точно установленной потере непустых top-level scalar/media в пустое значение, неизменных RU Published, RU relations, KK Published и остальных данных. Nested/relations drift не восстанавливался автоматически. Поздняя KK публикация могла снять pending read-only при точном совпадении. Recovery был проверен синтетически, не во всех live случаях.
+- Исторически 2026-11-18 pending «Заколки» снят, следующий links PUT Category y3m74pjmlm7xbrvvt0h3vdkd дал RU drift; текущее состояние неизвестно. Не очищать старый journal до проверки; если нужен recovery, брать точную старую версию из Git History, не запускать массовый normalizer заново.
 
-Сохранён для старых Product backup/journal и `--recover-pending`. Его `product-kk-backups/` и `product-kk-apply-progress.jsonl` не совместимы с IndexedDB browser normalizer. Исторический отчёт 2026-11-17 содержал незавершённые pending и конфликты `key`, текущее состояние не проверено. Не удалять backups, не смешивать recovery этих реализаций, не запускать обе над одними Product без проверки состояния.
+## EXPERIMENT — Product
+
+- `locale/product/normalizer.js`: browser prototype для всех RU Product, KK seed → additive owner-side relations → KK Publish. Live create/write не подтверждён; mock tests не являются production validation. Исключались key, InStock/inStock; уникальный KK.key не копировался из RU. Для новой KK localized scalar (кроме name, boolean/media) оставлялся null; существующие KK переводы и media сохранялись, несовпадение shared fields и структуры компонентов блокировало write. Эти field rules требуют нового согласования.
+- Legacy Product.category (inverse) непустой → пропуск, Product.categories — рабочая catalog relation; inverse links и extra KK links не пересобирались. Publish прототипа требовал опубликованных KK dependencies и точного совпадения Published relations с KK Draft, включая attributes. Это отличается от допустимых unpublished targets в текущем categoryRelations; не переносить автоматически. Product/Attribute/Category/Brand dependencies не публиковать без согласованного scope.
+- IndexedDB `tm-product-normalizer-production-v1`; legacy quarantine Product fajndt11d4br9jmuy32n9xq9. Не считать незавершённый pending актуальным без live проверки.
+- `locale/product/localizer.mjs` (Node.js) — отдельный legacy recovery, имел audit/default, --apply, --only, --probe, --recover-pending; кандидат create использовал Public REST PUT /api/products/<documentId>?locale=kk&status=draft с {data:localizedFields} и отдельным API token, без доказательства безопасного массового создания. Защищал key и RU версии, хранил `product-kk-backups/` и `product-kk-apply-progress.jsonl`. Recovery различал exact expected (complete), unchanged original (save), draft expected/published unchanged (publish), RU drift, изменение KK key и partial/external change (STOP). Старые Node backups/journal несовместимы с browser IndexedDB; не удалять локальные backups, извлекать точный исторический скрипт только для согласованного recovery.
+
+## EXPERIMENT — Attribute
+
+- `locale/attribute/preflight.js` и `locale/attribute/dry-run.js` — GET-only инструменты конкретной RU карточки Attribute. Не было apply-реализации. Полезный read contract: схема полей/relations + четыре версии + все страницы relations; проверка локализованности target и Draft/Published dependencies; JSON отчёты с omittedFields, relation counts, blockers/warnings.
+- В старой диагностике `shade` (api::shade.shade) и `volume` (api::volume.volume) считались shared nonlocalized dictionaries; не требовать от них KK локали, подтвердить live schema при разработке. Остальные targets проверять отдельно; locale fallback не равен KK. После seed повторно читать links — Strapi может сам скопировать shared relation, не делать дублирующий connect.
+- Dry-run только предлагал `PUT /content-manager/collection-types/api::attribute.attribute/<documentId>?locale=kk` (seed с locale:kk, затем connect missing) и `POST .../actions/publish?locale=kk` (поля + relation deltas). Ни один из этих KK writes не подтверждён live для Attribute. Старые blockers (нет RU Published, RU Draft≠Published, уже есть KK, непрочитанные поля, непроверяемый count, unsupported components/targets) — консервативная политика эксперимента, не переносить без согласования. Media candidate payload использовал numeric ID; не копировать permission-limited поля как null.
