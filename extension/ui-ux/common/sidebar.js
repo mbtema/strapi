@@ -399,7 +399,7 @@
                 flex-direction: column;
                 gap: 8px;
                 padding: 12px 16px;
-                background: #181826;
+                background: var(--tm-ds-neutral100);
                 border: 0 !important;
                 box-shadow: none !important;
             }
@@ -412,28 +412,6 @@
 
             [${TOOLBAR_ATTR}] .tm-sidebar-search {
                 width: 100%;
-                height: 36px;
-                min-height: 36px;
-                box-sizing: border-box;
-                padding: 8px 10px;
-                border: 1px solid #4a4a6a;
-                border-radius: 6px;
-                outline: none;
-                background: #212134;
-                color: #ffffff;
-                font: inherit;
-                font-size: 13px;
-                font-weight: 400;
-                line-height: 18px;
-            }
-
-            [${TOOLBAR_ATTR}] .tm-sidebar-search::placeholder {
-                color: #a5a5ba;
-            }
-
-            [${TOOLBAR_ATTR}] .tm-sidebar-search:focus {
-                border-color: #7b79ff;
-                box-shadow: 0 0 0 2px rgba(123, 121, 255, 0.18);
             }
 
             [${TOOLBAR_ATTR}] .tm-sidebar-quick-row {
@@ -443,28 +421,7 @@
             }
 
             [${TOOLBAR_ATTR}] [${QUICK_ATTR}] {
-                min-height: 28px;
-                padding: 5px 9px;
-                border: 1px solid #3f3f5f;
-                border-radius: 6px;
-                background: #212134;
-                color: #dcdce4;
-                font: inherit;
-                font-size: 12px;
-                font-weight: 500;
-                line-height: 16px;
-                cursor: pointer;
-            }
-
-            [${TOOLBAR_ATTR}] [${QUICK_ATTR}]:hover {
-                background: #292944;
-                border-color: #5b5b80;
-            }
-
-            [${TOOLBAR_ATTR}] [${QUICK_ATTR}][data-tm-active="true"] {
-                background: #302c6f;
-                border-color: #7b79ff;
-                color: #ffffff;
+                padding-inline: var(--tm-ds-space2);
             }
 
             [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] {
@@ -482,35 +439,23 @@
                 width: 100%;
                 min-height: 24px;
                 box-sizing: border-box;
-                padding: 4px 12px;
+                padding: var(--tm-ds-space1) var(--tm-ds-space3);
                 border: 0;
-                border-radius: 5px;
-                outline: none;
+                border-radius: var(--tm-ds-radius);
                 background: transparent;
-                color: #8e8ea9;
-                font: inherit;
-                font-size: 11px;
-                font-weight: 600;
-                line-height: 16px;
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
                 text-align: left;
                 cursor: pointer;
                 box-shadow: none;
             }
 
             [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] > button:hover {
-                background: #212134;
-                color: #c0c0cf;
-            }
-
-            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] > button:focus {
-                outline: none;
-                box-shadow: none;
+                background: var(--tm-ds-neutral0);
+                color: var(--tm-ds-neutral800);
             }
 
             [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] > button:focus-visible {
-                box-shadow: 0 0 0 2px rgba(123, 121, 255, 0.35);
+                outline: 2px solid var(--tm-ds-primary600);
+                outline-offset: -2px;
             }
 
             [${CLEANUP_ATTR}] .tm-sidebar-group-title {
@@ -548,7 +493,7 @@
                 margin: 0 !important;
                 padding: 0 !important;
                 box-sizing: border-box !important;
-                border-radius: 6px !important;
+                border-radius: var(--tm-ds-radius) !important;
             }
 
             [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div,
@@ -586,7 +531,7 @@
                 height: 18px !important;
                 margin: 0 !important;
                 padding: 0 !important;
-                color: #8e8ea9 !important;
+                color: var(--tm-ds-neutral600) !important;
             }
 
             [${CLEANUP_ATTR}] [${ICON_ATTR}] svg {
@@ -603,7 +548,7 @@
 
             [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR}:hover [${ICON_ATTR}],
             [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR}:hover [${ICON_ATTR}] {
-                color: #c0c0cf !important;
+                color: var(--tm-ds-neutral800) !important;
             }
 
             [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:last-child,
@@ -616,26 +561,28 @@
                 text-overflow: clip !important;
                 overflow-wrap: anywhere !important;
                 word-break: normal !important;
-                font-size: 13px !important;
-                font-weight: 400 !important;
-                line-height: 18px !important;
+                font-size: var(--tm-ds-text-size) !important;
+                font-weight: var(--tm-ds-font-regular) !important;
+                line-height: var(--tm-ds-text-line) !important;
             }
 
             [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] {
                 position: relative !important;
-                background: #302c6f !important;
-                color: #ffffff !important;
-                font-weight: 600 !important;
+                background: var(--tm-ds-primary100) !important;
+                color: var(--tm-ds-primary700) !important;
+                font-weight: var(--tm-ds-font-semibold) !important;
                 overflow: hidden !important;
-                border-right: 0 !important;
-                border-inline-end: 0 !important;
+                border-inline-end: 2px solid var(--tm-ds-primary600) !important;
             }
 
             [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] *,
-            [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] > div > span:last-child,
+            [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] > div > span:last-child {
+                color: var(--tm-ds-primary700) !important;
+                font-weight: var(--tm-ds-font-semibold) !important;
+            }
+
             [${CLEANUP_ATTR}] a[${ACTIVE_ATTR}] [${ICON_ATTR}] {
-                color: #ffffff !important;
-                font-weight: 600 !important;
+                color: var(--tm-ds-primary600) !important;
             }
         `;
 
@@ -928,9 +875,10 @@
         const wrapper = document.createElement('div');
         wrapper.setAttribute(CREATED_ATTR, 'sidebar');
         wrapper.setAttribute(TOOLBAR_ATTR, '');
+        wrapper.setAttribute('data-tm-ds', '');
 
         const search = document.createElement('input');
-        search.className = 'tm-sidebar-search';
+        search.className = 'tm-sidebar-search tm-ds-input';
         search.type = 'search';
         search.placeholder = 'Поиск коллекции…';
         search.autocomplete = 'off';
@@ -947,6 +895,7 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.setAttribute(QUICK_ATTR, item.uid);
+            button.classList.add('tm-ds-button');
             button.textContent = item.label;
             button.addEventListener('click', () => {
                 const link = findCollectionLink(item.uid);
@@ -983,10 +932,12 @@
             header = document.createElement('li');
             header.setAttribute(CREATED_ATTR, 'sidebar');
             header.setAttribute(GROUP_HEADER_ATTR, group.id);
+            header.setAttribute('data-tm-ds', '');
 
             const button = document.createElement('button');
             button.type = 'button';
             button.setAttribute('aria-expanded', 'true');
+            button.classList.add('tm-ds-sigma');
 
             const title = document.createElement('span');
             title.className = 'tm-sidebar-group-title';
@@ -1194,6 +1145,8 @@
                 currentPath.startsWith(`${linkPath}/`)
             );
             button.dataset.tmActive = String(active);
+            if (active) button.setAttribute('aria-current', 'page');
+            else button.removeAttribute('aria-current');
         });
 
         lastPath = currentPath;

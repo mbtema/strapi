@@ -48,13 +48,9 @@
     }
 
     function ensureStyle() {
-        let style = document.getElementById(STYLE_ID);
-
-        if (!style) {
-            style = document.createElement('style');
-            style.id = STYLE_ID;
-            (document.head || document.documentElement).appendChild(style);
-        }
+        if (document.getElementById(STYLE_ID)) return;
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
 
         style.textContent = `
             [${HIDDEN_ATTR}],
@@ -100,46 +96,19 @@
             }
 
             [${LINK_ATTR}] {
-                display: inline-flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                flex: 0 0 20px !important;
-                width: 20px !important;
-                height: 20px !important;
-                box-sizing: border-box !important;
+                flex: 0 0 22px !important;
+                width: 22px !important;
+                height: 22px !important;
                 margin: 0 !important;
                 padding: 0 !important;
-                border: 1px solid #4a4a6a !important;
-                border-radius: 4px !important;
-                background: transparent !important;
-                color: #c0c0cf !important;
-                text-decoration: none !important;
-                line-height: 1 !important;
-                cursor: pointer !important;
-                outline: none !important;
             }
 
             [${LINK_ATTR}] svg {
-                display: block !important;
-                width: 12px !important;
-                height: 12px !important;
                 fill: none !important;
                 stroke: currentColor !important;
                 stroke-width: 2 !important;
                 stroke-linecap: round !important;
                 stroke-linejoin: round !important;
-                pointer-events: none !important;
-            }
-
-            [${LINK_ATTR}]:hover {
-                border-color: #7b79ff !important;
-                background: #292944 !important;
-                color: #ffffff !important;
-            }
-
-            [${LINK_ATTR}]:focus-visible {
-                border-color: #7b79ff !important;
-                box-shadow: 0 0 0 2px rgba(123, 121, 255, 0.24) !important;
             }
 
             [${LINK_ATTR}][${LINK_READY_ATTR}="false"] {
@@ -178,20 +147,9 @@
             [${LOCALES_BUTTON_ATTR}]::before,
             [${LOCALES_BUTTON_ATTR}]::after {
                 display: none;
-                align-items: center;
-                justify-content: center;
                 min-width: 28px;
                 height: 20px;
-                box-sizing: border-box;
-                padding: 0 7px;
-                border: 1px solid #4a4a6a;
-                border-radius: 999px;
-                background: #2a2a42;
-                color: #dcdce4;
-                font-size: 10px;
-                font-weight: 600;
-                line-height: 18px;
-                letter-spacing: 0.02em;
+                padding: 0 var(--tm-ds-space1);
             }
 
             [${LOCALES_BUTTON_ATTR}][${HAS_RU_ATTR}]::before {
@@ -204,6 +162,7 @@
                 display: inline-flex;
             }
         `;
+        (document.head || document.documentElement).appendChild(style);
     }
 
     function clearVisualMarkers() {
@@ -233,6 +192,7 @@
             element.removeAttribute(COLUMN_HIDDEN_ATTR);
             element.removeAttribute(LOCALES_CELL_ATTR);
             element.removeAttribute(LOCALES_BUTTON_ATTR);
+            element.removeAttribute('data-tm-ds-badge-pair');
             element.removeAttribute(HAS_RU_ATTR);
             element.removeAttribute(HAS_KK_ATTR);
         });
@@ -254,6 +214,7 @@
             if (!hasRu && !hasKk) return;
 
             button.setAttribute(LOCALES_BUTTON_ATTR, '');
+            button.setAttribute('data-tm-ds-badge-pair', '');
             if (hasRu) button.setAttribute(HAS_RU_ATTR, '');
             if (hasKk) button.setAttribute(HAS_KK_ATTR, '');
         });
@@ -494,6 +455,8 @@
     function createRowLink(row) {
         const link = document.createElement('a');
         link.setAttribute(LINK_ATTR, '');
+        link.setAttribute('data-size', 'XS');
+        link.classList.add('tm-ds-icon-button');
         link.setAttribute(LINK_READY_ATTR, 'false');
         link.setAttribute('aria-label', 'Открыть запись');
         link.setAttribute('title', 'Открыть запись');
@@ -568,6 +531,7 @@
                 wrapper = document.createElement('div');
                 wrapper.setAttribute(CREATED_ATTR, 'record-list');
                 wrapper.setAttribute(ACTIONS_ATTR, '');
+                wrapper.setAttribute('data-tm-ds', '');
 
                 firstCell.insertBefore(wrapper, checkbox);
                 checkbox.setAttribute(MODIFIED_ATTR, 'record-list');
@@ -728,6 +692,7 @@
         clearVisualMarkers();
         clearListDecorations();
         cleanupRowLinks();
+        document.getElementById(STYLE_ID)?.remove();
     }
 
     try {

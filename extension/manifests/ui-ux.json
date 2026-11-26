@@ -4,19 +4,19 @@
     {
       "id": "designSystem",
       "path": "ui-ux/designSystem.js",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "enabled": true
     },
     {
       "id": "common/sidebar",
       "path": "ui-ux/common/sidebar.js",
-      "version": "2.6.4",
+      "version": "2.7.0",
       "enabled": true
     },
     {
       "id": "common/recordList",
       "path": "ui-ux/common/recordList.js",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "enabled": true
     },
     {
