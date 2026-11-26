@@ -2,9 +2,8 @@
   'use strict';
 
   const RAW_ROOT =
-    'https://raw.githubusercontent.com/mbtema/strapi/main/extension/';
-  const TOOLS_BASE = `${RAW_ROOT}tools/`;
-  const MANIFEST_URL = `${RAW_ROOT}manifests/tools.json`;
+    'https://raw.githubusercontent.com/mbtema/strapi/';
+  const COMMIT_RE = /^[0-9a-f]{40}$/;
   const OVERLAY_ID = 'tm-tools-launcher-overlay';
   const TOOL_PATH_RE = /^(?:syncer|service|extractor|pusher|catalog|config)\/[a-z][a-zA-Z0-9-]*\.js$/;
   const ACTIVE_RUNS_KEY = '__tmToolsLauncherActiveRuns';
@@ -26,20 +25,31 @@
 
   window[ACTIVE_RUNS_KEY] = activeRuns;
 
-  async function loadText(url) {
+  function runningCommit() {
+    const commit = document.documentElement?.getAttribute('data-tm-extensions-commit');
+    if (!COMMIT_RE.test(commit || '')) {
+      throw new Error('Не определён коммит расширения. Выполните forceUpdate()');
+    }
+    return commit;
+  }
+
+  async function loadText(path, commit) {
+    if (!COMMIT_RE.test(commit || '')) throw new Error('Некорректный коммит инструментов');
+    const url = `${RAW_ROOT}${commit}/extension/${path}`;
     const response = await fetch(`${url}?t=${Date.now()}`, {
       cache: 'no-store'
     });
 
     if (!response.ok) {
-      throw new Error(`GitHub вернул HTTP ${response.status}`);
+      throw new Error(`GitHub вернул HTTP ${response.status}: ${path} (${commit.slice(0, 7)})`);
     }
 
     return response.text();
   }
 
   async function loadManifest() {
-    const text = await loadText(MANIFEST_URL);
+    const commit = runningCommit();
+    const text = await loadText('manifests/tools.json', commit);
     const manifest = JSON.parse(text);
 
     if (
@@ -92,7 +102,7 @@
       }
 
       files.add(normalized.file);
-      return normalized;
+      return { ...normalized, commit };
     });
   }
 
@@ -183,7 +193,7 @@
     status.style.color = '#c7c7d4';
 
     try {
-      const code = await loadText(`${TOOLS_BASE}${tool.file}`);
+      const code = await loadText(`tools/${tool.file}`, tool.commit);
       const managed = executeTool(code, tool.file);
 
       if (!managed) {
@@ -193,7 +203,7 @@
         );
       }
 
-      console.log(`[Tools Launcher] Запущен: ${tool.file}`);
+      console.log(`[Tools Launcher] Запущен: ${tool.file} (${tool.commit.slice(0, 7)})`);
       closeLauncher();
     } catch (error) {
       activeRuns.delete(tool.file);
@@ -360,6 +370,7 @@
 
     try {
       const tools = await loadManifest();
+      console.info(`[Tools Launcher] Коммит: ${tools[0]?.commit || runningCommit()}`);
 
       if (!document.body.contains(overlay)) return;
       if (!tools.length) throw new Error('В manifests/tools.json нет tools');
