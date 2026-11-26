@@ -37,6 +37,7 @@
 
 ## 5. Strapi Admin UI и расширения
 - Strapi Admin — React SPA: скрипты идемпотентны при hard reload/SPA, без дублей DOM, listeners и styles.
+- **UI/UX:** визуальный стандарт — [Strapi Design System](https://design-system.strapi.io/). При создании/изменении интерфейса использовать `extension/ui-ux/designSystem.js` (общие токены, компоненты, Light/Dark), дополнять его по официальным исходникам при необходимости. Не дублировать палитру и стили компонентов в extensions; локально оставлять компоновку и логику, сохранять нативное поведение.
 - Селекторы: `aria-*`, `role`, стабильные `data-*`/`data-tm-*`, семантический DOM; не `sc-*` и геометрия для критичной логики.
 - `MutationObserver` ограничивать через rAF/debounce/throttle; DOM-ссылки проверять через `document.contains()`.
 - Нативные React-узлы перемещать, не копировать; сохранять handlers/state/disabled/loading. Свои узлы — `data-tm-*`; при сбое `console.warn()`.

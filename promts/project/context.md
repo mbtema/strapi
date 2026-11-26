@@ -74,7 +74,27 @@ Registry разделён по зонам ответственности, а н�
 
 Сами сервисы остаются в своих папках. Версии в manifests нужны для постоянно загружаемых features/ui-ux; tools регистрируются без версии.
 
-Loader использует cached extensions для быстрого старта, затем сверяет registry с GitHub. При изменении manifest signature скачиваются изменившиеся extensions, а новая cached версия применяется после reload. `checkUpdates()` вручную проверяет loader/extensions. Обновление самого userscript loader происходит через Tampermonkey.
+Loader использует cached extensions для быстрого старта, затем сверяет registry с GitHub. Контракт loader (`extension/extension.js`):
+- Manifest entry: `id`, `path`, `version` (semver), `enabled`. ID — относительный путь без первой папки runtime и расширения .js: `ui-ux/collection/attribute.js` → `collection/attribute`, `ui-ux/relation/attribute.js` → `relation/attribute`, `ui-ux/designSystem.js` → `designSystem`. ID и path уникальны во всех активных manifests; одноимённые файлы в разных подпапках допустимы. Сегменты ID/path — латиница, цифры, дефис; вложенность разделяется `/`; регистр ID должен совпадать с path.
+- Registry и код читаются из одного commit snapshot main; signature включает `id,path,version,blobSha`. Loader проверяет Git blob SHA, сохраняет согласованный кеш schemaVersion 2; при ошибке сохраняет предыдущий кеш. Порядок запуска — порядок manifests и entries, designSystem первым в UI/UX manifest.
+- Автоматическое обновление кеша применяется при следующем reload. `forceUpdate()` в Console принудительно скачивает и проверяет snapshot, сообщает о необходимости обновления userscript и перезагружает страницу при успехе. При смене контракта loader сначала обновить сам userscript через Tampermonkey. `checkUpdates()` больше не является действующим entrypoint.
+- Диагностика загруженного snapshot: `document.documentElement.getAttribute('data-tm-extensions-commit')` и Console table с id/version/blobSha. При несовпадении сначала проверить loader/cache, не исправлять рабочий код на основании старого кеша.
+
+## CANONICAL — структура UI/UX и дизайн-система
+
+`extension/ui-ux/` разделён по назначению:
+- `designSystem.js` в корне — общая визуальная основа всех UI/UX extensions, не отдельное улучшение.
+- `collection/attribute.js`, `collection/product.js` — карточки конкретных collection types: вкладки, show/hide, смысловые группы полей.
+- `relation/attribute.js`, `relation/shade.js` — оформление и UX relations к целевым сущностям. Имя файла соответствует target; фактический scope проверять в коде (`relation/attribute.js` пока реализован для Product.attributes; `relation/shade.js` не привязан к исходной коллекции или имени поля).
+- `common/sidebar.js`, `common/recordList.js`, `common/entryLayout.js` — общая навигация, списки, компоновка карточек. `entryLayout.js` сохраняет нативное оформление, отвечает за расположение штатных элементов.
+
+Источник визуальных стандартов — https://design-system.strapi.io/ и исходники https://github.com/strapi/design-system (themes, typography, компоненты). `designSystem.js` — слой совместимости с нативным Strapi, не самостоятельный дизайн: сверять палитру, размеры, типографику и состояния с официальными компонентами. Light/Dark палитры сверены с официальными light-colors/dark-colors; локальные HEX/RGB для оформления не дублировать в extensions. Цветовые данные сущностей (например HEX Shade) — не палитра интерфейса.
+
+Контракт: глобальные CSS variables `--tm-ds-*`, тема `data-tm-ds-theme` на documentElement, локальные custom UI roots `data-tm-ds`, классы `tm-ds-*` (text/meta/link, input/button/icon-button, tablist/tab, heading/sigma, badge/status/page, nav-link, color-swatch). Новые повторяемые компоненты и общие стили добавлять в designSystem; в extensions оставлять DOM-селекторы, размеры конкретной компоновки, visibility, обработчики, данные и API. Нативные элементы сохраняют React handlers/state и стандартное оформление там, где не требуется изменение. Не применять blanket-стили ко всем потомкам нативных элементов: Strapi может задавать fill на внутренних SVG shapes; собственные контурные иконки должны иметь scoped fill:none/stroke:currentColor непосредственно на SVG-фигурах. Sidebar активное состояние — без отдельной боковой полосы, нейтральный фон и primary-текст по токенам.
+
+Общий компонент цвета: `window.__tmStrapiDesignSystem.setColorSwatch(element, colors, before=false)` возвращает boolean, валидирует HEX, назначает общий CSS-класс и CSS-переменные размера/цвета; `before=true` — pseudo-element для нативной кнопки, обычный режим — свой элемент. Несколько HEX отображаются сегментами исходного порядка, пустые/невалидные — без образца. Повторный вызов идемпотентен, пустой массив очищает стили компонента. Размер задаётся в designSystem. Не показывать HEX текстом без отдельного требования.
+
+Проверка UI после изменений: обновить extensions через `forceUpdate()`, проверить Light/Dark, hard reload и SPA, вкладки, sidebar, переходы из списков, relation и штатные Save/Publish. Статический синтаксис, сравнение палитр и mock-тесты не заменяют визуальную проверку CMS.
 
 ## CANONICAL — Tools Launcher
 
@@ -244,12 +264,23 @@ GET /content-manager/relations/api::product.product/<productDocumentId>/attribut
 
 Response содержит pagination и `results[]`; среди используемых полей подтверждены `id`, `documentId`, `name_web`, `publishedAt`, `updatedAt`, `locale`, `status`.
 
-Практический navigator:
-- забирает все relation pages;
-- search по `name_web` и `documentId`;
-- direct links на attribute card;
-- native relation list остаётся источником несохранённого React form state для remove/reorder;
-- custom navigator показывает сохранённое API state, поэтому unsaved изменения становятся видны там после Save.
+Практический navigator — `extension/ui-ux/relation/attribute.js` (scope: Product.attributes):
+- Читает все relation pages, может переиспользовать соответствующий нативный GET, проверяет полноту/pagination/дубли, search по `barcode`, `name_web`, `documentId`, локальная пагинация и direct links в карточки Attribute. Native relation list сохраняется для управления связями (remove/reorder и несохранённый React form state); custom navigator показывает сохранённое API state.
+- Детали читаются батчами по `documentId` и locale: `GET /content-manager/collection-types/api::attribute.attribute?page=1&pageSize=N&locale=ru&filters[documentId][$in][0]=...&populate[volume][fields][0]=name&populate[shade][fields][0]=name`. Проверять соответствие ожидаемых documentId, locale и pagination. Отображать barcode (fallback name_web/documentId), имена volume/shade и статус.
+- Для цвета использовать target `item.shade.documentId`, не имя и не числовой ID. Собирать уникальные Shade IDs и читать `GET /content-manager/collection-types/api::shade.shade?page=1&pageSize=N&sort=id:ASC&locale=ru&filters[documentId][$in][0]=...&populate[hexes][fields][0]=hex`. Ответ `results[].hexes[].hex`; кэш по target documentId внутри загрузки locale. Недостающие/неполные targets — fallback detail GET (см. следующий раздел) с ограниченной параллельностью. При ошибке HEX оставить уже загруженные имена/статус, не подставлять цвет. Отменять чтение при смене записи. Цветовой образец через общий ColorSwatch перед именем shade. Не выгружать весь справочник для показа одной карточки. Пакетный list/populate и detail endpoints известны из миграционного workflow; конкретная комбинация filters для Shade navigator проверена в mock, не выдавать за новый live Network capture.
+
+## CANONICAL — цвет выбранной relation Shade
+
+`extension/ui-ux/relation/shade.js`: улучшение любой нативной выбранной relation к `api::shade.shade` независимо от исходной collection/field. Нативный dropdown поиска не менять и не загружать HEX для его результатов. Цвет показывать только после назначения связи; несколько HEX — сегменты общего ColorSwatch, без текста HEX. Пустые/невалидные HEX — обычное имя без образца.
+
+Live Network подтверждён для ru Attribute:
+```text
+GET /content-manager/relations/api::attribute.attribute/shade?locale=ru&id=<attributeDocumentId>&pageSize=10&_q=<query>&page=1
+GET /content-manager/collection-types/api::shade.shade/<shadeDocumentId>?locale=ru
+```
+Search response: `results[]` с `id,documentId,name,publishedAt,updatedAt,status`, `pagination`, но без HEX. Detail response: `data:{documentId,id,name,locale:null,hexes:[{id,hex:"#986168"}],...}` и meta. Shade может быть нелокализованным, но locale передаётся из контекста. У одинаковых имён Shade разные documentId; join по label недопустим.
+
+DOM выбранной relation: `ol > li[aria-describedby]` с нативной кнопкой/ссылкой; её имя не содержит надёжного target ID. Реализация читает committed React fiber `memoizedProps.relation.model/documentId/params.locale` родительского RelationModalRenderer, проверяет точный model и documentId; если контракт React изменится — безопасно оставить нативный вид и диагностировать в DevTools. Это зависимость от внутренних React данных, не публичный API. Нативную кнопку не копировать/не заменять; ColorSwatch использует ::before. GET только для выбранных targets, dedup/cache по documentId+locale, TTL и ограниченная очередь параллельных запросов; при stale/SPA смене не рисовать цвет другой записи. Cleanup удаляет собственные маркеры/стили, observer и отменяет запросы. Первоначальный вариант с цветами пользователь проверил в CMS; последующий переход на общий ColorSwatch требует повторной визуальной проверки.
 
 ## CANONICAL — partial update attribute
 
@@ -607,17 +638,19 @@ shareUrl
 
 Для неоднозначных `finish` допустима внешняя проверка конкретного товара; назначение выполняется через общий безопасный filter-enrichment workflow.
 
-### CANONICAL — Product card layout + sections
+### CANONICAL — Product / Attribute card layout + sections
 
-`extension/ui-ux/product-sections.js` отвечает только за вкладки `Контент / Фильтры / Системное`, show/hide полей и смысловые заголовки групп. Нативные React fields не перемещать между DOM-контейнерами: это конфликтует с внутренним SPA/focus Strapi. Для временного визуального порядка групп допустим CSS `order` на существующих top-level rows (без reparent): после этого `service/layout.js` переносит тот же порядок в штатный `layouts.edit`.
+`extension/ui-ux/collection/product.js` — вкладки Контент / Фильтры / Системное и смысловые заголовки групп; `extension/ui-ux/collection/attribute.js` — Контент / AR / Маркетинг / Системное. Обе используют общий Tabs из designSystem; стабильные DOM markers `data-tm-product-sections="true"`, `data-tm-attribute-sections="true"`, `data-tm-<prefix>-section-tab`, `data-tm-<prefix>-section-hidden` — контракт с layout tool; имена файлов/manifest IDs не должны менять эти маркеры без согласованной миграции. Фактический mapping полей смотреть в live source.
+
+Нативные React fields не перемещать между DOM-контейнерами: это конфликтует с внутренним SPA/focus Strapi. Для временного визуального порядка групп Product допустим CSS `order` на существующих top-level rows (без reparent). Затем `extension/tools/service/layout.js` переносит текущий порядок в штатный `layouts.edit`.
 
 Штатный порядок карточки хранится в Content Manager configuration:
-
 ```text
-GET/PUT /content-manager/content-types/api::product.product/configuration
+GET/PUT /content-manager/content-types/<uid>/configuration
+uid = api::product.product | api::attribute.attribute
 ```
 
-Source of truth для физического порядка — `layouts.edit`. Service `extension/tools/service/layout.js` используется после layout-изменений: читает текущий UI; для вкладки `Фильтры` учитывает `data-tm-product-filter-group-order`, выставленный `product-sections`, поэтому смысловые группы сохраняются в заданном порядке; делает dry-run/diff, сохраняет существующий `size` каждого поля, после подтверждения меняет только `layouts.edit` через штатный configuration API и делает GET verify. `settings`, `layouts.list` и смысл metadata не менять. После успешной синхронизации `product-sections` не должен повторно переставлять поля в DOM.
+Source of truth для физического порядка — `layouts.edit`. Layout tool запускать из обычной карточки Product/Attribute (не create/configurations) после ручной настройки нативного layout и визуальных разделов. Читает все вкладки через стабильные markers; для Product.Фильтры учитывает `data-tm-product-filter-group-order`. Сопоставляет все поля, сохраняет исходный size, проверяет полноту/уникальность и сумму size каждой строки ≤12, показывает dry-run/diff. После подтверждения повторно GET configuration и проверяет отсутствие изменений, PUT штатного payload (только изменение смысла `layouts.edit`, сохранение settings, layouts.list и metadata с необходимой sanitization), GET verify. После успешной синхронизации перезагрузить карточку; не переставлять React fields в DOM. Синхронизация расширена на обе коллекции, но новый PUT подтверждать фактическим запуском/Network, не считать статический review доказательством записи.
 
 ## Styles service UI origin semantics
 
