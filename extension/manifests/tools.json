@@ -6,7 +6,7 @@
       "group": "config"
     },
     {
-      "file": "config/attributeRelations.js",
+      "file": "config/attribute.js",
       "group": "config"
     },
     {
@@ -23,6 +23,10 @@
     },
     {
       "file": "syncer/categoryRelations.js",
+      "group": "syncer"
+    },
+    {
+      "file": "syncer/attribute.js",
       "group": "syncer"
     },
     {

@@ -1,7 +1,7 @@
 (async () => {
   'use strict';
 
-  const TAG = '[attributeRelationsConfig]';
+  const TAG = '[attributeConfig]';
   const UID = 'api::attribute.attribute';
   const SYSTEM = new Set([
     'id', 'documentId', 'locale', 'status', 'createdAt', 'updatedAt',
@@ -16,7 +16,7 @@
   let fields = [];
   const CONCURRENCY = 3;
   const PAGE_SIZE = 100;
-  const RUN_KEY = '__tmAttributeRelationsConfigRunning';
+  const RUN_KEY = '__tmAttributeConfigRunning';
   if (window[RUN_KEY]) return;
   const designSystem = window.__tmStrapiDesignSystem;
   if (!designSystem?.createToolStatus) throw Error('Обновите расширения через forceUpdate()');
@@ -29,7 +29,7 @@
     comparedFields: [], excludedFields: [...EXCLUDED], fieldDifferences: Object.create(null),
     differences: [], blocked: [], requests: 0, errors: []
   };
-  window.attributeRelationsConfigReport = report;
+  window.attributeConfigReport = report;
   let stopped = false;
 
   function ensure(value, message) {
@@ -366,8 +366,8 @@
     stop.disabled = true;
     stop.textContent = 'Остановка…';
   };
-  save.onclick = () => download('attribute-relations-config.csv', configCsv());
-  review.onclick = () => download('attribute-relations-config-blocked.csv', blockedCsv());
+  save.onclick = () => download('attribute-config.csv', configCsv());
+  review.onclick = () => download('attribute-config-blocked.csv', blockedCsv());
 
   function render(phase, id = '', reading = null) {
     phaseLabel.textContent = phase;
