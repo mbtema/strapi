@@ -6,6 +6,7 @@
     const ROOT_ATTR = 'data-tm-record-list-toolbar';
     const GROUP_ATTR = 'data-tm-record-list-toolbar-group';
     const HEADER_ATTR = 'data-tm-record-list-header';
+    const HOST_ATTR = 'data-tm-record-list-header-host';
     const HEADER_PART_ATTR = 'data-tm-record-list-header-part';
     const PAGE_ATTR = 'data-tm-record-list-compact-page';
     const WIDE_QUERY = '(min-width: 1200px)';
@@ -69,6 +70,7 @@
     }
 
     function directChild(parent, node) {
+        if (!parent || !node || node === parent || !parent.contains(node)) return null;
         while (node && node.parentElement !== parent) node = node.parentElement;
         return node || null;
     }
@@ -79,32 +81,38 @@
         const header = main.querySelector('[data-strapi-header]');
         const sticky = main.querySelector('[data-strapi-header-sticky]');
         const parent = toolbar.parentElement;
-        const host = parent && directChild(parent, header || sticky);
+        const host = directChild(parent, header || sticky);
         if (!host || host === toolbar || host.nextElementSibling !== toolbar || !main.contains(host)) return;
 
         const hasFilters = [...new URLSearchParams(location.search).keys()].some(key => ACTIVE_FILTERS_RE.test(key));
         const mode = hasFilters ? 'filters' : 'compact';
 
         if (!header) {
-            if (sticky && applied.get(host)?.has(HEADER_PART_ATTR)) {
+            if (sticky && applied.get(host)?.has(HOST_ATTR)) {
                 mark(parent, PAGE_ATTR, mode);
-                mark(host, HEADER_PART_ATTR, 'host');
+                mark(host, HOST_ATTR);
             }
             return;
         }
 
         const title = header.querySelector('h1');
         const subtitle = header.querySelector('p');
-        const body = title && directChild(header, title);
-        const titleRow = body && directChild(body, title);
-        const titleBox = titleRow && directChild(titleRow, title);
-        const subtitleBox = body && subtitle && directChild(body, subtitle);
+        if (!title || !subtitle) return;
+
+        const titleBranch = directChild(header, title);
+        const subtitleBranch = directChild(header, subtitle);
+        const body = titleBranch === subtitleBranch ? titleBranch : header;
+        const titleRow = directChild(body, title);
+        const titleBox = directChild(titleRow, title);
+        const subtitleBox = directChild(body, subtitle);
         if (!body || !titleRow || !titleBox || !subtitleBox || titleRow === subtitleBox) return;
 
         const back = [...body.querySelectorAll('a,button')].find(node => label(node) === 'Back' && node.querySelector('svg'));
         const backBox = back && directChild(body, back);
         const actionBox = [...titleRow.children].find(node => node !== titleBox);
-        if (!backBox || backBox === titleRow || !actionBox || titleRow.children.length !== 2) return;
+        if (!backBox || backBox === titleRow || titleRow.children.length > 2) return;
+        if (actionBox && !actionBox.matches('a[href*="/create"], button') &&
+            !actionBox.querySelector('a[href*="/create"], button')) return;
         if ([...body.children].some(node => ![backBox, titleRow, subtitleBox].includes(node))) return;
 
         const chain = [];
@@ -114,7 +122,7 @@
 
         mark(parent, PAGE_ATTR, mode);
         for (const node of chain) mark(node, HEADER_ATTR, node === header ? 'header' : 'wrapper');
-        mark(host, HEADER_PART_ATTR, 'host');
+        mark(host, HOST_ATTR);
         mark(body, HEADER_PART_ATTR, 'body');
         mark(titleRow, HEADER_PART_ATTR, 'title-row');
         mark(titleBox, HEADER_PART_ATTR, 'title');
@@ -210,13 +218,14 @@
         [${PAGE_ATTR}] {
             display:grid!important;
             grid-template-columns:auto minmax(0,1fr) minmax(0,max-content) max-content;
+            column-gap:var(--tm-ds-space2);
             align-content:start;
         }
         [${PAGE_ATTR}] > * {
             grid-column:1/-1;
             min-width:0;
         }
-        [${PAGE_ATTR}] > [${HEADER_PART_ATTR}="host"] {
+        [${PAGE_ATTR}] > [${HOST_ATTR}] {
             grid-row:1;
         }
         [${PAGE_ATTR}] [${HEADER_ATTR}],
@@ -236,7 +245,7 @@
             grid-template-rows:auto auto;
             align-items:center;
             column-gap:var(--tm-ds-space2)!important;
-            row-gap:var(--tm-ds-space1)!important;
+            row-gap:0!important;
         }
         [${PAGE_ATTR}] [${HEADER_PART_ATTR}="title-row"] {
             display:contents!important;
