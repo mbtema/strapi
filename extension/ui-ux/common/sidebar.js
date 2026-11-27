@@ -40,6 +40,7 @@
     const GROUPS = [
         {
             id: 'catalog',
+            icon: 'Archive',
             title: 'Каталог',
             collapsed: false,
             uids: [
@@ -54,6 +55,7 @@
         },
         {
             id: 'reference',
+            icon: 'Book',
             title: 'Справочник',
             collapsed: false,
             uids: [
@@ -69,11 +71,13 @@
         },
         {
             id: 'filters',
+            icon: 'SlidersHorizontal',
             title: 'Фильтры',
             collapsed: false,
             subgroups: [
                 {
                     id: 'filters-fragrance',
+                    icon: 'Plant',
                     title: 'Парфюмерия',
                     collapsed: false,
                     uids: [
@@ -83,6 +87,7 @@
                 },
                 {
                     id: 'filters-makeup',
+                    icon: 'Palette',
                     title: 'Макияж',
                     collapsed: false,
                     uids: [
@@ -97,6 +102,7 @@
                 },
                 {
                     id: 'filters-skin-care',
+                    icon: 'User',
                     title: 'Уход за кожей',
                     collapsed: false,
                     uids: [
@@ -109,6 +115,7 @@
                 },
                 {
                     id: 'filters-hair-care',
+                    icon: 'Typhoon',
                     title: 'Уход за волосами',
                     collapsed: false,
                     uids: [
@@ -117,6 +124,7 @@
                 },
                 {
                     id: 'filters-common',
+                    icon: 'PuzzlePiece',
                     title: 'Общие',
                     collapsed: false,
                     uids: [
@@ -132,6 +140,7 @@
         },
         {
             id: 'mobile-home',
+            icon: 'Phone',
             title: 'Главная страница MOBILE',
             collapsed: false,
             singleUids: [
@@ -140,6 +149,7 @@
         },
         {
             id: 'web-home',
+            icon: 'Globe',
             title: 'Главная страница WEB',
             collapsed: false,
             uids: [
@@ -151,6 +161,7 @@
         },
         {
             id: 'other',
+            icon: 'GridFour',
             title: 'Другое',
             collapsed: false,
             uids: [
@@ -333,9 +344,9 @@
 
             ${expandedNav} {
                 position: fixed !important;
-                inset-block-start: 0 !important;
+                inset-block-start: auto !important;
                 inset-inline-start: 0 !important;
-                inset-block-end: auto !important;
+                inset-block-end: 0 !important;
                 inset-inline-end: auto !important;
                 display: flex !important;
                 flex-direction: row !important;
@@ -353,6 +364,7 @@
                 background: var(--tm-ds-neutral0) !important;
                 border: 0 !important;
                 border-inline-end: 1px solid var(--tm-ds-neutral200) !important;
+                border-block-start: 1px solid var(--tm-ds-neutral200) !important;
                 box-shadow: none !important;
                 overflow: visible !important;
                 z-index: 6 !important;
@@ -407,8 +419,19 @@
             }
 
             ${expandedNav} + * > [${LAYOUT_ATTR}] > [${SIDEBAR_ATTR}] {
-                padding-block-start: var(--tm-ds-space10) !important;
+                display: flex !important;
+                flex-direction: column !important;
+                height: calc(100dvh - var(--tm-ds-space10)) !important;
+                min-height: 0 !important;
+                max-height: calc(100dvh - var(--tm-ds-space10)) !important;
                 box-sizing: border-box !important;
+                overflow: hidden !important;
+            }
+
+            ${expandedNav} + * > [${LAYOUT_ATTR}] > [${SIDEBAR_ATTR}] > :has([${LIST_ATTR}]) {
+                flex: 1 1 auto !important;
+                min-height: 0 !important;
+                overflow-y: auto !important;
             }
 
             [${GLOBAL_PROFILE_ATTR}] {
@@ -987,7 +1010,15 @@
             const title = document.createElement('span');
             title.className = 'tm-sidebar-group-title';
 
-            button.append(title, designSystem.createIcon('ChevronDown'));
+            const icon = designSystem.createIcon(group.icon);
+            if (icon) {
+                icon.classList.add('tm-ds-nav-group-icon');
+                button.appendChild(icon);
+            }
+
+            const chevron = designSystem.createIcon('ChevronDown');
+            chevron.classList.add('tm-ds-nav-group-chevron');
+            button.append(title, chevron);
             button.addEventListener('click', () => {
                 collapsedGroups.set(
                     group.id,
