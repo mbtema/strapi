@@ -305,8 +305,11 @@
 
         const style = document.createElement('style');
         style.id = STYLE_ID;
-        const expandedNav = `[${GLOBAL_NAV_ATTR}]:has(+ * > [${LAYOUT_ATTR}]:first-child > [${SIDEBAR_ATTR}]:not([${COLLAPSED_ATTR}]))`;
-        const navigationLayout = `:has(> ${expandedNav})`;
+        const sidebarPath = `+ * > [${LAYOUT_ATTR}]:first-child > [${SIDEBAR_ATTR}]`;
+        const managedNav = `[${GLOBAL_NAV_ATTR}]:has(${sidebarPath})`;
+        const expandedNav = `[${GLOBAL_NAV_ATTR}]:has(${sidebarPath}:not([${COLLAPSED_ATTR}]))`;
+        const collapsedNav = `[${GLOBAL_NAV_ATTR}]:has(${sidebarPath}[${COLLAPSED_ATTR}])`;
+        const navigationLayout = `:has(> [${GLOBAL_NAV_ATTR}] ${sidebarPath})`;
         style.textContent = `
             nav li:has(> span > a[aria-label="Settings"][href^="/admin/settings"]) {
                 display: none !important;
@@ -328,6 +331,10 @@
             ${navigationLayout} {
                 position: relative !important;
                 grid-template-columns: minmax(0, 1fr) !important;
+            }
+
+            ${collapsedNav} {
+                display: none !important;
             }
 
             ${expandedNav} {
@@ -386,7 +393,7 @@
                 background: transparent !important;
             }
 
-            ${expandedNav} + * {
+            ${managedNav} + * {
                 flex: 1 1 0% !important;
                 width: 100% !important;
                 min-width: 0 !important;
