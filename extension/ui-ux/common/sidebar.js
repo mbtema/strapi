@@ -22,6 +22,7 @@
     const GROUP_HEADER_ATTR = 'data-tm-sidebar-group-header';
     const GROUP_ITEM_ATTR = 'data-tm-sidebar-group-item';
     const GROUP_COLLAPSED_ATTR = 'data-tm-sidebar-group-collapsed';
+    const SUBGROUP_ATTR = 'data-tm-sidebar-subgroup';
     const QUICK_ATTR = 'data-tm-sidebar-quick';
     const ICON_ATTR = 'data-tm-sidebar-icon';
     const COLLAPSED_ATTR = 'data-tm-sidebar-collapsed';
@@ -65,28 +66,63 @@
             id: 'filters',
             title: 'Фильтры',
             collapsed: false,
-            uids: [
-                'api::product-age-group.product-age-group',
-                'api::product-usage-time.product-usage-time',
-                'api::fragrance-group.fragrance-group',
-                'api::shade-group.shade-group',
-                'api::product-feature.product-feature',
-                'api::ingredient.ingredient',
-                'api::fragrance-concentration.fragrance-concentration',
-                'api::volume.volume',
-                'api::color-variant.color-variant',
-                'api::shade.shade',
-                'api::brand-filter-profile.brand-filter-profile',
-                'api::product-effect.product-effect',
-                'api::product-segment.product-segment',
-                'api::product-coverage.product-coverage',
-                'api::brand-country.brand-country',
-                'api::hair-type.hair-type',
-                'api::skin-type.skin-type',
-                'api::product-form.product-form',
-                'api::filtry.filtry',
-                'api::product-finish.product-finish',
-                'api::product-release-form.product-release-form'
+            subgroups: [
+                {
+                    id: 'filters-fragrance',
+                    title: 'Парфюмерия',
+                    collapsed: false,
+                    uids: [
+                        'api::fragrance-group.fragrance-group',
+                        'api::fragrance-concentration.fragrance-concentration'
+                    ]
+                },
+                {
+                    id: 'filters-makeup',
+                    title: 'Макияж',
+                    collapsed: false,
+                    uids: [
+                        'api::shade-group.shade-group',
+                        'api::product-release-form.product-release-form',
+                        'api::product-finish.product-finish',
+                        'api::product-coverage.product-coverage',
+                        'api::product-feature.product-feature',
+                        'api::shade.shade',
+                        'api::color-variant.color-variant'
+                    ]
+                },
+                {
+                    id: 'filters-skin-care',
+                    title: 'Уход за кожей',
+                    collapsed: false,
+                    uids: [
+                        'api::skin-type.skin-type',
+                        'api::product-age-group.product-age-group',
+                        'api::product-usage-time.product-usage-time',
+                        'api::ingredient.ingredient',
+                        'api::product-segment.product-segment'
+                    ]
+                },
+                {
+                    id: 'filters-hair-care',
+                    title: 'Уход за волосами',
+                    collapsed: false,
+                    uids: [
+                        'api::hair-type.hair-type'
+                    ]
+                },
+                {
+                    id: 'filters-common',
+                    title: 'Общие',
+                    collapsed: false,
+                    uids: [
+                        'api::volume.volume',
+                        'api::product-effect.product-effect',
+                        'api::product-form.product-form',
+                        'api::brand-filter-profile.brand-filter-profile',
+                        'api::brand-country.brand-country',
+                        'api::filtry.filtry'
+                    ]
+                }
             ]
         },
         {
@@ -120,6 +156,8 @@
         }
     ];
 
+    const STATE_GROUPS = GROUPS.flatMap(group => [group, ...(group.subgroups || [])]);
+
     const QUICK_LINKS = [
         { uid: 'api::product.product', label: 'Товары' },
         { uid: 'api::attribute.attribute', label: 'Предложения' }
@@ -132,7 +170,7 @@
     ]);
 
     const EXPLICIT_COLLECTION_UIDS = new Set(
-        GROUPS.flatMap(group => group.uids || [])
+        STATE_GROUPS.flatMap(group => group.uids || [])
     );
 
     const EXPLICIT_SINGLE_UIDS = new Set(
@@ -224,7 +262,7 @@
 
     function readGroupStates() {
         const states = new Map(
-            GROUPS.map(group => [group.id, Boolean(group.collapsed)])
+            STATE_GROUPS.map(group => [group.id, Boolean(group.collapsed)])
         );
 
         try {
@@ -234,7 +272,7 @@
             const stored = JSON.parse(raw);
             if (!stored || typeof stored !== 'object') return states;
 
-            for (const group of GROUPS) {
+            for (const group of STATE_GROUPS) {
                 if (typeof stored[group.id] === 'boolean') {
                     states.set(group.id, stored[group.id]);
                 }
@@ -252,7 +290,7 @@
         try {
             const stored = {};
 
-            for (const group of GROUPS) {
+            for (const group of STATE_GROUPS) {
                 stored[group.id] = Boolean(collapsedGroups.get(group.id));
             }
 
@@ -458,6 +496,18 @@
                 outline-offset: -2px;
             }
 
+            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}][${SUBGROUP_ATTR}] {
+                margin: var(--tm-ds-space1) 0 2px !important;
+            }
+
+            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}][${SUBGROUP_ATTR}] > button {
+                padding-inline-start: var(--tm-ds-space5);
+            }
+
+            [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}][${SUBGROUP_ATTR}] .tm-sidebar-group-title {
+                text-transform: none;
+            }
+
             [${CLEANUP_ATTR}] .tm-sidebar-group-title {
                 min-width: 0;
                 flex: 1;
@@ -508,6 +558,10 @@
                 height: auto !important;
                 box-sizing: border-box !important;
                 padding: 8px 12px !important;
+            }
+
+            [${CLEANUP_ATTR}] [${GROUP_ITEM_ATTR}][${SUBGROUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div {
+                padding-inline-start: var(--tm-ds-space6) !important;
             }
 
             [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div > span:first-child:not([${ICON_ATTR}]):not(:last-child),
@@ -728,6 +782,7 @@
 
         currentSidebar.querySelectorAll(`[${GROUP_ITEM_ATTR}]`).forEach(node => {
             node.hidden = false;
+            node.inert = false;
         });
 
         currentSidebar.querySelectorAll(
@@ -743,6 +798,7 @@
             ACTIVE_ATTR,
             GROUP_ITEM_ATTR,
             GROUP_COLLAPSED_ATTR,
+            SUBGROUP_ATTR,
             QUICK_ATTR,
             COLLAPSED_ATTR
         ];
@@ -964,7 +1020,7 @@
         }
 
         const title = header.querySelector('.tm-sidebar-group-title');
-        if (title) title.textContent = group.title;
+        if (title && title.textContent !== group.title) title.textContent = group.title;
 
         return header;
     }
@@ -1021,7 +1077,36 @@
         const desired = [];
         const validGroupIds = new Set();
 
+        function appendGroup(group, items, subgroup = false) {
+            if (!items.length) return;
+            validGroupIds.add(group.id);
+            const header = ensureGroupHeader(group);
+            header.toggleAttribute(SUBGROUP_ATTR, subgroup);
+            desired.push(header);
+
+            for (const item of items) {
+                item.setAttribute(GROUP_ITEM_ATTR, group.id);
+                item.toggleAttribute(SUBGROUP_ATTR, subgroup);
+                desired.push(item);
+            }
+        }
+
         for (const group of GROUPS) {
+            if (group.subgroups) {
+                const entries = group.subgroups.map(subgroup => ({
+                    subgroup,
+                    items: subgroup.uids.map(uid => byUid.get(uid)).filter(Boolean)
+                })).filter(entry => entry.items.length);
+
+                if (!entries.length) continue;
+                validGroupIds.add(group.id);
+                desired.push(ensureGroupHeader(group));
+
+                for (const entry of entries) {
+                    appendGroup(entry.subgroup, entry.items, true);
+                }
+                continue;
+            }
             const items = [];
 
             if (group.uids) {
@@ -1048,15 +1133,7 @@
                 })));
             }
 
-            if (!items.length) continue;
-
-            validGroupIds.add(group.id);
-            desired.push(ensureGroupHeader(group));
-
-            for (const item of items) {
-                item.setAttribute(GROUP_ITEM_ATTR, group.id);
-                desired.push(item);
-            }
+            appendGroup(group, items);
         }
 
         collectionList
@@ -1160,43 +1237,46 @@
         lastPath = currentPath;
     }
 
+    function applyGroupVisibility(group, parentCollapsed = false) {
+        const header = collectionList.querySelector(
+            `:scope > [${GROUP_HEADER_ATTR}="${group.id}"]`
+        );
+        if (!header) return 0;
+
+        const collapsed = !searchQuery && Boolean(collapsedGroups.get(group.id));
+        const button = header.querySelector('button');
+        if (button) button.setAttribute('aria-expanded', String(!collapsed));
+
+        let visibleCount = 0;
+
+        if (group.subgroups) {
+            for (const subgroup of group.subgroups) {
+                visibleCount += applyGroupVisibility(subgroup, parentCollapsed || collapsed);
+            }
+        } else {
+            const items = collectionList.querySelectorAll(
+                `:scope > [${GROUP_ITEM_ATTR}="${group.id}"]`
+            );
+
+            for (const item of items) {
+                const matches = !searchQuery || normalizeText(item.textContent).includes(searchQuery);
+                const hiddenByGroup = parentCollapsed || collapsed;
+                item.hidden = !matches;
+                item.inert = !matches || hiddenByGroup;
+                item.toggleAttribute(GROUP_COLLAPSED_ATTR, hiddenByGroup);
+                if (matches) visibleCount++;
+            }
+        }
+
+        header.hidden = parentCollapsed || (Boolean(searchQuery) && visibleCount === 0);
+        return visibleCount;
+    }
+
     function applyVisibility() {
         if (!collectionList) return;
 
         for (const group of GROUPS) {
-            const header = collectionList.querySelector(
-                `:scope > [${GROUP_HEADER_ATTR}="${group.id}"]`
-            );
-            if (!header) continue;
-
-            const items = [...collectionList.querySelectorAll(
-                `:scope > [${GROUP_ITEM_ATTR}="${group.id}"]`
-            )];
-
-            const collapsed = collapsedGroups.get(group.id) || false;
-            let visibleCount = 0;
-
-            for (const item of items) {
-                const matches = !searchQuery || normalizeText(item.textContent).includes(searchQuery);
-                const filteredOut = Boolean(searchQuery) && !matches;
-
-                item.hidden = filteredOut;
-                item.toggleAttribute(
-                    GROUP_COLLAPSED_ATTR,
-                    !searchQuery && collapsed
-                );
-
-                if (matches) visibleCount++;
-            }
-
-            header.hidden = Boolean(searchQuery) && visibleCount === 0;
-            const button = header.querySelector('button');
-            if (button) {
-                button.setAttribute(
-                    'aria-expanded',
-                    String(Boolean(searchQuery) || !collapsed)
-                );
-            }
+            applyGroupVisibility(group);
         }
     }
 
