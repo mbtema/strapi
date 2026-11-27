@@ -338,7 +338,7 @@
             }
 
             ${expandedNav} {
-                position: absolute !important;
+                position: fixed !important;
                 inset-block-start: 0 !important;
                 inset-inline-start: 0 !important;
                 inset-block-end: auto !important;
