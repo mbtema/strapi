@@ -305,6 +305,8 @@
 
         const style = document.createElement('style');
         style.id = STYLE_ID;
+        const expandedNav = `[${GLOBAL_NAV_ATTR}]:has(+ * > [${LAYOUT_ATTR}]:first-child > [${SIDEBAR_ATTR}]:not([${COLLAPSED_ATTR}]))`;
+        const navigationLayout = `:has(> ${expandedNav})`;
         style.textContent = `
             nav li:has(> span > a[aria-label="Settings"][href^="/admin/settings"]) {
                 display: none !important;
@@ -323,15 +325,78 @@
                 padding-top: 22px !important;
             }
 
-            [${GLOBAL_NAV_ATTR}]:has(+ * > [${LAYOUT_ATTR}] > [${SIDEBAR_ATTR}]:not([${COLLAPSED_ATTR}])) {
-                background-color: var(--tm-ds-neutral0) !important;
-                border-inline-end-color: transparent !important;
-                box-shadow: none !important;
+            ${navigationLayout} {
+                position: relative !important;
+                grid-template-columns: minmax(0, 1fr) !important;
             }
 
-            [${GLOBAL_NAV_ATTR}]:has(+ * > [${LAYOUT_ATTR}] > [${SIDEBAR_ATTR}]:not([${COLLAPSED_ATTR}])) > ul,
-            [${GLOBAL_NAV_ATTR}]:has(+ * > [${LAYOUT_ATTR}] > [${SIDEBAR_ATTR}]:not([${COLLAPSED_ATTR}])) > [${GLOBAL_PROFILE_ATTR}] {
-                background-color: transparent !important;
+            ${expandedNav} {
+                position: absolute !important;
+                inset-block-start: 0 !important;
+                inset-inline-start: 0 !important;
+                inset-block-end: auto !important;
+                inset-inline-end: auto !important;
+                display: flex !important;
+                flex-direction: row !important;
+                align-items: center !important;
+                justify-content: space-between !important;
+                gap: var(--tm-ds-space2) !important;
+                width: 320px !important;
+                min-width: 0 !important;
+                max-width: 320px !important;
+                height: var(--tm-ds-space10) !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                padding: 0 var(--tm-ds-space4) !important;
+                box-sizing: border-box !important;
+                background: var(--tm-ds-neutral100) !important;
+                border: 0 !important;
+                border-inline-end: 1px solid var(--tm-ds-neutral200) !important;
+                box-shadow: none !important;
+                overflow: visible !important;
+                z-index: 6 !important;
+            }
+
+            ${expandedNav} > ul {
+                display: flex !important;
+                flex: 1 1 auto !important;
+                flex-direction: row !important;
+                align-items: center !important;
+                justify-content: flex-start !important;
+                gap: var(--tm-ds-space2) !important;
+                width: auto !important;
+                min-width: 0 !important;
+                height: auto !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: transparent !important;
+                overflow-x: auto !important;
+                overflow-y: hidden !important;
+            }
+
+            ${expandedNav} > ul > li {
+                flex-shrink: 0 !important;
+            }
+
+            ${expandedNav} > [${GLOBAL_PROFILE_ATTR}] {
+                flex: 0 0 auto !important;
+                width: auto !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: transparent !important;
+            }
+
+            ${expandedNav} + * {
+                flex: 1 1 0% !important;
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: none !important;
+                grid-column: 1 / -1 !important;
+            }
+
+            ${expandedNav} + * > [${LAYOUT_ATTR}] > [${SIDEBAR_ATTR}] {
+                padding-block-start: var(--tm-ds-space10) !important;
+                box-sizing: border-box !important;
             }
 
             [${GLOBAL_PROFILE_ATTR}] {
@@ -374,8 +439,7 @@
             }
 
             [${CLEANUP_ATTR}] {
-                background-color: var(--tm-ds-neutral0) !important;
-                border-inline-start-color: transparent !important;
+                background-color: var(--tm-ds-neutral100) !important;
                 width: 320px !important;
                 min-width: 320px !important;
                 max-width: 320px !important;
@@ -421,7 +485,7 @@
                 flex-direction: column;
                 gap: 8px;
                 padding: 12px 16px;
-                background: var(--tm-ds-neutral0);
+                background: var(--tm-ds-neutral100);
                 border: 0 !important;
                 box-shadow: none !important;
             }
