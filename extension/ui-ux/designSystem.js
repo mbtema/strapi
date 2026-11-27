@@ -46,7 +46,8 @@
         Globe: "<path d=\"M16 3C13.4288 3 10.9154 3.76244 8.77759 5.1909C6.63975 6.61935 4.97351 8.64968 3.98957 11.0251C3.00563 13.4006 2.74819 16.0144 3.2498 18.5362C3.75141 21.0579 4.98953 23.3743 6.80762 25.1924C8.6257 27.0105 10.9421 28.2486 13.4638 28.7502C15.9856 29.2518 18.5995 28.9944 20.9749 28.0104C23.3503 27.0265 25.3807 25.3603 26.8091 23.2224C28.2376 21.0846 29 18.5712 29 16C28.9964 12.5533 27.6256 9.24882 25.1884 6.81163C22.7512 4.37445 19.4467 3.00364 16 3ZM25.7963 11H21.3675C20.8572 8.99189 20.0001 7.0883 18.835 5.375C20.3236 5.77503 21.7119 6.48215 22.9108 7.45091C24.1097 8.41967 25.0926 9.62861 25.7963 11ZM16 5.01375C17.5 6.63875 18.625 8.7075 19.2963 11H12.7038C13.375 8.7075 14.5 6.64125 16 5.01375ZM12 16C12.0002 14.9948 12.0838 13.9914 12.25 13H19.75C20.0817 14.9862 20.0817 17.0138 19.75 19H12.25C12.0838 18.0086 12.0002 17.0052 12 16ZM12.7038 21H19.2963C18.625 23.2925 17.5 25.3587 16 26.9862C14.5 25.3587 13.375 23.2925 12.7038 21ZM18.835 26.625C20.0001 24.9117 20.8572 23.0081 21.3675 21H25.7963C25.0926 22.3714 24.1097 23.5803 22.9108 24.5491C21.7119 25.5178 20.3236 26.225 18.835 26.625ZM21.7763 19C22.0746 17.0111 22.0746 14.9889 21.7763 13H26.5838C27.1388 14.9615 27.1388 17.0385 26.5838 19H21.7763Z\" />",
         ChevronDown: "<path d=\"M27.0613 13.0613L17.0613 23.0613C16.9219 23.2011 16.7563 23.312 16.574 23.3878C16.3917 23.4635 16.1962 23.5024 15.9988 23.5024C15.8013 23.5024 15.6059 23.4635 15.4235 23.3878C15.2412 23.312 15.0756 23.2011 14.9363 23.0613L4.93626 13.0613C4.65446 12.7795 4.49615 12.3973 4.49615 11.9988C4.49615 11.6002 4.65446 11.218 4.93626 10.9363C5.21805 10.6545 5.60024 10.4962 5.99876 10.4962C6.39727 10.4962 6.77946 10.6545 7.06126 10.9363L16 19.875L24.9388 10.935C25.2205 10.6532 25.6027 10.4949 26.0013 10.4949C26.3998 10.4949 26.782 10.6532 27.0638 10.935C27.3455 11.2168 27.5039 11.599 27.5039 11.9975C27.5039 12.396 27.3455 12.7782 27.0638 13.06L27.0613 13.0613Z\" />",
         Book: "<path d=\"M27 4V24C27 24.2652 26.8946 24.5196 26.7071 24.7071C26.5196 24.8946 26.2652 25 26 25H9C8.46957 25 7.96086 25.2107 7.58579 25.5858C7.21071 25.9609 7 26.4696 7 27H24C24.2652 27 24.5196 27.1054 24.7071 27.2929C24.8946 27.4804 25 27.7348 25 28C25 28.2652 24.8946 28.5196 24.7071 28.7071C24.5196 28.8946 24.2652 29 24 29H6C5.73478 29 5.48043 28.8946 5.29289 28.7071C5.10536 28.5196 5 28.2652 5 28V7C5 5.93913 5.42143 4.92172 6.17157 4.17157C6.92172 3.42143 7.93913 3 9 3H26C26.2652 3 26.5196 3.10536 26.7071 3.29289C26.8946 3.48043 27 3.73478 27 4Z\" />",
-        Phone: "<path d=\"M28.985 21.885C28.7621 23.5788 27.9303 25.1335 26.6449 26.2588C25.3595 27.3841 23.7084 28.0031 22 28C12.075 28 4.00001 19.925 4.00001 9.99999C3.99695 8.2916 4.61587 6.64052 5.74118 5.35511C6.86649 4.0697 8.42122 3.23787 10.115 3.01499C10.5433 2.96269 10.9771 3.05032 11.3515 3.26479C11.7259 3.47926 12.0209 3.80907 12.1925 4.20499L14.8325 10.0987V10.1137C14.9639 10.4168 15.0181 10.7477 14.9904 11.0768C14.9627 11.406 14.8539 11.7231 14.6738 12C14.6513 12.0337 14.6275 12.065 14.6025 12.0962L12 15.1812C12.9363 17.0837 14.9263 19.0562 16.8538 19.995L19.8963 17.4062C19.9261 17.3811 19.9574 17.3578 19.99 17.3362C20.2666 17.1517 20.5849 17.0391 20.916 17.0086C21.2471 16.978 21.5806 17.0305 21.8863 17.1612L21.9025 17.1687L27.7913 19.8075C28.1879 19.9785 28.5185 20.2732 28.7337 20.6477C28.9489 21.0222 29.037 21.4562 28.985 21.885Z\" />"
+        Phone: "<path d=\"M28.985 21.885C28.7621 23.5788 27.9303 25.1335 26.6449 26.2588C25.3595 27.3841 23.7084 28.0031 22 28C12.075 28 4.00001 19.925 4.00001 9.99999C3.99695 8.2916 4.61587 6.64052 5.74118 5.35511C6.86649 4.0697 8.42122 3.23787 10.115 3.01499C10.5433 2.96269 10.9771 3.05032 11.3515 3.26479C11.7259 3.47926 12.0209 3.80907 12.1925 4.20499L14.8325 10.0987V10.1137C14.9639 10.4168 15.0181 10.7477 14.9904 11.0768C14.9627 11.406 14.8539 11.7231 14.6738 12C14.6513 12.0337 14.6275 12.065 14.6025 12.0962L12 15.1812C12.9363 17.0837 14.9263 19.0562 16.8538 19.995L19.8963 17.4062C19.9261 17.3811 19.9574 17.3578 19.99 17.3362C20.2666 17.1517 20.5849 17.0391 20.916 17.0086C21.2471 16.978 21.5806 17.0305 21.8863 17.1612L21.9025 17.1687L27.7913 19.8075C28.1879 19.9785 28.5185 20.2732 28.7337 20.6477C28.9489 21.0222 29.037 21.4562 28.985 21.885Z\" />",
+        Cross: "<path d=\"M26.0613 23.9387C26.343 24.2205 26.5014 24.6027 26.5014 25.0012C26.5014 25.3997 26.343 25.7819 26.0613 26.0637C25.7795 26.3455 25.3973 26.5038 24.9988 26.5038C24.6002 26.5038 24.218 26.3455 23.9363 26.0637L16 18.125L8.06126 26.0612C7.77946 26.343 7.39727 26.5013 6.99876 26.5013C6.60024 26.5013 6.21805 26.343 5.93626 26.0612C5.65446 25.7794 5.49615 25.3972 5.49615 24.9987C5.49615 24.6002 5.65446 24.218 5.93626 23.9362L13.875 16L5.93876 8.06122C5.65696 7.77943 5.49865 7.39724 5.49865 6.99872C5.49865 6.60021 5.65696 6.21802 5.93876 5.93622C6.22055 5.65443 6.60274 5.49612 7.00126 5.49612C7.39977 5.49612 7.78196 5.65443 8.06376 5.93622L16 13.875L23.9388 5.93497C24.2205 5.65318 24.6027 5.49487 25.0013 5.49487C25.3998 5.49487 25.782 5.65318 26.0638 5.93497C26.3455 6.21677 26.5039 6.59896 26.5039 6.99747C26.5039 7.39599 26.3455 7.77818 26.0638 8.05998L18.125 16L26.0613 23.9387Z\" />"
     });
 
     function createIcon(name) {
@@ -57,6 +58,54 @@
         icon.setAttribute('aria-hidden', 'true');
         icon.innerHTML = `<svg viewBox="0 0 32 32" focusable="false" xmlns="http://www.w3.org/2000/svg" fill="currentColor">${ICONS[name]}</svg>`;
         return icon;
+    }
+
+    function createSearch({ placeholder = '', label = placeholder || 'Поиск', clearLabel = 'Очистить поиск', value = '', onInput } = {}) {
+        const element = document.createElement('div');
+        element.className = 'tm-ds-search';
+        element.setAttribute('data-tm-ds', '');
+
+        const input = document.createElement('input');
+        input.className = 'tm-ds-input';
+        input.type = 'search';
+        input.placeholder = placeholder;
+        input.setAttribute('aria-label', label);
+        input.autocomplete = 'off';
+        input.value = value;
+
+        const clear = document.createElement('button');
+        clear.type = 'button';
+        clear.className = 'tm-ds-search-clear';
+        clear.setAttribute('aria-label', clearLabel);
+        clear.title = clearLabel;
+        clear.appendChild(createIcon('Cross'));
+
+        function sync() {
+            clear.hidden = !input.value;
+        }
+
+        function clearSearch() {
+            if (!input.value || input.disabled || input.readOnly) return;
+            input.value = '';
+            input.focus();
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        input.addEventListener('input', () => {
+            sync();
+            if (typeof onInput === 'function') onInput(input.value);
+        });
+        input.addEventListener('keydown', event => {
+            if (event.key !== 'Escape' || !input.value || input.disabled || input.readOnly || event.isComposing) return;
+            event.preventDefault();
+            event.stopPropagation();
+            clearSearch();
+        });
+        clear.addEventListener('click', clearSearch);
+        element.append(input, clear);
+        sync();
+
+        return { element, input };
     }
 
     const root = document.documentElement;
@@ -414,6 +463,34 @@
         [data-tm-ds] .tm-ds-input:focus{
             border-color:var(--tm-ds-primary600);box-shadow:0 0 0 1px var(--tm-ds-primary600)
         }
+        .tm-ds-search[data-tm-ds]{
+            position:relative;display:flex;align-items:center;min-width:0
+        }
+        .tm-ds-search[data-tm-ds]>.tm-ds-input{
+            width:100%;min-width:0;padding-inline-end:var(--tm-ds-space8);
+            appearance:none
+        }
+        .tm-ds-search[data-tm-ds]>.tm-ds-input::-webkit-search-cancel-button{
+            display:none;appearance:none;-webkit-appearance:none
+        }
+        .tm-ds-search[data-tm-ds]>.tm-ds-search-clear{
+            position:absolute;inset-inline-end:var(--tm-ds-space2);top:50%;
+            transform:translateY(-50%);display:inline-flex;align-items:center;
+            justify-content:center;width:var(--tm-ds-space6);height:var(--tm-ds-space6);
+            padding:0;border:0;border-radius:var(--tm-ds-radius);
+            background:transparent;color:var(--tm-ds-neutral600);cursor:pointer
+        }
+        .tm-ds-search[data-tm-ds]>.tm-ds-search-clear:hover{
+            background:var(--tm-ds-neutral150);color:var(--tm-ds-neutral800)
+        }
+        .tm-ds-search[data-tm-ds]>.tm-ds-search-clear:focus-visible{
+            outline:2px solid var(--tm-ds-primary600);outline-offset:1px
+        }
+        .tm-ds-search[data-tm-ds]>.tm-ds-search-clear[hidden],
+        .tm-ds-search[data-tm-ds]>input:is(:disabled,[readonly])+.tm-ds-search-clear{
+            display:none
+        }
+
         [data-tm-ds] .tm-ds-button{
             display:inline-flex;align-items:center;justify-content:center;gap:8px;
             box-sizing:border-box;min-height:var(--tm-ds-button-height);padding:0 16px;
@@ -660,7 +737,7 @@
     `;
     if (!document.getElementById(STYLE_ID)) (document.head || root).appendChild(style);
 
-    window[KEY] = { syncTheme, setColorSwatch, createToolStatus, createToolProgress, createIcon };
+    window[KEY] = { syncTheme, setColorSwatch, createToolStatus, createToolProgress, createIcon, createSearch };
     new MutationObserver(syncTheme).observe(root, {
         attributes: true, attributeFilter: ['class', 'style']
     });

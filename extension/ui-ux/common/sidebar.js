@@ -2,7 +2,7 @@
     'use strict';
 
     const designSystem = window.__tmStrapiDesignSystem;
-    if (typeof designSystem?.createIcon !== 'function') {
+    if (typeof designSystem?.createIcon !== 'function' || typeof designSystem?.createSearch !== 'function') {
         console.warn('[sidebar] Design System icon component not available');
         return;
     }
@@ -961,18 +961,16 @@
         wrapper.setAttribute(TOOLBAR_ATTR, '');
         wrapper.setAttribute('data-tm-ds', '');
 
-        const search = document.createElement('input');
-        search.className = 'tm-sidebar-search tm-ds-input';
-        search.type = 'search';
-        search.placeholder = 'Поиск коллекции…';
-        search.autocomplete = 'off';
-        search.value = searchQuery;
-        search.addEventListener('input', () => {
-            searchQuery = normalizeText(search.value);
-            applyVisibility();
+        const { element } = designSystem.createSearch({
+            placeholder: 'Поиск коллекции…',
+            value: searchQuery,
+            onInput(value) {
+                searchQuery = normalizeText(value);
+                applyVisibility();
+            }
         });
-
-        wrapper.appendChild(search);
+        element.classList.add('tm-sidebar-search');
+        wrapper.appendChild(element);
         return wrapper;
     }
 
