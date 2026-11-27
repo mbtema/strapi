@@ -570,13 +570,13 @@
             width:100%;min-height:var(--tm-ds-space7);box-sizing:border-box;
             padding:var(--tm-ds-space2) var(--tm-ds-space3);
             border:0;border-radius:var(--tm-ds-radius);
-            background:var(--tm-ds-neutral150);color:var(--tm-ds-neutral800);
+            background:transparent;color:var(--tm-ds-neutral800);
             font-family:inherit;font-size:var(--tm-ds-nav-group-size);
             font-weight:var(--tm-ds-font-bold);line-height:var(--tm-ds-text-line);
             text-align:start;text-transform:none;cursor:pointer;box-shadow:none
         }
         :where([data-tm-ds]) .tm-ds-nav-group[data-level="subgroup"]{
-            background:transparent;font-size:var(--tm-ds-nav-subgroup-size);
+            font-size:var(--tm-ds-nav-subgroup-size);
             font-weight:var(--tm-ds-font-semibold)
         }
         :where([data-tm-ds]) .tm-ds-nav-group:hover{
