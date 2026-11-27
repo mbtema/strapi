@@ -29,7 +29,6 @@
     const GROUP_ITEM_ATTR = 'data-tm-sidebar-group-item';
     const GROUP_COLLAPSED_ATTR = 'data-tm-sidebar-group-collapsed';
     const SUBGROUP_ATTR = 'data-tm-sidebar-subgroup';
-    const QUICK_ATTR = 'data-tm-sidebar-quick';
     const ICON_ATTR = 'data-tm-sidebar-icon';
     const COLLAPSED_ATTR = 'data-tm-sidebar-collapsed';
     const LAYOUT_ATTR = 'data-tm-sidebar-layout';
@@ -163,11 +162,6 @@
     ];
 
     const STATE_GROUPS = GROUPS.flatMap(group => [group, ...(group.subgroups || [])]);
-
-    const QUICK_LINKS = [
-        { uid: 'api::product.product', label: 'Товары' },
-        { uid: 'api::attribute.attribute', label: 'Предложения' }
-    ];
 
     const SINGLE_ORDER = new Map([
         ['home page', 0],
@@ -356,7 +350,7 @@
                 max-height: none !important;
                 padding: 0 var(--tm-ds-space4) !important;
                 box-sizing: border-box !important;
-                background: var(--tm-ds-neutral100) !important;
+                background: var(--tm-ds-neutral0) !important;
                 border: 0 !important;
                 border-inline-end: 1px solid var(--tm-ds-neutral200) !important;
                 box-shadow: none !important;
@@ -383,6 +377,17 @@
 
             ${expandedNav} > ul > li {
                 flex-shrink: 0 !important;
+                background: transparent !important;
+            }
+
+            ${expandedNav} > ul > li a {
+                background: transparent !important;
+                box-shadow: none !important;
+            }
+
+            ${expandedNav} > ul > li a:hover,
+            ${expandedNav} > ul > li a[aria-current="page"] {
+                background: var(--tm-ds-neutral150) !important;
             }
 
             ${expandedNav} > [${GLOBAL_PROFILE_ATTR}] {
@@ -446,7 +451,7 @@
             }
 
             [${CLEANUP_ATTR}] {
-                background-color: var(--tm-ds-neutral100) !important;
+                background-color: var(--tm-ds-neutral0) !important;
                 width: 320px !important;
                 min-width: 320px !important;
                 max-width: 320px !important;
@@ -492,7 +497,7 @@
                 flex-direction: column;
                 gap: 8px;
                 padding: 12px 16px;
-                background: var(--tm-ds-neutral100);
+                background: var(--tm-ds-neutral0);
                 border: 0 !important;
                 box-shadow: none !important;
             }
@@ -505,16 +510,6 @@
 
             [${TOOLBAR_ATTR}] .tm-sidebar-search {
                 width: 100%;
-            }
-
-            [${TOOLBAR_ATTR}] .tm-sidebar-quick-row {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 8px;
-            }
-
-            [${TOOLBAR_ATTR}] [${QUICK_ATTR}] {
-                padding-inline: var(--tm-ds-space2);
             }
 
             [${CLEANUP_ATTR}] [${GROUP_HEADER_ATTR}] {
@@ -570,6 +565,16 @@
                 padding: 0 !important;
                 box-sizing: border-box !important;
                 border-radius: var(--tm-ds-radius) !important;
+            }
+
+            [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR}:not([${ACTIVE_ATTR}]),
+            [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR}:not([${ACTIVE_ATTR}]) {
+                background: transparent !important;
+            }
+
+            [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR}:not([${ACTIVE_ATTR}]):hover,
+            [${CLEANUP_ATTR}] ${SINGLE_LINK_SELECTOR}:not([${ACTIVE_ATTR}]):hover {
+                background: var(--tm-ds-neutral150) !important;
             }
 
             [${CLEANUP_ATTR}] ${COLLECTION_LINK_SELECTOR} > div,
@@ -797,7 +802,6 @@
             GROUP_ITEM_ATTR,
             GROUP_COLLAPSED_ATTR,
             SUBGROUP_ATTR,
-            QUICK_ATTR,
             COLLAPSED_ATTR
         ];
 
@@ -928,11 +932,6 @@
         }
     }
 
-    function findCollectionLink(uid) {
-        return [...(sidebar?.querySelectorAll(COLLECTION_LINK_SELECTOR) || [])]
-            .find(link => getUid(link, 'collection') === uid) || null;
-    }
-
     function createToolbar() {
         const wrapper = document.createElement('div');
         wrapper.setAttribute(CREATED_ATTR, 'sidebar');
@@ -950,24 +949,7 @@
             applyVisibility();
         });
 
-        const quickRow = document.createElement('div');
-        quickRow.className = 'tm-sidebar-quick-row';
-
-        for (const item of QUICK_LINKS) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.setAttribute(QUICK_ATTR, item.uid);
-            button.classList.add('tm-ds-button');
-            button.textContent = item.label;
-            button.addEventListener('click', () => {
-                const link = findCollectionLink(item.uid);
-                if (link) link.click();
-                else console.warn(`[sidebar] Quick link not found: ${item.uid}`);
-            });
-            quickRow.appendChild(button);
-        }
-
-        wrapper.append(search, quickRow);
+        wrapper.appendChild(search);
         return wrapper;
     }
 
@@ -1223,19 +1205,6 @@
 
 
         }
-
-        sidebar.querySelectorAll(`[${QUICK_ATTR}]`).forEach(button => {
-            const uid = button.getAttribute(QUICK_ATTR);
-            const link = findCollectionLink(uid);
-            const linkPath = link ? getPath(link) : '';
-            const active = Boolean(linkPath) && (
-                currentPath === linkPath ||
-                currentPath.startsWith(`${linkPath}/`)
-            );
-            button.dataset.tmActive = String(active);
-            if (active) button.setAttribute('aria-current', 'page');
-            else button.removeAttribute('aria-current');
-        });
 
         lastPath = currentPath;
     }

@@ -10,7 +10,7 @@
     {
       "id": "common/sidebar",
       "path": "ui-ux/common/sidebar.js",
-      "version": "2.10.2",
+      "version": "2.10.3",
       "enabled": true
     },
     {
