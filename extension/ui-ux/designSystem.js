@@ -611,13 +611,36 @@
         }
         :where([data-tm-ds]) .tm-ds-badge,
         [data-tm-ds-badge-pair]::before,
-        [data-tm-ds-badge-pair]::after{
+        [data-tm-ds-badge-pair]::after,
+        [data-tm-ds-badge-label]::after{
             display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;
             min-width:var(--tm-ds-space5);padding:0.7rem var(--tm-ds-space2);
             border-radius:var(--tm-ds-radius);background:var(--tm-ds-neutral150);
             color:var(--tm-ds-neutral600);font-family:inherit;font-size:var(--tm-ds-sigma-size);
             line-height:1rem;font-weight:var(--tm-ds-font-bold);text-transform:uppercase;
             white-space:nowrap
+        }
+        [data-tm-ds-badge-label]{
+            font-size:0!important
+        }
+        [data-tm-ds-badge-label]::after{
+            content:attr(data-tm-ds-badge-label);font-size:var(--tm-ds-sigma-size)
+        }
+        [role="option"][data-state="checked"] [data-tm-ds-badge-label]::after,
+        [role="option"][aria-selected="true"]:not([data-state]) [data-tm-ds-badge-label]::after{
+            background:var(--tm-ds-primary200);color:var(--tm-ds-primary600)
+        }
+        [data-tm-ds-visually-hidden]{
+            position:absolute!important;width:1px!important;height:1px!important;
+            padding:0!important;margin:-1px!important;overflow:hidden!important;
+            clip-path:inset(50%)!important;white-space:nowrap!important
+        }
+        [data-tm-ds-compact-control]{
+            display:inline-flex!important;align-items:center!important;
+            justify-content:center!important;box-sizing:border-box!important;
+            width:var(--tm-ds-button-height)!important;min-width:var(--tm-ds-button-height)!important;
+            height:var(--tm-ds-button-height)!important;padding:0!important;gap:0!important;
+            position:relative
         }
         :where([data-tm-ds]) .tm-ds-badge[data-size="S"]{
             padding:0.3rem var(--tm-ds-space1);border-radius:2px
