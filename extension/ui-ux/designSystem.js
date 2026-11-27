@@ -611,8 +611,7 @@
         }
         :where([data-tm-ds]) .tm-ds-badge,
         [data-tm-ds-badge-pair]::before,
-        [data-tm-ds-badge-pair]::after,
-        [data-tm-ds-badge-label]::after{
+        [data-tm-ds-badge-pair]::after{
             display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;
             min-width:var(--tm-ds-space5);padding:0.7rem var(--tm-ds-space2);
             border-radius:var(--tm-ds-radius);background:var(--tm-ds-neutral150);
@@ -620,15 +619,33 @@
             line-height:1rem;font-weight:var(--tm-ds-font-bold);text-transform:uppercase;
             white-space:nowrap
         }
-        [data-tm-ds-badge-label]{
+        [data-tm-ds-short-label]{
             font-size:0!important
         }
-        [data-tm-ds-badge-label]::after{
-            content:attr(data-tm-ds-badge-label);font-size:var(--tm-ds-sigma-size)
+        [data-tm-ds-short-label]::after{
+            content:attr(data-tm-ds-short-label);
+            font-family:inherit;font-size:var(--tm-ds-text-size);
+            font-weight:var(--tm-ds-font-semibold);line-height:var(--tm-ds-text-line)
         }
-        [role="option"][data-state="checked"] [data-tm-ds-badge-label]::after,
-        [role="option"][aria-selected="true"]:not([data-state]) [data-tm-ds-badge-label]::after{
-            background:var(--tm-ds-primary200);color:var(--tm-ds-primary600)
+        [data-tm-ds-compact-control][data-tm-ds-short-label]::after{
+            color:var(--tm-ds-neutral800)
+        }
+        [data-tm-ds-compact-options] [role="option"]{
+            justify-content:center!important;
+            min-height:var(--tm-ds-button-height);
+            padding:var(--tm-ds-space1) var(--tm-ds-space2)!important;
+            box-sizing:border-box
+        }
+        [data-tm-ds-compact-options] [role="option"] [data-tm-ds-short-label]{
+            display:inline-block;text-align:center;width:100%
+        }
+        [data-tm-ds-compact-options] [role="option"][data-state="checked"],
+        [data-tm-ds-compact-options] [role="option"][aria-selected="true"]:not([data-state]){
+            background:var(--tm-ds-primary100);color:var(--tm-ds-primary600)
+        }
+        [data-tm-ds-compact-options] [role="option"][data-state="checked"] [data-tm-ds-short-label]::after,
+        [data-tm-ds-compact-options] [role="option"][aria-selected="true"]:not([data-state]) [data-tm-ds-short-label]::after{
+            color:var(--tm-ds-primary600)
         }
         [data-tm-ds-visually-hidden]{
             position:absolute!important;width:1px!important;height:1px!important;

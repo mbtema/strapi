@@ -5,15 +5,15 @@
     const STYLE_ID = 'tm-record-list-toolbar-style';
     const ROOT_ATTR = 'data-tm-record-list-toolbar';
     const GROUP_ATTR = 'data-tm-record-list-toolbar-group';
-    const ICON_ATTR = 'data-tm-record-list-toolbar-icon';
     const COMPACT_ATTR = 'data-tm-ds-compact-control';
     const HIDDEN_ATTR = 'data-tm-ds-visually-hidden';
-    const BADGE_ATTR = 'data-tm-ds-badge-label';
+    const LABEL_ATTR = 'data-tm-ds-short-label';
+    const OPTIONS_ATTR = 'data-tm-ds-compact-options';
     const LIST_PATH = /^\/admin\/content-manager\/collection-types\/[^/]+\/?$/;
     const LOCALE_SELECTOR = '[role="combobox"][aria-label="Select a locale"], [role="combobox"][aria-label="Select locale"]';
     const ds = window.__tmStrapiDesignSystem;
 
-    if (typeof ds?.createIcon !== 'function') {
+    if (!ds) {
         console.warn('[record-list-toolbar] Design System недоступен');
         return;
     }
@@ -22,7 +22,6 @@
 
     const applied = new Map();
     let desired = new Map();
-    let icon = null;
     let frame = 0;
     let destroyed = false;
 
@@ -82,37 +81,33 @@
     }
 
     function decorateLocale(trigger) {
-        if (!trigger) {
-            icon?.remove();
-            icon = null;
-            return;
-        }
+        if (!trigger) return;
 
-        const current = [...trigger.children].filter(child => child !== icon).map(child => child.textContent).join(' ').trim();
+        const current = trigger.textContent.trim();
+        const code = localeCode(current);
+        if (!code) return;
+
         mark(trigger, COMPACT_ATTR);
-        mark(trigger, 'title', current ? 'Select locale: ' + current : 'Select locale');
-        if (!icon || icon.parentElement !== trigger) {
-            icon?.remove();
-            icon = ds.createIcon('Globe');
-            if (!icon) return;
-            icon.setAttribute(ICON_ATTR, '');
-            trigger.appendChild(icon);
-        }
-        for (const child of trigger.children) {
-            if (child !== icon) mark(child, HIDDEN_ATTR);
-        }
+        mark(trigger, LABEL_ATTR, code);
+        mark(trigger, 'title', 'Select locale: ' + current);
+        for (const child of trigger.children) mark(child, HIDDEN_ATTR);
 
         if (trigger.getAttribute('aria-expanded') !== 'true') return;
         const id = trigger.getAttribute('aria-controls');
         const listbox = id && document.getElementById(id);
         if (!listbox || listbox.getAttribute('role') !== 'listbox') return;
-        for (const option of listbox.querySelectorAll('[role="option"]')) {
+
+        const options = [...listbox.querySelectorAll('[role="option"]')];
+        const entries = options.map(option => {
             const code = localeCode(option.textContent);
-            if (!code) continue;
-            const text = [...option.querySelectorAll('span')].reverse()
+            const text = code && [...option.querySelectorAll('span')].reverse()
                 .find(span => localeCode(span.textContent) === code && !span.querySelector('svg'));
-            if (text) mark(text, BADGE_ATTR, code);
-        }
+            return { code, text };
+        });
+
+        if (!entries.length || entries.some(entry => !entry.text)) return;
+        mark(listbox, OPTIONS_ATTR);
+        for (const { code, text } of entries) mark(text, LABEL_ATTR, code);
     }
 
     function apply() {
@@ -129,8 +124,6 @@
             }
             decorateFilters(root);
             decorateLocale(root.querySelector(LOCALE_SELECTOR));
-        } else {
-            decorateLocale(null);
         }
 
         reconcile();
@@ -186,7 +179,6 @@
         window.removeEventListener('popstate', schedule);
         window.removeEventListener('pageshow', schedule);
         if (frame) cancelAnimationFrame(frame);
-        icon?.remove();
         desired = new Map();
         reconcile();
         style.remove();
