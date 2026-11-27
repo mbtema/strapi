@@ -127,6 +127,11 @@
         mark(titleRow, HEADER_PART_ATTR, 'title-row');
         mark(titleBox, HEADER_PART_ATTR, 'title');
         mark(subtitleBox, HEADER_PART_ATTR, 'subtitle');
+        const count = subtitle.textContent.trim().match(/^([\d, .\u00a0\u202f]+)\s+entr(?:y|ies) found$/i);
+        if (count) {
+            mark(subtitle, LABEL_ATTR, count[1].trim());
+            mark(subtitle, 'title', subtitle.textContent.trim());
+        }
         mark(actionBox, HEADER_PART_ATTR, 'primary');
         mark(backBox, HEADER_PART_ATTR, 'back');
         mark(back, 'aria-label', 'Back');
@@ -217,7 +222,7 @@
     style.textContent = `
         [${PAGE_ATTR}] {
             display:grid!important;
-            grid-template-columns:auto minmax(0,1fr) minmax(0,max-content) max-content;
+            grid-template-columns:auto minmax(0,max-content) minmax(0,1fr) minmax(0,max-content) max-content;
             column-gap:var(--tm-ds-space2);
             align-content:start;
         }
@@ -242,7 +247,7 @@
             padding-block:var(--tm-ds-space4)!important;
         }
         [${PAGE_ATTR}] [${HEADER_PART_ATTR}="body"] {
-            grid-template-rows:auto auto;
+            grid-template-rows:auto;
             align-items:center;
             column-gap:var(--tm-ds-space2)!important;
             row-gap:0!important;
@@ -252,7 +257,7 @@
         }
         [${PAGE_ATTR}] [${HEADER_PART_ATTR}="back"],
         [${PAGE_ATTR}] [${HEADER_PART_ATTR}="back-link-box"] {
-            grid-column:1;grid-row:1/3;align-self:center;
+            grid-column:1;grid-row:1;align-self:center;
             justify-self:start;
         }
         [${PAGE_ATTR}] :is([${HEADER_PART_ATTR}="back-link"],[${HEADER_PART_ATTR}="back-link-box"]) {
@@ -264,16 +269,32 @@
         [${PAGE_ATTR}] [${HEADER_PART_ATTR}="title"] {
             grid-column:2;grid-row:1;min-width:0;
         }
+        [${PAGE_ATTR}] [${HEADER_PART_ATTR}="title"] h1 {
+            font-size:var(--tm-ds-heading-size)!important;
+            line-height:var(--tm-ds-heading-line)!important;
+            font-weight:var(--tm-ds-font-bold)!important;
+            margin:0!important;
+        }
         [${PAGE_ATTR}] [${HEADER_PART_ATTR}="subtitle"] {
-            grid-column:2;grid-row:2;margin:0!important;
+            grid-column:3;grid-row:1;margin:0!important;
+            justify-self:start;min-width:0;
+            color:var(--tm-ds-neutral600);
+            font-size:var(--tm-ds-small-size);
+            line-height:var(--tm-ds-small-line);
+        }
+        [${PAGE_ATTR}] [${HEADER_PART_ATTR}="subtitle"][${LABEL_ATTR}]::after,
+        [${PAGE_ATTR}] [${HEADER_PART_ATTR}="subtitle"] [${LABEL_ATTR}]::after {
+            font-size:var(--tm-ds-small-size);
+            line-height:var(--tm-ds-small-line);
+            font-weight:var(--tm-ds-font-regular);
         }
         [${PAGE_ATTR}] [${HEADER_PART_ATTR}="primary"] {
-            grid-column:4;grid-row:1/3;align-self:center;
+            grid-column:5;grid-row:1;align-self:center;
             justify-self:end;padding-inline-start:var(--tm-ds-space2)!important;
             margin:0!important;white-space:nowrap;
         }
         [${PAGE_ATTR}="compact"] > [${ROOT_ATTR}] {
-            grid-column:3;grid-row:1;align-self:center;justify-self:end;
+            grid-column:4;grid-row:1;align-self:center;justify-self:end;
             padding:0!important;margin:0!important;
             position:relative;z-index:1;max-width:min(42vw,520px);
         }
