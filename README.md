@@ -9,7 +9,7 @@
 | [`extension/extension.js`](./extension/extension.js) | Tampermonkey loader: подключает `features` и `ui-ux` через manifests, запускает кешированные модули, проверяет commit snapshot и Git blob SHA; `forceUpdate()` обновляет кеш и перезагружает CMS. |
 | [`features/alt-enter-publisher.js`](./extension/features/alt-enter-publisher.js) | Публикация текущей записи по `Alt+Enter` через штатную кнопку интерфейса Strapi. |
 | [`features/tools-launcher.js`](./extension/features/tools-launcher.js) | Панель `Alt+P`: читает `manifests/tools.json`, группирует инструменты и загружает JS из GitHub при запуске; защищает от повторного параллельного запуска. |
-| [`ui-ux/designSystem.js`](./extension/ui-ux/designSystem.js) | Общая визуальная основа: официальные токены Strapi, Light/Dark, переиспользуемые компоненты и цветовые образцы. |
+| [`ui-ux/designSystem.js`](./extension/ui-ux/designSystem.js) | Общая визуальная основа: официальные токены Strapi, Light/Dark, переиспользуемые компоненты, цветовые образцы и модальные окна прогресса инструментов. |
 | [`ui-ux/collection/attribute.js`](./extension/ui-ux/collection/attribute.js) | Вкладки Content/AR/Marketing/System карточки Attribute, show/hide нативных полей. |
 | [`ui-ux/collection/product.js`](./extension/ui-ux/collection/product.js) | Вкладки контента, фильтров и системных полей Product; смысловые группы без перемещения нативных React-полей. |
 | [`ui-ux/relation/attribute.js`](./extension/ui-ux/relation/attribute.js) | Navigator торговых предложений Product.attributes: поиск, пагинация, ссылки, объём, оттенок и HEX-образцы; нативное управление связями. |
@@ -32,7 +32,9 @@ UI/UX разделён на `collection` (конкретные карточки)
 | [`catalog/groupForward.js`](./extension/tools/catalog/groupForward.js) | Переносит недостающие Products из source Category в target по настроенным парам; только `connect`, без удаления существующих связей, с dry-run и проверкой. |
 | [`catalog/groupMirror.js`](./extension/tools/catalog/groupMirror.js) | Выравнивает Products внутри именованных групп Category: объединяет множества и добавляет недостающие связи; последовательные группы, проверка и адаптивная параллельность. |
 | [`config/categoryRelations.js`](./extension/tools/config/categoryRelations.js) | GET-only конфигурация и отбор Category для синхронизации связей RU → KK. |
-| [`syncer/categoryRelations.js`](./extension/tools/syncer/categoryRelations.js) | Синхронизирует `parent`, `categories`, `product` RU → KK одной Category; обратные дочерние связи меняет через `child.parent`, пропуски KK отражает в CSV и публикует изменённые KK Category. |
+| [`config/attribute.js`](./extension/tools/config/attribute.js) | GET-only сравнение бизнес-полей и связей Attribute RU/KK Draft, кроме `price`; CSV кандидатов и отдельный CSV заблокированных записей. |
+| [`syncer/categoryRelations.js`](./extension/tools/syncer/categoryRelations.js) | Синхронизирует связи Category RU → KK по текущей карточке или CSV/Google Sheets; публикует только KK Category с relation delta, проверяет целостность и экспортирует результат. |
+| [`syncer/attribute.js`](./extension/tools/syncer/attribute.js) | Синхронизирует поля и связи Attribute RU → KK по карточке или CSV/Google Sheets: частичный Save, Publish, контроль целостности, резервный снимок и CSV; изменения цены — предупреждения. |
 | [`service/dom.js`](./extension/tools/service/dom.js) | Снимок DOM текущей страницы в буфер обмена, с fallback на стандартное копирование. |
 | [`service/layout.js`](./extension/tools/service/layout.js) | Сопоставляет порядок полей Product/Attribute в UI с `layouts.edit`; dry-run, подтверждённая запись configuration и GET-проверка. |
 | [`service/network.js`](./extension/tools/service/network.js) | Перехватывает same-origin `fetch`/XHR между Start и Stop; собирает диагностический JSON запросов и ответов. |
