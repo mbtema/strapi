@@ -130,6 +130,8 @@
             }
 
             [${LOCALES_BUTTON_ATTR}] {
+                display: inline-flex !important;
+                align-items: center !important;
                 width: auto !important;
                 min-width: 0 !important;
                 max-width: 112px !important;
@@ -153,11 +155,13 @@
             }
 
             [${LOCALES_BUTTON_ATTR}][${HAS_RU_ATTR}]::before {
+                order: -2;
                 content: 'RU';
                 display: inline-flex;
             }
 
             [${LOCALES_BUTTON_ATTR}][${HAS_KK_ATTR}]::after {
+                order: -1;
                 content: 'KK';
                 display: inline-flex;
             }

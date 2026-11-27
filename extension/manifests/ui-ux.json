@@ -16,7 +16,7 @@
     {
       "id": "common/recordList",
       "path": "ui-ux/common/recordList.js",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "enabled": true
     },
     {
